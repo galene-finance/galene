@@ -7,6 +7,9 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
+# Needs repo secret GALENE_PROJECT_TOKEN: classic PAT with `repo` + `project`
+# (or fine-grained: Issues Read/Write on galene-finance/galene + Organization Projects Read).
+# GITHUB_TOKEN cannot read org Projects — there is no Project UI toggle for Actions.
 permissions:
   contents: read
   issues: write
@@ -17,12 +20,17 @@ jobs:
     steps:
       - name: Sync Project Status to status/* labels
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GALENE_PROJECT_TOKEN }}
           PROJECT_OWNER: galene-finance
           PROJECT_NUMBER: '1'
           REPO: galene-finance/galene
         run: |
           set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "Missing secret GALENE_PROJECT_TOKEN (PAT with repo + project scopes)."
+            exit 1
+          fi
 
           # Status option name → label (exact match on Project Status titles)
           map_status() {

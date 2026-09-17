@@ -45,6 +45,19 @@ bun install
 bun run dev
 ```
 
+
+## Screenshots
+
+Dark theme, demo data:
+
+| Home | Transactions | Cashflow |
+| :---: | :---: | :---: |
+| ![Home](.github/assets/readme/readme-home-dark.png) | ![Transactions](.github/assets/readme/readme-transactions-dark.png) | ![Cashflow](.github/assets/readme/readme-cashflow-dark.png) |
+
+| Budget | Trends |
+| :---: | :---: |
+| ![Budget](.github/assets/readme/readme-budgets-dark.png) | ![Trends](.github/assets/readme/readme-trends-dark.png) |
+
 ## Stack
 
 - **Svelte 5** (runes) + **SvelteKit** + **TypeScript**

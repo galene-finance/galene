@@ -1,5 +1,5 @@
 # Cuts a release: bumps the version in package.json (the single source of
-# truth), commits and pushes it, then tags the commit vX.Y.Z.
+# truth), commits and pushes it, then tags the commit vX.Y (major.minor).
 #
 # The tag push triggers the Docker workflow, which publishes
 #   ghcr.io/<owner>/<repo>:app-<ver> / :mcp-<ver>
@@ -7,7 +7,8 @@
 # and stamped as an OCI label. The main push also refreshes :app-latest /
 # :mcp-latest with the new version.
 #
-# Usage: Actions → Release → Run workflow → enter a version (e.g. 0.2.0).
+# Usage: Actions → Release → Run workflow → enter a version (e.g. 0.2).
+# Two-part only — three-part versions like 0.2.0 are rejected.
 #
 name: Release
 
@@ -15,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'New version (semver, e.g. 0.2.0)'
+        description: 'New version (major.minor, e.g. 0.2)'
         required: true
 
 permissions:
@@ -31,8 +32,9 @@ jobs:
         run: |
           set -euo pipefail
           v="${{ github.event.inputs.version }}"
-          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$ ]]; then
-            echo "::error::Version must be semver, e.g. 0.2.0"
+          # major.minor only; optional -prerelease suffix. Reject X.Y.Z (third numeric part).
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::Version must be major.minor (e.g. 0.2 or 0.2-rc.1), not three-part 0.2.0"
             exit 1
           fi
 

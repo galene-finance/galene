@@ -218,10 +218,10 @@ Additional accounts (and more admins) are created by an admin under Settings →
 
 ## Checking the running version
 
-The version (semver from `package.json`) plus the git commit and build date are baked in at build time. Four ways to see it:
+The version (**major.minor** from `package.json`) plus the git commit and build date are baked in at build time. Four ways to see it:
 
 - **In the app** — Settings → **About** (version, commit linked to GitHub, build date, check-for-updates link). Also shown on the login page.
-- **HTTP** — `curl -s http://localhost:3000/version` → `{"name":"galene","version":"0.1.0","commit":"…","built_at":"…"}` (no authentication needed).
+- **HTTP** — `curl -s http://localhost:3000/version` → `{"name":"galene","version":"0.1","commit":"…","built_at":"…"}` (no authentication needed).
 - **Image labels** — `docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}} {{index .Config.Labels "org.opencontainers.image.revision"}}' ghcr.io/<owner>/<repo>:app-latest`
 - **Image tags** — `app-<ver>` / `mcp-<ver>` for releases, `app-latest` / `mcp-latest` for `main`, `app-test` / `mcp-test` for the `test` branch (for branch builds the baked-in version is the one in `package.json` at that commit).
 

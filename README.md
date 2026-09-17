@@ -54,7 +54,7 @@ bun run dev
 
 ## Versioning
 
-Semver in [`package.json`](package.json). Shown in Settings → About, `GET /version`, and OCI image labels. See [`CHANGELOG.md`](CHANGELOG.md) and GitHub Releases.
+**major.minor** version in [`package.json`](package.json) (e.g. `0.1`, tagged `v0.1`). Shown in Settings → About, `GET /version`, and OCI image labels. See [`CHANGELOG.md`](CHANGELOG.md) and GitHub Releases.
 
 ## License
 

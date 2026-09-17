@@ -3,7 +3,7 @@ import pkg from '../../package.json';
 /**
  * Build-time version information.
  *
- * The semver comes from package.json — the single source of truth, bumped by
+ * The major.minor version comes from package.json — the single source of truth, bumped by
  * the release workflow (Actions → Docker release). The commit and build date
  * are injected at build time by vite.config.ts (VITE_GIT_COMMIT /
  * VITE_BUILD_DATE, set from the environment in CI and Docker, or read from
@@ -25,7 +25,7 @@ export function shortCommit(): string {
 	return gitCommit.slice(0, 7);
 }
 
-/** "0.1.0 (abc1234)" — the compact form shown in the UI. */
+/** "0.1 (abc1234)" — the compact form shown in the UI. */
 export function versionLabel(): string {
 	return gitCommit ? `${appVersion} (${shortCommit()})` : appVersion;
 }

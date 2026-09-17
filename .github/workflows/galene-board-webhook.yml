@@ -16,17 +16,22 @@ jobs:
         env:
           WEBHOOK_URL: ${{ secrets.GALENE_BOARD_WEBHOOK_URL }}
           WEBHOOK_KEY: ${{ secrets.GALENE_BOARD_WEBHOOK_KEY }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_LABEL: ${{ github.event.label.name }}
+          EVENT_REPO: ${{ github.repository }}
+          ISSUE_JSON: ${{ toJSON(github.event.issue) }}
         run: |
           set -euo pipefail
           if [ -z "${WEBHOOK_URL:-}" ] || [ -z "${WEBHOOK_KEY:-}" ]; then
             echo "Missing GALENE_BOARD_WEBHOOK_URL or GALENE_BOARD_WEBHOOK_KEY — skipping"
             exit 0
           fi
+          # Build JSON via jq + env (avoid embedding issue body in the workflow script)
           payload=$(jq -n \
-            --arg action "${{ github.event.action }}" \
-            --arg label "${{ github.event.label.name }}" \
-            --argjson issue '${{ toJSON(github.event.issue) }}' \
-            --arg repo "${{ github.repository }}" \
+            --arg action "$EVENT_ACTION" \
+            --arg label "$EVENT_LABEL" \
+            --arg repo "$EVENT_REPO" \
+            --argjson issue "$ISSUE_JSON" \
             '{source:"galene-board-webhook",action:$action,label:$label,repository:$repo,issue:$issue}')
           curl -fsS -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \

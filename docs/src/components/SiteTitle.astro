@@ -1,0 +1,45 @@
+---
+const { siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title sl-flex">
+	<img
+		src="/galene-emblem.png"
+		alt=""
+		width="32"
+		height="32"
+		class="site-title__mark"
+		decoding="async"
+	/>
+	<span class="site-title__text" translate="no"><strong>Galene</strong> Docs</span>
+</a>
+
+<style>
+	@layer starlight.core {
+		.site-title {
+			align-items: center;
+			gap: var(--sl-nav-gap);
+			font-size: var(--sl-text-h4);
+			text-decoration: none;
+			white-space: nowrap;
+			min-width: 0;
+		}
+		.site-title__mark {
+			height: calc(var(--sl-nav-height) - 2 * var(--sl-nav-pad-y));
+			width: auto;
+			aspect-ratio: 1;
+			flex-shrink: 0;
+			border-radius: 9999px;
+			object-fit: cover;
+		}
+		.site-title__text {
+			overflow: hidden;
+			font-weight: 400;
+			color: var(--sl-color-gray-3);
+		}
+		.site-title__text strong {
+			font-weight: 700;
+			color: var(--sl-color-white);
+		}
+	}
+</style>

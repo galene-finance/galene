@@ -1,0 +1,38 @@
+---
+title: Getting an account
+description: Creating the first account on a fresh server, and adding users afterwards.
+---
+
+The first account on a server is always the **admin**, and it is created through the sign-in page.
+
+## First account
+
+On an empty server, the sign-in page at `/login` shows **Set up your account** instead of a sign-in form. Fill in:
+
+- **Name** — your display name.
+- **Email** — used for sign-in.
+- **Password** — at least 8 characters.
+- **Load demo data** (optional) — seeds demo bank accounts, about 3 months of transactions, budgets, and rules, so the app is not empty on first open.
+
+Then press **Create account**. The account you create here is the administrator — there is no way to create a non-admin first account, and this one can manage users.
+
+## After setup: adding users
+
+Once an account exists, public signup is closed. The setup form no longer appears, and a hand-crafted request to it is rejected with:
+
+> This server has already been set up. Ask an administrator to create your account.
+
+Admins create additional accounts in **Settings → Users**:
+
+- **Create an account** — name, email, password (minimum 8 characters), plus optional **Make admin** and **Load demo data** checkboxes.
+- **Accounts** list — for each account: **Make admin** / **Remove admin**, **Reset password**, and **Delete**. Delete asks you to type the account's name to confirm; deleting an account removes all of its data.
+
+## Signing in
+
+Sign in with your email and password. If two-factor authentication is enabled, a second step asks for a 6-digit code from your authenticator app or a backup code. You can enable TOTP in **Settings → Security** → **Two-factor authentication** (API bearer tokens bypass TOTP; the browser still asks for the code).
+
+## Where to go next
+
+- [Quick start](/quick-start/) — running the server itself.
+- [Docker & Compose](/self-host/docker/) and [From source](/self-host/from-source/) — how to get a running instance.
+- [API tokens](/api-tokens/) — for scripts and MCP clients instead of a browser session.

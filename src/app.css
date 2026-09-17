@@ -1,0 +1,48 @@
+@import 'tailwindcss';
+
+/*
+ * Default (Light) theme values. Named themes are applied by /theme.css,
+ * which overrides these variables under html[data-theme='...'].
+ */
+:root {
+	--background: #f8fafc;
+	--surface: #ffffff;
+	--surface-hover: #f1f5f9;
+	--muted: #f1f5f9;
+	--border: #e2e8f0;
+	--input: #cbd5e1;
+	--foreground: #1e293b;
+	--muted-foreground: #64748b;
+	--primary: #0d9488;
+	--primary-foreground: #ffffff;
+	--success: #16a34a;
+	--destructive: #dc2626;
+	--destructive-foreground: #ffffff;
+	--warning: #f59e0b;
+	--ring: #0d9488;
+	--radius: 0.5rem;
+}
+
+@theme inline {
+	--color-background: var(--background);
+	--color-surface: var(--surface);
+	--color-surface-hover: var(--surface-hover);
+	--color-muted: var(--muted);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-foreground: var(--foreground);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-success: var(--success);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-warning: var(--warning);
+	--color-ring: var(--ring);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 0.25rem);
+}
+
+body {
+	@apply overflow-x-clip bg-background text-foreground antialiased;
+}

@@ -1,0 +1,56 @@
+# dependencies (bun install)
+node_modules
+
+# output
+out
+dist
+mcp-dist
+*.tgz
+
+# sveltekit build output
+build
+.svelte-kit
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# playwright-cli runtime artifacts (snapshots, screenshots, traces, videos)
+.playwright-cli
+.playwright
+
+# local dev/test working files
+cur.yml
+/cashflow-12mo.png
+/cashflow-6mo.png
+/plaid-widget.png
+/.tmp-brand-docs-poc.png
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+.astro
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
+
+# sqlite data
+/data
+# local backup folder (dev default for GALENE_BACKUP_ROOT)
+/backups

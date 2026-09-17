@@ -1,0 +1,89 @@
+# Cuts a release: bumps the version in package.json (the single source of
+# truth), commits and pushes it, then tags the commit vX.Y.Z.
+#
+# The tag push triggers the Docker workflow, which publishes
+#   ghcr.io/<owner>/<repo>:app-<ver> / :mcp-<ver>
+# with the same version baked into the app (Settings → About, GET /version)
+# and stamped as an OCI label. The main push also refreshes :app-latest /
+# :mcp-latest with the new version.
+#
+# Usage: Actions → Release → Run workflow → enter a version (e.g. 0.2.0).
+#
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New version (semver, e.g. 0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version
+        run: |
+          set -euo pipefail
+          v="${{ github.event.inputs.version }}"
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::Version must be semver, e.g. 0.2.0"
+            exit 1
+          fi
+
+      - name: Bump version in package.json
+        run: |
+          set -euo pipefail
+          v="${{ github.event.inputs.version }}"
+          node -e '
+            const fs = require("node:fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            if (pkg.version === process.argv[1]) {
+              console.log(`package.json already at ${pkg.version}`);
+              process.exit(0);
+            }
+            pkg.version = process.argv[1];
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+            console.log(`Bumped package.json to ${pkg.version}`);
+          ' "$v"
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          if git diff --cached --quiet; then
+            echo "No version change to commit"
+          else
+            git commit -m "Release v${{ github.event.inputs.version }}"
+            git push origin HEAD:main
+          fi
+
+      - name: Tag and push
+        run: |
+          set -euo pipefail
+          v="${{ github.event.inputs.version }}"
+          if git rev-parse "v${v}" >/dev/null 2>&1; then
+            echo "::error::Tag v${v} already exists"
+            exit 1
+          fi
+          git tag "v${v}"
+          git push origin "v${v}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          v="${{ github.event.inputs.version }}"
+          gh release create "v${v}" \
+            --title "v${v}" \
+            --generate-notes \
+            --target main
+

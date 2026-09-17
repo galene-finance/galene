@@ -1,0 +1,85 @@
+---
+title: Docker & Compose
+description: The two images, the compose quick path, volumes, upgrades, and troubleshooting.
+---
+
+Galene ships as two images built from one `Dockerfile` (base `oven/bun:1.4.0`, Debian 13, non-root user `galene`):
+
+| Image | What it is |
+| --- | --- |
+| `galene:app` | The web app — Bun.serve on port 3000, SQLite database in `/app/data` |
+| `galene:mcp` | The MCP stdio server — a self-contained bundle that talks to a running instance over the REST API |
+
+Both images contain only the build output and the Bun runtime — no `node_modules`, no source. The app is a **single replica**: it runs in-process schedulers (bank auto-sync, backups, notifications) and one SQLite file, so run one instance and put your TLS-terminating proxy in front if you want HTTPS ([Reverse proxy](/self-host/reverse-proxy/)).
+
+## Quick start
+
+```bash
+docker compose up -d
+```
+
+The included `docker-compose.yml` builds the `app` target from the repo's `Dockerfile`, runs it on port **3000**, and mounts the database on a named volume. Open [http://localhost:3000](http://localhost:3000) — the first account you create is the **admin** (optionally tick "Load demo data" on signup).
+
+To use a published image instead of building locally, comment out the `build:` block and set:
+
+```yaml
+image: ghcr.io/galene-finance/galene:app-latest
+```
+
+The same compose file works with `podman-compose` — see [Podman](/self-host/podman/).
+
+## Volumes
+
+The database must live on a **mounted volume**. The app checks this at startup (Linux, via `/proc/mounts`) and refuses to run otherwise, so removing the container can never take your data with it:
+
+```yaml
+volumes:
+  - galene_data:/app/data
+```
+
+- **Named volumes** (as above) are the simplest choice and survive container recreation. The image pre-creates `/app/data` owned by the app user, so a fresh named volume is already writable — no permission surprises.
+- **Bind mounts** work too (`-v /path/on/host:/app/data`). The directory must be writable by uid **10001** (the `galene` user in the image); on a fresh bind mount you may need `chown 10001:10001 /path/on/host`. On SELinux hosts (Fedora), add `:z` to the mount — see [Podman](/self-host/podman/).
+- **Optional: a second volume for backups.** Settings → Backups copies the database to a folder on the server; in a container point it at `/app/backups` and uncomment the `galene_backups` volume in the compose file. See [Backups](/self-host/backups/).
+
+## Environment variables
+
+The compose file sets `GALENE_COOKIE_SECURE: "0"` for plain-HTTP self-hosting (LAN, Tailscale, WireGuard). Behind a TLS-terminating reverse proxy, set it to `"1"` — see [Reverse proxy](/self-host/reverse-proxy/). The full list, including `PORT`, `GALENE_DATA_DIR`, and the MCP image's variables, is in [Environment variables](/reference/environment-variables/).
+
+## Healthcheck
+
+`GET /api/v1` answering `401` marks the container healthy; `docker ps` / `docker compose ps` shows the state. The app logs to stdout (`docker logs galene`). The compose file sets `stop_grace_period: 40s` so the shutdown handler (up to 30 s for in-flight work, e.g. a WAL checkpoint) finishes before SIGKILL.
+
+## Checking the running version
+
+- **In the app** — Settings → About (version, git commit, build date, check-for-updates link); also on the login page.
+- **HTTP** — `curl -s http://localhost:3000/version` → `{"name":"galene","version":"…","commit":"…","built_at":"…"}` (no authentication).
+- **Image labels** — `docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' <image>`.
+
+## Upgrades
+
+1. Check what you are running (above) and compare with the [releases](https://github.com/galene-finance/galene/releases).
+2. Pull the new image (`docker compose pull`) or rebuild.
+3. Recreate the container: `docker compose up -d`.
+
+The database migrates automatically at startup (versioned `PRAGMA user_version` migrations, in a transaction). Your data, sessions, and API tokens live on the volume, not in the image.
+
+## Pulling the published images
+
+The images are published to GitHub Container Registry: `:app-latest` / `:mcp-latest` for `main`, `:app-<ver>` / `:mcp-<ver>` for releases, and `:app-test` / `:app-test-<sha>` for the `test` branch. GHCR requires a token — a **classic** personal access token with the `read:packages` scope (fine-grained tokens cannot access GHCR):
+
+```bash
+echo "<PAT>" | docker login ghcr.io --username <github-user> --password-stdin
+docker pull ghcr.io/galene-finance/galene:app-latest
+```
+
+Then set `image:` in the compose file as in the quick start.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+| --- | --- |
+| Container exits: "the data directory … is on the container's ephemeral filesystem" | No volume mounted at `/app/data`. Add `-v galene_data:/app/data` or the compose `volumes:` entry. `GALENE_ALLOW_EPHEMERAL_DATA=1` is for throwaway containers only. |
+| Login "succeeds" but you are bounced back to the login page | The session cookie is `Secure` but you are on plain HTTP. Set `GALENE_COOKIE_SECURE=0` (the compose file ships with this). Behind a TLS proxy, set it to `1`. |
+| Sign in does nothing / console `file:///` / view-source has `http://…` under HTTPS | Behind TLS set `PROTOCOL_HEADER=x-forwarded-proto` and `HOST_HEADER=host` (see [Reverse proxy](/self-host/reverse-proxy/)). |
+| `docker ps` shows `unhealthy` | The app is not answering `GET /api/v1`. Check `docker logs` — usually a crash at startup (volume or permission issue) or a port conflict. |
+| Permission errors on a bind-mounted data dir | The directory is not writable by uid 10001. `chown 10001:10001 /path/on/host`, or use a named volume. On SELinux hosts add `:z`. |

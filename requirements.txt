@@ -1,0 +1,65 @@
+This application will provider users with functionality similar to pocketsmith.com, ynab.com, and other personal finance tracking applications.
+This one will be self hostable and in the future I may provide a cloud hostable option for users to pay me for.
+The below list is a list of requirements or desires, they are not in order of how they should be worked.
+
+The application should provide the following features and functionality.
+1.) The home page will have customizable reports and widgets that pull data from the rest of the application.
+2.) A Transaction page where the user can do searches against Accounts, Categories, Merchants, Tags, Amounts, and Dates.
+2.a) The search should allow the users to select one more Accounts, Categories, and Tags, and should have a clear search functionality.
+2.b) The amount search should allow them to do equals, between, more than, and less than searches.
+2.c) The date search should allow them to select a from and or to dates
+2.d) The transaction list should have pagination and allow the user to select a default amount to show on the page (25, 50, 75, 100) and it should remember what the user selected across refresh and login.
+2.e) The user should be able to select one or more transactions on the page to then be able to quickly apply categories, tags, or to delete the selected transactions.
+2.f) The user should be able to click on a category field in a row to quickly change the category.
+2.g) There should be a Add Transaction button on the page that shows a dialog where the user can add a single transaction to the transaction list. This dialog should have options to select the following.
+- Expense or Income
+- Amount
+- Date
+- Category (Should be able to search and create categories directly from this field)
+- Account (Should be able to search and create accounts directly from this field)
+- Merchant
+- Notes
+- A color to apply to the transaction
+- Tags (Should be able to search and create tags directly from this field)
+2.h) Each transaction row should have a 3 dot icon on the right of it where they can select actions to Create a auto cateogrization rule, edit the transaction, split the transaction, or delete it. The auto categorization dialog should allow them to do multiple conditions against amounts, merchant names, and accounts to create rules that auto categorize the transaction when it comes in.
+3.) A budget page, where the user can select a category, a period that the budget applies to (Week, Month, Year), and a budget limit amount.
+4.) A Calendar page which should have the following features.
+4.a) Transactions can show on the calendar, but there should be a Hide Actuals checkmark that completly hides the actual transactions on the calendar.
+4.b) Users should see an Add Transaction button on the page, that shows the same dialog that is on the transaction page.
+4.c) Recurring / Scheduled "Expectations" that I will discuss in number 5. They should be able to create these directly from a specific day if they click on the day on the calendar. A New Scheduled button should also show next to the Add Transaction button.
+5.) The ability to add Recurring or Scheduled "Expectations/Transactions" that show up on the calendar view and a Cashflow forcast amounts and other reports. The dialog to add / edit these should have the following features:
+- Amount
+- Date (or Start Date)
+- Category (Search and Create like transactions)
+- Tags (Search and Create like transactions)
+- Account (search and create like transactions)
+- Merchant or name (What ever makes sense)
+- Notes
+- Does this repeat, if yes (every {x} {day(s), week(s), month(s), year(s)}) and an until date is selectable
+- Forcast behavior (Bill - full amount on the due date, Spread - even across the period)
+- Color option for pills on calendar or else where
+6.) Cashflow page should show a Summary section, income section, expense section, each section should have a forcast and actual column and be for a month period. The user can select how many month periods to see. Each section will have rows for each category that scheduled and transactions are assigned to. Each section should have a total at the bottom of the section. At the right end of the row should add up totals for all the months selected for each section and category. A user can click on a value on the table to see which transactions / scheduled items are counted in the amount.
+7.) a Trends page where user can filter on categories, how many months to see in a bar chart, lines showing budgets so they can see if they are under or over budget on the bar chart.
+8.) A settings page where they can manage accounts, categories, tags, categorization rules, appearance & branding, notifications, auto sync.
+9.) Auto sync functionality against Plaid or SimpleFIN, that should allow them to Map the external accounts to internal accounts and create new accounts if not already created, with the ability to change the names during mapping of the internal accounts that have not been created yet. They can change the how often the sync auto syncs. SimpleFin will ask for a setup token first and then use what ever that api uses after the setup token is consumed to do additional syncs.
+10.) Notification configuration should allow self host providers like ntfy. There should be options for setting up SMTP server details for email notifications. Custom rules on when to send out notifications and which provider to send them to.
+11.) Custom appearnce and branding, the ability to create custom color schemes against dark and light modes, change logo, site title, favicon. The user should have an option to change their theme from a select box, that select box should show a couple dots / squares of a few of the primary and secondary colors from that theme and the theme name. 
+12.) A MCP Server with Authentication built in
+13.) An API Server with Authentication built in
+14.) Secure login is required, Custom ODIC ability or simple app login.
+15.) All features should have security in mind, with encription at rest or as much security as possible with the features still working seamlessly.
+16.) Fast UI experience
+17.) Mobile friendly and future potential for an ios/android app or PWA suuport.
+18.) Podman/Docker deployable
+
+Current app name is galene.finance
+Future roadmap is BYOK to hook up to AI, if there is any features that doing that would bring to users. Not sure how that will help if users already have the ability to connect to MCP server.
+
+AGENT: My initial thoughts is for underlying technology is as follows, But feel free to suggest other options that would better suite this application.
+- Svelte / Typescript
+- sqllite for db
+- bun
+- Think about resusability, if you make a component for a page, make it so that it can be reused on another page (ex. Add Scheduled {Expectation,Occurence,ect...} dialog could be used on the transaction page and the calendar page)
+- For the UI look into using this library Bits UI V2 https://www.bits-ui.com/docs/components/menubar , https://github.com/huntabyte/bits-ui
+
+AGENT: Develop this app in phases, determine the best thing to start with, then start on the first parts, then stop and tell me what you implemented and tell me what the next phase of items you will start on are before you start.

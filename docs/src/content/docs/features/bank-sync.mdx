@@ -1,0 +1,29 @@
+---
+title: Bank sync
+description: Import accounts and transactions from SimpleFIN, Plaid, or the demo bank.
+---
+
+Galene imports accounts and transactions from bank providers through a common sync interface (Settings → Bank sync). Three providers ship:
+
+- **Demo Bank** — built-in mock with demo accounts and ~3 months of realistic transactions; makes no external calls.
+- **SimpleFIN** — the SimpleFIN protocol (SimpleFIN's bridge, or any bank that implements it): you paste a one-time setup token, and Galene claims it once for a long-lived access URL. Setup: [SimpleFIN](/features/simplefin/).
+- **Plaid** — live bank accounts through Plaid Link: you pick your bank and log in in Plaid's hosted widget. Setup: [Plaid](/features/plaid/).
+
+Syncs are incremental: each pull starts at the newest transaction date already imported, and imports are deduplicated by provider + external id. Your categorization rules run on new imports. Disconnecting a connection keeps the accounts and transactions already imported.
+
+## Auto-sync
+
+Each connection can auto-sync on a schedule. The server checks every minute and syncs connections whose next sync time has passed; a failed sync backs off to at least an hour. Intervals are bounded per provider:
+
+| Provider | Minimum interval | Why |
+| --- | --- | --- |
+| Demo Bank | 15 minutes | no external API to rate-limit |
+| SimpleFIN | 2 hours | the bridge allows 24 requests/day per access, and one sync is one request |
+| Plaid | 15 minutes | Plaid rate-limits per Item (15 req/min `/accounts/get`, 30 req/min `/transactions/get`); a sync makes a few calls per linked bank |
+
+## Provider (bank) balance
+
+On each successful SimpleFIN or Plaid sync, Galene stores the institution-reported **bank balance** (signed cents) and an **as-of** timestamp per linked account — SimpleFIN’s `balance` / `balance-date` when present, otherwise Plaid’s current/available balance stamped at fetch time. Demo Bank also reports sample balances.
+
+The Home **Balances** widget and **Settings → Accounts** show **Ledger** (Galene’s computed balance, including any opening-balance anchor) beside **Bank** when a provider balance exists. Manual accounts never show a Bank value. Galene does **not** auto-adjust the ledger to match the bank. On **Settings → Accounts → Edit**, you can apply a **suggested opening** from bank − transactions (user confirm only) — see [Accounts & tags](/features/accounts-tags/).
+

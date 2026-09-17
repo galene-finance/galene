@@ -1,0 +1,58 @@
+---
+title: Import transactions
+description: Download a CSV template, preview rows, then confirm the import.
+---
+
+Galene can import transactions from a **CSV file** you fill out — useful when a bank isn’t connected yet or you have history from another tool.
+
+## Flow
+
+1. Open **Transactions → Import CSV** (or go to `/transactions/import`).
+2. **Download** the CSV template.
+3. Optionally opt in to **create missing accounts, categories, or tags** (off by default — never silent).
+4. Fill rows and **upload** the file.
+5. Review the **preview** (parsed dates, per-line errors, and what will be created).
+6. Confirm to create only the valid rows.
+
+Nothing is written until you confirm.
+
+## Columns
+
+| Column | Required | Meaning |
+| --- | --- | --- |
+| `date` | yes | See date formats below |
+| `account` | yes | Match an existing account name (case-insensitive), or create if opted in |
+| `amount` | yes | Dollars; **negative = expense**, **positive = income** |
+| `merchant` | no | Payee / description |
+| `notes` | no | Free text |
+| `category` | no | Existing category name, or create if opted in (type from amount sign) |
+| `tags` | no | Names separated by `;` or `\|` — existing, or create if opted in |
+
+Header aliases such as `payee` → merchant and `account_name` → account are accepted.
+
+## Date formats
+
+Accepted and normalized to `YYYY-MM-DD` in the preview:
+
+- `YYYY-MM-DD`
+- `YYYY/MM/DD`
+- US `M/D/YYYY` or `MM/DD/YYYY` (also `-` instead of `/`)
+- US two-digit year `M/D/YY` (00–69 → 2000–2069, 70–99 → 1970–1999)
+
+Invalid or ambiguous-looking calendar dates are rejected with a per-row error.
+
+## Create-if-missing
+
+On the upload step, checkboxes control whether unknown names become new records on **confirm**:
+
+- **Accounts** — created as type `bank`
+- **Categories** — type from the row’s amount (expense vs income)
+- **Tags** — created with the given name
+
+If a checkbox is off, unknown names are **errors** on that row (row skipped). The preview lists everything that will be created before you commit.
+
+## Limits (MVP)
+
+- Max upload size **2 MB**
+- Preview is held briefly on the server after upload; if it expires, upload again
+- OFX/QFX and background bulk jobs are out of scope for this flow

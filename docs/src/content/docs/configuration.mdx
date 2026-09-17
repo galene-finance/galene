@@ -1,0 +1,17 @@
+---
+title: Configuration
+description: The environment variables Galene reads at startup.
+---
+
+Galene is configured with environment variables. Everything has a default; behind a [TLS-terminating proxy](/self-host/reverse-proxy/) you usually need `GALENE_COOKIE_SECURE=1` plus adapter headers `PROTOCOL_HEADER=x-forwarded-proto` and `HOST_HEADER=host`.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GALENE_DATA_DIR` | `./data` | Directory for the database file. In the container image this is `/app/data`. |
+| `GALENE_DB_PATH` | `$GALENE_DATA_DIR/galene.db` | Full path to the SQLite database. |
+| `PORT` | `3000` | HTTP port (production server). |
+| `GALENE_COOKIE_SECURE` | follows `NODE_ENV` | `1` sets the session cookie's `Secure` flag, `0` clears it. The compose file ships with `"0"` for plain HTTP; set `"1"` behind a TLS-terminating proxy. |
+| `PROTOCOL_HEADER` / `HOST_HEADER` | unset | Bun adapter proxy headers — set `PROTOCOL_HEADER=x-forwarded-proto` and usually `HOST_HEADER=host` behind TLS. See [Reverse proxy](/self-host/reverse-proxy/). |
+| `GALENE_ALLOW_EPHEMERAL_DATA` | unset | `1` disables the startup check that the data directory is a mounted volume. Throwaway containers only. |
+
+The full table, including the MCP image's variables, is in [Environment variables](/reference/environment-variables/). How `PORT` and the data directory behave in each deployment: [Docker & Compose](/self-host/docker/), [Podman](/self-host/podman/), [From source](/self-host/from-source/).

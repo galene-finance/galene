@@ -1,0 +1,54 @@
+---
+title: Plaid
+description: Connecting Galene to live bank accounts through Plaid Link, and which Plaid plan fits.
+---
+
+Galene connects to banks through **Plaid Link**: you pick your bank and log in in Plaid's hosted widget, and Galene exchanges the one-time public token for a long-lived access token.
+
+## Environments and plans
+
+Plaid has two environments — **Sandbox** (free, mock data) and **Production** (live data) — and several ways to get Production access:
+
+| | Sandbox | Production (full) | Trial plan | Limited Production |
+| --- | --- | --- | --- | --- |
+| Cost | Free | Paid | Free | Free |
+| Data | Mock | Real | Real | Real, with usage caps |
+| Item limit | Unlimited | Unlimited | 10 Production Items | Capped |
+| Approval | None | Required (a few business days) | Auto-approved for most developers | Required |
+| Who it's for | Building and testing without live data | Deploying | Trying real data before a paid plan | Legacy free tier for existing customers |
+
+- **Sandbox** — free mock data for building and testing; all API and Link functionality, unlimited test Items. [Plaid docs](https://plaid.com/docs/sandbox/).
+- **Production (full)** — live data; paid and requires approval (a couple of business days, with information about your company and how you plan to use the API).
+- **Trial plan** — free Production access with real data, for most US/Canada developers on teams created on or after **April 15, 2026** with no existing Production or Limited Production account. Most applications are auto-approved after identity verification. It includes up to **10 Production Items**, with unlimited API calls against those Items; calling `/item/remove` does not free a slot. Included products: Auth, Transactions (incl. Refresh), Balance, Identity, Assets, Liabilities, Investments (incl. Refresh), Statements. OAuth to most major institutions is typically available 6–24 hours after approval. Upgrading from Trial to paid Production is one-way. Apply at [dashboard.plaid.com/trial-plan](https://dashboard.plaid.com/trial-plan).
+- **Limited Production** — the legacy free tier. As of April 15, 2026 there are no new US/Canada signups; existing customers keep access. It is not the default path for new users.
+
+Plaid's own write-ups: [Sandbox, Production, Trial plan, and Limited Production compared](https://support.plaid.com/hc/en-us/articles/16110110883479-How-are-Sandbox-Production-Trial-plan-and-Limited-Production-different), [What is the Plaid Trial plan](https://support.plaid.com/hc/en-us/articles/39994173227159-What-is-the-Plaid-Trial-plan), and the [billing page](https://plaid.com/docs/account/billing/).
+
+:::note
+In practical terms, the free path gives you on the order of a handful of live bank connections (Plaid's Trial plan allows up to 10 Production Items). Limits can change — confirm the current ones in the [Plaid Dashboard](https://dashboard.plaid.com) or the docs linked above.
+:::
+
+## Connecting
+
+1. Sign up at [dashboard.plaid.com/signup](https://dashboard.plaid.com/signup) and verify your email. If you are eligible for the Trial plan, complete the [Trial plan application](https://dashboard.plaid.com/trial-plan).
+2. In the Plaid Dashboard, get your **client ID** and **secret** (Dashboard → Keys) for Sandbox and/or Production.
+3. In Galene, go to **Settings → Bank sync** → **Plaid** and fill in:
+   - **Client ID**
+   - **Client secret** — leave blank to keep the stored one; it is never sent to the browser.
+   - **Environment** — `sandbox` or `production`.
+   - **Sandbox instance** — required for sandbox; your instance name from Plaid dashboard → Sandbox.
+
+   Press **Save Plaid settings**.
+4. Press **Connect with Plaid**. Plaid's hosted widget opens; pick your bank and log in. Galene exchanges the one-time public token for a long-lived access token and imports your accounts and transactions. Press **Link another account** to add more banks.
+
+## How your secret is handled
+
+The client secret never reaches the browser. Galene's server creates a link token with Plaid's `/link/token/create`, the widget returns a one-time public token, and the server exchanges it via `/item/public_token/exchange` for the long-lived access token that later syncs use.
+
+With only a client ID (no secret), existing connected Items keep syncing, but you cannot start new Link connections. In sandbox, new Links also need the sandbox instance name.
+
+## Auto-sync
+
+Plaid syncs at most every **15 minutes**. Plaid rate-limits at 15 requests/minute per Item for `/accounts/get` and 30 for `/transactions/get`, and a Galene sync makes a few calls per linked bank, so 15 minutes is the shortest interval that stays comfortably inside those limits. You can also set a connection to **Manual only** and press **Sync now** when you want it.
+
+Plaid settings are per user. Disconnecting a Plaid connection keeps the accounts and transactions already imported.

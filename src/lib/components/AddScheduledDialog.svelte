@@ -21,23 +21,38 @@
 		open = $bindable(false),
 		editing = null,
 		prefillDate = null,
+		prefill = null,
 		accounts,
 		categories,
 		tags,
 		form,
 		action = '?/save-scheduled',
 		deleteAction = null,
+		extraHidden = {} as Record<string, string>,
 		onclose
 	}: {
 		open?: boolean;
 		editing?: Scheduled | null;
 		prefillDate?: string | null;
+		/** Draft values when accepting a recurring suggestion (no id). */
+		prefill?: {
+			name?: string;
+			amount_cents?: number;
+			start_date?: string;
+			account_id?: number | null;
+			category_id?: number | null;
+			repeat_interval?: number | null;
+			repeat_unit?: RepeatUnit | null;
+			forecast_behavior?: 'bill' | 'spread';
+			notes?: string | null;
+		} | null;
 		accounts: Account[];
 		categories: Category[];
 		tags: Tag[];
 		form?: { error?: string | null };
 		action?: string;
 		deleteAction?: string | null;
+		extraHidden?: Record<string, string>;
 		onclose?: () => void;
 	} = $props();
 
@@ -128,6 +143,25 @@
 			color = editing.color ?? '';
 			tagValues = (editing.tag_ids ?? []).map(String);
 			tagSearch = '';
+		} else if (prefill) {
+			const cat = prefill.category_id != null ? categories.find((c) => c.id === prefill.category_id) : undefined;
+			type = cat?.type === 'income' ? 'income' : 'expense';
+			name = prefill.name ?? '';
+			amount = prefill.amount_cents != null ? (Math.abs(prefill.amount_cents) / 100).toFixed(2) : '';
+			startDate = prefill.start_date ?? prefillDate ?? todayISO();
+			accountId = prefill.account_id ? String(prefill.account_id) : '';
+			accountCreate = false;
+			categoryId = prefill.category_id ? String(prefill.category_id) : '';
+			categoryCreate = false;
+			notes = prefill.notes ?? '';
+			repeats = prefill.repeat_interval != null && prefill.repeat_unit != null;
+			repeatInterval = String(prefill.repeat_interval ?? 1);
+			repeatUnit = prefill.repeat_unit ?? 'month';
+			untilDate = '';
+			forecastBehavior = prefill.forecast_behavior ?? 'bill';
+			color = '';
+			tagValues = [];
+			tagSearch = '';
 		} else {
 			reset();
 		}
@@ -202,6 +236,9 @@
 		</form>
 	{/if}
 	<form method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4">
+		{#each Object.entries(extraHidden) as [k, v] (k)}
+			<input type="hidden" name={k} value={v} />
+		{/each}
 		<div class="flex gap-2" role="radiogroup" aria-label="Expectation type">
 			<button
 				type="button"

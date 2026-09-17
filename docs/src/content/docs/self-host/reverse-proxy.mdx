@@ -1,0 +1,136 @@
+---
+title: Reverse proxy
+description: TLS in front of the app — Caddy, nginx, and Traefik examples.
+---
+
+There is deliberately no reverse-proxy service in the compose file — the app listens on plain HTTP `:3000` and you bring your own proxy (Caddy, nginx, Traefik, …). The proxy terminates TLS and forwards to the app over **HTTP** (never `https://` to the container).
+
+## What the proxy needs to do
+
+- **Terminate TLS** — the app does not speak HTTPS itself.
+- **Forward to the app over HTTP on port 3000** — e.g. `http://127.0.0.1:3000` or `http://192.0.2.10:5173` when remapped. Do **not** use `https://` as the upstream URL; the app is HTTP-only.
+- **Set forwarded headers** — at least `X-Forwarded-Proto` (and usually `Host` / `X-Forwarded-Host`). Caddy’s `reverse_proxy` sets these by default; nginx needs them spelled out (see below).
+- **Tell the app to trust those headers** — set Bun/SvelteKit adapter env vars on the **app** (below). The proxy alone is not enough.
+- **Set `GALENE_COOKIE_SECURE=1` on the app** — see below.
+
+Galene is a standard SvelteKit app (server-rendered pages, a REST API, polling for updates) — no websockets, so no `Upgrade`/`Connection` forwarding is required.
+
+### Why adapter proxy env (`PROTOCOL_HEADER` / `HOST_HEADER`)
+
+Behind a TLS-terminating proxy the container only sees plain HTTP. The Bun adapter (`adapters/bun/src/handler.js`) rebuilds the public request origin from headers **only when you name those headers**:
+
+| Variable | Typical value | Role |
+| --- | --- | --- |
+| `PROTOCOL_HEADER` | `x-forwarded-proto` | **Required** behind TLS termination. Without it, SvelteKit thinks the site is `http://…` under an `https://` URL: form login via `use:enhance` can fail (browser may show a `file:///` security error; app logs stay clean), CSRF can reject POSTs as cross-site, and view-source may still show `http://your.domain/...` asset URLs. |
+| `HOST_HEADER` | `host` or `x-forwarded-host` | Which header supplies the public hostname. If unset, the adapter falls back to the request’s `Host` header (often fine when the proxy preserves it). |
+| `PORT_HEADER` | *(usually unset)* | Optional; only if a dedicated header carries a non-default public port. |
+| `ADDRESS_HEADER` | `x-forwarded-for` | Optional; client IP for logging / rate limits when not using the direct socket peer. |
+| `XFF_DEPTH` | `1` (default) | How many hops from the end of `X-Forwarded-For` to treat as the client when `ADDRESS_HEADER=x-forwarded-for`. |
+
+Caddy (and similar proxies) already send `X-Forwarded-Proto` / host; **the app must opt in** with `PROTOCOL_HEADER` (and usually `HOST_HEADER`). Setting the headers upstream without these env vars does nothing for origin reconstruction.
+
+### Why `GALENE_COOKIE_SECURE=1` behind TLS
+
+The session cookie is `Secure` by default in a production build. Over **plain HTTP**, browsers will not send a `Secure` cookie back: login appears to succeed, then "fails" on the next request. So:
+
+- **Plain HTTP, no proxy** (LAN, Tailscale, WireGuard): `GALENE_COOKIE_SECURE=0` (the compose file ships with this).
+- **Behind a TLS-terminating proxy**: `GALENE_COOKIE_SECURE=1`, so the cookie is only ever sent over HTTPS.
+
+`GALENE_COOKIE_SECURE` and `PROTOCOL_HEADER` solve different failures: the first is the cookie’s `Secure` flag; the second makes the app treat the request as HTTPS for origins / CSRF / form enhance.
+
+### Compose / env example (TLS proxy)
+
+```yaml
+services:
+  galene:
+    image: ghcr.io/galene-finance/galene:app-latest
+    # …ports, volumes as in docker-compose.yml
+    environment:
+      GALENE_COOKIE_SECURE: "1"
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: host
+      # Optional — client IP / rate-limit accuracy behind one proxy hop:
+      # ADDRESS_HEADER: x-forwarded-for
+      # XFF_DEPTH: "1"
+```
+
+Recreate the container after changing env (`docker compose up -d` / `podman-compose up -d`).
+
+## Caddy
+
+Caddy provisions TLS certificates automatically (Let's Encrypt by default). `reverse_proxy` sets `X-Forwarded-For`, `X-Forwarded-Proto`, and related headers by default — you still need the app env above.
+
+```
+# /etc/caddy/Caddyfile
+galene.example.com {
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
+Upstream must be **HTTP** to the app (plain `host:port`, not `https://host:port`). Same pattern when Caddy sits on another machine (e.g. Pangolin → Caddy → `192.0.2.10:5173`).
+
+Then set `GALENE_COOKIE_SECURE: "1"`, `PROTOCOL_HEADER: x-forwarded-proto`, and `HOST_HEADER: host` on the app and reload: `caddy reload`.
+
+## nginx
+
+```nginx
+# /etc/nginx/sites-available/galene
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name galene.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/galene.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/galene.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Obtain the certificate with `certbot` (or any ACME client), add a `listen 80` server block that redirects to HTTPS, and set the same app env as in the compose example (`GALENE_COOKIE_SECURE=1`, `PROTOCOL_HEADER`, `HOST_HEADER`).
+
+## Traefik
+
+If the app already runs in Docker, Traefik labels on the container are the least to maintain:
+
+```yaml
+services:
+  galene:
+    image: ghcr.io/galene-finance/galene:app-latest
+    # …ports, volumes, environment as in docker-compose.yml —
+    # include GALENE_COOKIE_SECURE=1, PROTOCOL_HEADER, HOST_HEADER
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.galene.rule=Host(`galene.example.com`)"
+      - "traefik.http.routers.galene.tls=true"
+      - "traefik.http.services.galene.loadbalancer.server.port=3000"
+```
+
+With the `letsencrypt` entrypoint configured, `tls=true` provisions the certificate automatically. The equivalent works in a Traefik dynamic file if you prefer not to label the container.
+
+## Same host vs separate host
+
+- **Same host** — the proxy and the container share a host and the compose file publishes `3000:3000`: proxy to `http://127.0.0.1:3000`.
+- **Separate host or container** — proxy to the app's address on the network you share: the container name on a shared Docker network (`http://galene:3000`), or the server's LAN IP / published port. Still **HTTP** to the app.
+
+## Checklist
+
+1. The proxy forwards `https://galene.example.com` → **`http://`**`127.0.0.1:3000` (or the app's network address) — not `https://` to the container.
+2. The proxy sends `X-Forwarded-Proto` (Caddy does by default; nginx example above sets it).
+3. On the app: `GALENE_COOKIE_SECURE: "1"`, `PROTOCOL_HEADER: x-forwarded-proto`, `HOST_HEADER: host` (or `x-forwarded-host`).
+4. Recreate the app container so the env vars take effect.
+5. Log in over `https://galene.example.com` — the session should persist; view-source of the login HTML should show `https://…` asset URLs, not `http://…`.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| --- | --- |
+| Sign in does nothing; browser console shows a `file:///` security error; podman/docker logs look clean | Missing `PROTOCOL_HEADER=x-forwarded-proto` (or an upstream hop stripped `X-Forwarded-Proto`). |
+| View-source / network still has `http://your.domain/...` under an HTTPS page | Same — app is reconstructing an `http` origin. |
+| Login "succeeds" then bounces back to the login page | Cookie `Secure` mismatch: set `GALENE_COOKIE_SECURE=1` behind TLS (or `0` on plain HTTP). |
+| CSRF / cross-site POST failures behind the proxy | Usually the same origin mismatch as missing `PROTOCOL_HEADER`. |

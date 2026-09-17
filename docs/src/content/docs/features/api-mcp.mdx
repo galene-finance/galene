@@ -1,0 +1,41 @@
+---
+title: API & MCP
+description: The read-only REST API and the bundled MCP server.
+---
+
+Galene exposes its data two ways: a read-only JSON REST API, and an MCP (Model Context Protocol) stdio server that wraps it for AI assistants.
+
+## REST API
+
+Nine read-only endpoints under `/api/v1`: summary, accounts, transactions, categories, tags, budgets, scheduled, cashflow, and notifications. All amounts are integer cents (negative = expense); dates are `YYYY-MM-DD`.
+
+`GET /api/v1/accounts` returns each account’s `opening_balance_cents` and `opening_as_of` (null until set) plus ledger `balance_cents` computed as **opening + transactions on/after as-of** (opening is the balance *before* those transactions). After bank sync it may also include `provider_balance_cents` and `provider_balance_as_of` (null for manual accounts or until a sync reports a balance). `GET /api/v1/summary` `balanceCents` uses the ledger rule across all accounts.
+
+Tokens are per-user. Create, use, and revoke them on the [API tokens](/api-tokens/) page — the token is shown once, at creation.
+
+```bash
+curl -H "Authorization: Bearer galene_…" http://localhost:3000/api/v1/summary
+```
+
+Unauthenticated requests get a JSON `401`.
+
+## MCP server
+
+The repo ships a stdio MCP server that talks to a running Galene instance over the REST API. It exposes the data as tools: `galene_summary`, `galene_accounts`, `galene_transactions`, `galene_budgets`, `galene_scheduled`, `galene_categories`, `galene_notifications`, and `galene_version`.
+
+Add it to your MCP client's config, substituting one of your tokens:
+
+```json
+{
+  "mcpServers": {
+    "galene": {
+      "command": "bun",
+      "args": ["/path/to/galene/mcp/index.ts"],
+      "env": {
+        "GALENE_API_URL": "http://localhost:3000",
+        "GALENE_API_TOKEN": "galene_…"
+      }
+    }
+  }
+}
+```

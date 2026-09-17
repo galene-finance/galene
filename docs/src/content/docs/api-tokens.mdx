@@ -1,0 +1,58 @@
+---
+title: API tokens
+description: Creating and using Galene API tokens for the REST API and the MCP server.
+---
+
+Tokens are how scripts, the MCP server, and other clients authenticate to Galene without a browser session. They are per-user: each token works for that user's whole account.
+
+## Creating a token
+
+In **Settings → API**, the **API tokens** section lists your tokens and lets you create and delete them:
+
+1. Enter a **Name** — anything that helps you remember where the token is used (e.g. `laptop`, `claude`).
+2. Press **Create token**.
+3. Copy the token from the page. It starts with `galene_` and is **shown only once** — if you lose it, create a new one instead.
+
+To revoke a token, press **Delete** next to it. There is no separate revoke step; deleting is revoking.
+
+:::warning
+Treat tokens like passwords. Never commit them to a repo, paste them into chat, or share them. If one leaks, delete it and create a new one.
+:::
+
+## Using a token with the REST API
+
+Send the token as a bearer token on any `/api/v1` request:
+
+```bash
+curl -H "Authorization: Bearer galene_…" http://localhost:3000/api/v1/summary
+```
+
+Unauthenticated requests get a JSON `401`: `Unauthorized. Authenticate with an API token (Authorization: Bearer <token>).`
+
+The full endpoint list is on the [API & MCP](/features/api-mcp/) page.
+
+## Using a token with the MCP server
+
+The bundled MCP server reads the token from the environment:
+
+```json
+{
+  "mcpServers": {
+    "galene": {
+      "command": "bun",
+      "args": ["/path/to/galene/mcp/index.ts"],
+      "env": {
+        "GALENE_API_URL": "http://localhost:3000",
+        "GALENE_API_TOKEN": "galene_…"
+      }
+    }
+  }
+}
+```
+
+`GALENE_API_URL` defaults to `http://localhost:3000`; `GALENE_API_TOKEN` is required.
+
+## Notes
+
+- Tokens bypass two-factor authentication; the browser still asks for a TOTP code.
+- Galene stores only a salted hash of each token, so it cannot show a token again — that is why it is shown exactly once, at creation.

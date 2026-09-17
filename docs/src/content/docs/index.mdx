@@ -1,0 +1,28 @@
+---
+title: Introduction
+description: What Galene is and how these docs are organized.
+---
+
+**Calm seas. Clear books.**
+
+Galene is a self-hostable personal finance app. It tracks transactions across your accounts, categorizes them, and shows you where your money goes — on your own host.
+
+## What it does
+
+- **Accounts and transactions** — import from a bank (SimpleFIN, Plaid, or a built-in demo bank) or enter them by hand; categorize (including transfer categories for credit card payments), tag, search, and filter.
+- **Budgets and rules** — per-category limits with progress, and categorization rules that run on new imports.
+- **Planning** — scheduled expectations, a cashflow forecast, and spending trends against your budget.
+- **API and MCP** — a read-only REST API and a bundled MCP server, so scripts and AI assistants can read your data.
+
+Everything runs on a single SQLite file in a single container. There is no cloud, no vendor account, and no service between you and your data.
+
+## How these docs are organized
+
+- **Start** — get a running instance, get an account, manage API tokens, and understand the configuration.
+- **Self-host** — Docker & Compose, Podman (compose & quadlets), from source, reverse proxy, and backups.
+- **Features** — what the app does, one area at a time: bank sync (SimpleFIN, Plaid), budgets & rules, categories & cashflow, accounts & tags, import, and the API & MCP.
+- **Reference** — environment variables, in one place.
+
+## Marketing site
+
+A product overview lives on the **standalone Galene marketing site** (separate repo/tree from this finance monorepo), served at `galene.finance` once the domain is wired. Publish that site from its own tree’s `scripts/publish-app-host.sh` when needed — not from this repository. These docs are the operator's guide.

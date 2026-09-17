@@ -1,0 +1,33 @@
+/* Galene Docs — Starlight theme overrides.
+   Intentionally unlayered: user CSS is imported before Starlight's
+   @layer starlight.* rules, so these win regardless of specificity. */
+
+/* Light face: #f8fafc background, slate body text, teal accent. */
+:root[data-theme='light'] {
+  --sl-color-bg: #f8fafc;
+  --sl-color-bg-nav: #f8fafc;
+  --sl-color-bg-sidebar: #f8fafc;
+  --sl-color-text: #334155;
+  --sl-color-accent: #0d9488;
+  --sl-color-accent-high: #0f766e;
+  --sl-color-accent-low: #f0fdfa;
+}
+
+/* Dark face: keep Starlight's built-in neutrals, teal accent throughout. */
+:root:not([data-theme='light']) {
+  --sl-color-accent: #0d9488;
+  --sl-color-accent-high: #2dd4bf;
+  --sl-color-accent-low: #134e4a;
+}
+
+/* Light mode: active sidebar item is a soft teal pill, not solid accent. */
+:root[data-theme='light'] .sidebar a[aria-current='page'],
+:root[data-theme='light'] .sidebar-pane a[aria-current='page'] {
+  background-color: #f0fdfa;
+  color: #0f766e;
+}
+
+/* Light mode: asides get the soft teal fill; per-type border colors stay. */
+:root[data-theme='light'] .starlight-aside {
+  background-color: #f0fdfa;
+}

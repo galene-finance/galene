@@ -1,0 +1,20 @@
+---
+title: Backups
+description: Copy the database to a second volume, on a schedule.
+---
+
+Settings → **Backups** (admin only) copies the database to a destination directory on the server — on demand or on a schedule (15 minutes to a week) — with an automatic retention period that deletes backups older than the chosen number of days.
+
+In a container, set the backup folder to `/app/backups` and mount that path on its own volume so backups survive container recreation:
+
+```yaml
+volumes:
+  - galene_data:/app/data
+  - galene_backups:/app/backups   # uncomment in docker-compose.yml
+```
+
+Then in the UI: Settings → Backups → Folder → `/app/backups` → Save folder. (The compose file ships with the backups volume commented out — see [Docker & Compose](/self-host/docker/) for the full setup.)
+
+:::warning
+Backups are full copies of the database file, so they contain every user's data and all stored credentials. Keep the backups volume private, and copy it off-box if you want redundancy beyond the host.
+:::

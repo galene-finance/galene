@@ -1,0 +1,121 @@
+# Publishes the two Galene images to GitHub Container Registry:
+#   ghcr.io/<owner>/<repo>:app[-<ver>|-latest]   (web app)
+#   ghcr.io/<owner>/<repo>:mcp[-<ver>|-latest]   (MCP server)
+#
+# Flow:
+#   push to `test`  -> :app-test / :mcp-test (mutable, "latest on test") plus
+#                      :app-test-<sha> / :mcp-test-<sha> (immutable, pin a build)
+#   merge to `main` -> :app-latest / :mcp-latest (+ :app-main / :mcp-main)
+#   tag v*          -> :app-<ver> / :mcp-<ver> (release; see release.yml)
+#
+# For a private beta repo this works out of the box: GITHUB_TOKEN can publish
+# to the workflow's own repository. Pulling the images from *another* machine
+# (e.g. your home server) requires a classic PAT with read:packages —
+# fine-grained tokens cannot access GHCR.
+#
+# Both images are multi-arch (linux/amd64 + linux/arm64) so amd64 and
+# Apple Silicon / arm64 hosts each get a native image. Keep both
+# platforms in the build steps below (buildx + QEMU are set up for that).
+
+name: Docker
+
+on:
+  push:
+    branches: [main, test]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU (for the arm64 builds)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_REF_NAME}"
+          # v1.2.3 -> 1.2.3; branch pushes keep the branch name
+          if [[ "$ref" =~ ^v[0-9] ]]; then ver="${ref#v}"; else ver="$ref"; fi
+          base="${{ env.REGISTRY }}/${{ github.repository }}"
+          app_tags="$base:app-$ver"
+          mcp_tags="$base:mcp-$ver"
+          # build-push-action wants comma-separated tags
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            app_tags="$app_tags,$base:app-latest"
+            mcp_tags="$mcp_tags,$base:mcp-latest"
+          elif [[ ! "$ref" =~ ^v[0-9] ]]; then
+            # Branch builds (e.g. test) also get an immutable per-commit tag
+            # so a specific build can be pinned; the branch-name tag stays
+            # "latest on that branch".
+            sha="${GITHUB_SHA:0:7}"
+            app_tags="$app_tags,$base:app-${ver}-${sha}"
+            mcp_tags="$mcp_tags,$base:mcp-${ver}-${sha}"
+          fi
+          # Version baked into the app and stamped as an OCI label: the tag
+          # when publishing from a tag, otherwise package.json (the single
+          # source of truth, bumped by the release workflow).
+          if [[ "$ref" =~ ^v[0-9] ]]; then
+            app_version="${ref#v}"
+          else
+            app_version="$(node -p "require('./package.json').version")"
+          fi
+          echo "app=$app_tags" >> "$GITHUB_OUTPUT"
+          echo "mcp=$mcp_tags" >> "$GITHUB_OUTPUT"
+          echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: app
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.app }}
+          build-args: |
+            APP_VERSION=${{ steps.tags.outputs.app_version }}
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.tags.outputs.build_date }}
+          # Links the package to this repository (avoids the "package was
+          # pushed without a repo link" warning if it was ever pushed CLI-side)
+          labels: org.opencontainers.image.repos=${{ env.REGISTRY }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push mcp image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: mcp
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.mcp }}
+          build-args: |
+            APP_VERSION=${{ steps.tags.outputs.app_version }}
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.tags.outputs.build_date }}
+          labels: org.opencontainers.image.repos=${{ env.REGISTRY }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

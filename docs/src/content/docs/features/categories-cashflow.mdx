@@ -1,0 +1,50 @@
+---
+title: Categories & cashflow
+description: Income, expense, and transfer categories — and how they affect cashflow and budgets.
+---
+
+## Category types
+
+Galene categories are one of three types:
+
+- **Expense** — spending (groceries, rent, subscriptions).
+- **Income** — money in (salary, refunds you want to count as income).
+- **Transfer** — money moved between your own accounts (for example a credit card payment from checking).
+
+Create and edit them under **Settings → Categories** (Add / Edit open in a dialog). Transfer categories show a transfer badge and a short note that they are excluded from reports by default.
+
+## Deleting a category
+
+Deleting a category opens a confirm dialog. Choose **Move transactions to…** another category, or **None (uncategorized)**. Galene reassigns that category’s transactions (and any subcategories’ transactions), then deletes the category. Subcategories are removed with the parent. Budgets and rules that pointed only at the deleted category are removed as well.
+
+Starter transfer categories (**Credit card payment**, **Transfer**) can be deleted like any other category; they are seeded for new accounts and are not recreated on every page load.
+
+## Why transfers exist
+
+Paying a credit card from checking usually creates two bank transactions: a debit on checking and a credit on the card. If the card credit is categorized as **income**, cashflow (and other income totals) inflate. Mark both legs with a **transfer** category such as “Credit card payment” or “Transfer” instead.
+
+New accounts get starter transfer categories (**Credit card payment** and **Transfer**). Demo data also seeds transfer categories for checking↔savings moves. Existing category names are never renamed automatically.
+
+## Cashflow, budgets, and reports
+
+By default, transfer-categorized amounts are **excluded** from:
+
+- Cashflow **Income** and **Expenses** sections and totals
+- Home / dashboard month income and expense summaries
+- Spending trends that roll up expense totals
+- Budgets (transfer categories are not offered when creating a budget)
+
+Account balances still include every in-scope transaction (plus any opening balance on/after its as-of date — see [Accounts & tags](/features/accounts-tags/)).
+
+## Cashflow page filters (gear)
+
+The Cashflow page has a **gear** control that opens a dialog to include or exclude **accounts** and **categories** for that page only.
+
+- Preferences are saved per user and survive reload.
+- Defaults: all accounts, and all **non-transfer** categories.
+- Transfer categories stay excluded unless you explicitly select them in the gear dialog. The gear is a view filter — it does not replace transfer category semantics.
+- Empty multi-selects mean “all” for that dimension (with the transfer default above).
+
+## Transfer icon
+
+Transactions assigned to a transfer category show a small transfer icon next to the category on the Transactions page so you can spot them quickly.

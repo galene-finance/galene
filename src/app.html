@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="/favicon.svg" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<script>
+			// Apply the last-used theme before first paint. The stored value is
+			// a default theme slug or a user theme id; the matching stylesheet
+			// is loaded here so the theme is visible before hydration. Unknown
+			// values (e.g. a user theme id after signing out) simply have no
+			// CSS and fall back to the :root defaults.
+			(function () {
+				var t = localStorage.getItem('galene-theme');
+				if (!t) return;
+				document.documentElement.dataset.theme = t;
+				var link = document.createElement('link');
+				link.id = 'theme-css';
+				link.rel = 'stylesheet';
+				link.href = '/theme.css?theme=' + encodeURIComponent(t);
+				document.head.appendChild(link);
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit:load data-sveltekit:body>
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

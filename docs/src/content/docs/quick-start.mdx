@@ -1,0 +1,32 @@
+---
+title: Quick start
+description: Bring up Galene with Docker Compose, create the first admin account, and open the app.
+---
+
+## Requirements
+
+Docker or Podman, a persistent volume for `/app/data`, and a browser. `bun` is only needed for local development.
+
+## Run
+
+```bash
+docker compose up -d
+# open http://localhost:3000
+```
+
+The included `docker-compose.yml` builds the `app` target from the repo's `Dockerfile`, runs it on port **3000**, and mounts the database on a named volume. To use a published image instead, set `image: ghcr.io/galene-finance/galene:app-latest` in the compose file.
+
+:::note
+The first account on a server is always the **admin**. Optionally load demo data on signup.
+:::
+
+## Where to go next
+
+- [Getting an account](/getting-an-account/) — first account, adding users, sign-in, two-factor.
+- [API tokens](/api-tokens/) — for scripts and MCP clients.
+- [Docker & Compose](/self-host/docker/) — images, volumes, upgrades, troubleshooting.
+- [Podman](/self-host/podman/) — rootless, SELinux, podman-compose, quadlets.
+- [From source](/self-host/from-source/) — run the repo directly with bun.
+- [Reverse proxy](/self-host/reverse-proxy/) — TLS in front of the app.
+- [Backups](/self-host/backups/) — keep a copy of the database off the data volume.
+- [Configuration](/configuration/) — the environment variables the app reads.

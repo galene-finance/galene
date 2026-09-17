@@ -1,0 +1,31 @@
+name: Feature
+description: Propose a new capability
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why this matters / background
+    validations:
+      required: true
+  - type: textarea
+    id: success
+    attributes:
+      label: Success criteria
+      description: What “done” looks like
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Out of scope, must-not-touch, platforms
+  - type: textarea
+    id: verify
+    attributes:
+      label: How to verify
+      description: Steps on :app-test / docs preview
+    validations:
+      required: true

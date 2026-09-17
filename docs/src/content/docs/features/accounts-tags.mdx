@@ -1,0 +1,49 @@
+---
+title: Accounts & tags
+description: Bank accounts and free-form transaction tags — create, edit, opening balance, and safer delete from Settings.
+---
+
+## Accounts
+
+Create and edit accounts under **Settings → Accounts** (Add / Edit open in a dialog). Types are bank, credit, cash, investment, and other. Optional color shows in lists.
+
+Every transaction belongs to exactly one account (`account_id` is required).
+
+## Opening balance
+
+After bank sync (or whenever history is incomplete), set an **opening balance** and **as-of date** on create or edit:
+
+- Opening is the account balance **before** transactions dated on or after the as-of date (signed cents — same sign convention as transactions: negative = money out / typical credit-card liability).
+- **Current balance** = opening + sum of transactions on or after the as-of date.
+- Leave both fields blank to use transaction history only (no anchor).
+
+This is a ledger anchor, not a full reconcile workflow and not the provider/bank-reported balance.
+
+### Suggest from bank
+
+When a linked account has a provider **Bank** balance, Edit account can suggest an opening so **Ledger ≈ Bank** after you save:
+
+- **Suggested opening ≈ bank balance − sum of transactions on or after the as-of date**
+- Default **as-of** is the **earliest imported transaction** for that account (so all imported history sits after the anchor). If there are no transactions yet, the default is the sync / bank balance date.
+- Choose **Use suggestion** to fill opening + as-of together; nothing is written until you **Save**. Dismiss or ignore anytime — Galene never auto-writes opening from the bank.
+- Manual accounts (no Bank value) do not get a fake bank suggestion. Optionally type what the bank shows and use the same formula when a default as-of is available.
+
+## Ledger vs Bank
+
+Account rows (and the Home Balances widget) show **Ledger** — the computed balance above — and, for linked accounts after sync, **Bank** — the last provider-reported balance with its as-of time. Manual accounts hide Bank. Seeing drift is intentional; Galene does not silently write the ledger to match the bank.
+
+## Deleting an account
+
+Deleting an account opens a confirm dialog. Choose **Move transactions to…** another account — there is no “none” option. Galene reassigns that account’s transactions and scheduled items, then deletes the account.
+
+If this is your only account, create another first; delete stays blocked until there is a destination.
+
+Imported bank links on the deleted account are removed with it. Transactions that were reassigned stay on the destination account.
+
+## Tags
+
+Tags are free-form labels you can attach to many transactions (many-to-many). Create and edit them under **Settings → Tags** (Add / Edit open in a dialog).
+
+## Deleting a tag
+
+Deleting a tag opens a confirm dialog. Galene **detaches** the tag from all transactions and scheduled items, then removes the tag. Transactions themselves are unchanged.

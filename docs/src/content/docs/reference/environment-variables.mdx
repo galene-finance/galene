@@ -1,0 +1,29 @@
+---
+title: Environment variables
+description: Every environment variable the app and MCP images read.
+---
+
+## App image
+
+| Variable | Default (in container) | Description |
+| --- | --- | --- |
+| `GALENE_DATA_DIR` | `/app/data` | Directory for the database file. Must be a mounted volume. |
+| `GALENE_DB_PATH` | `$GALENE_DATA_DIR/galene.db` | Full path to the SQLite database. |
+| `PORT` | `3000` | HTTP port the app listens on. |
+| `NODE_ENV` | `production` (baked into the image) | Affects the session cookie's `Secure` flag by default. |
+| `GALENE_COOKIE_SECURE` | unset → follows `NODE_ENV` | `1`/`true`/`yes`/`on` sets the `Secure` flag; `0`/`false`/`no`/`off` clears it. |
+| `PROTOCOL_HEADER` | unset | Bun adapter: name of the header that carries the public scheme behind a TLS proxy. Set to `x-forwarded-proto` when TLS terminates upstream. |
+| `HOST_HEADER` | unset → request `Host` | Bun adapter: header for the public hostname (`host` or `x-forwarded-host`). |
+| `PORT_HEADER` | unset | Optional Bun adapter: header for a non-default public port. |
+| `ADDRESS_HEADER` | unset | Optional Bun adapter: client IP header (e.g. `x-forwarded-for`) for logging / rate limits. |
+| `XFF_DEPTH` | `1` | Optional Bun adapter: which hop from the end of `X-Forwarded-For` is the client when `ADDRESS_HEADER=x-forwarded-for`. |
+| `GALENE_ALLOW_EPHEMERAL_DATA` | unset | `1` disables the startup volume check. Only for throwaway/test containers. |
+
+## MCP image
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GALENE_API_URL` | `http://localhost:3000` | Base URL of the Galene instance the MCP server calls. |
+| `GALENE_API_TOKEN` | — (**required**) | An API token from Settings → API. The process exits if it is missing. |
+
+When to set `GALENE_COOKIE_SECURE` and the adapter proxy headers (`PROTOCOL_HEADER`, `HOST_HEADER`, …): [Reverse proxy](/self-host/reverse-proxy/). Outside the container the default `GALENE_DATA_DIR` is `./data` — see [From source](/self-host/from-source/).

@@ -1,0 +1,36 @@
+---
+title: SimpleFIN
+description: Connecting Galene to SimpleFIN or any bank that implements the SimpleFIN protocol.
+---
+
+SimpleFIN is a protocol for pulling account and transaction data from a bank or bridge: the bank gives you a one-time setup token, and the app exchanges it once for a long-lived access URL. The [SimpleFIN protocol docs](https://www.simplefin.org/protocol.html) cover the format.
+
+## How Galene uses it
+
+1. You paste a **one-time setup token** into Galene.
+2. Galene claims it once — a single POST to the URL encoded in the token — and stores the returned **access URL**.
+3. Every later sync uses the stored access URL. The setup token is discarded and cannot be reused.
+
+Galene only accepts setup tokens that decode to an `https` URL.
+
+## Connecting
+
+1. Get a setup token from SimpleFIN — or from your bank's SimpleFIN settings, if your bank implements the protocol directly.
+2. In Galene, go to **Settings → Bank sync** → **SimpleFIN** and paste the token into the **SimpleFIN setup token** field.
+3. Press **Connect**. Galene claims the token and imports your accounts and transactions.
+
+If the token was already used or is invalid, Galene says:
+
+> This SimpleFIN setup token is invalid or has already been used. Generate a new one in your SimpleFIN settings and try again.
+
+If an existing connection later fails to authenticate, the access was revoked or expired:
+
+> Your SimpleFIN access was revoked or has expired. Generate a new setup token and reconnect.
+
+In either case, generate a new setup token and reconnect.
+
+## Auto-sync
+
+SimpleFIN syncs at most every **2 hours**. The bridge allows 24 requests per day per access, and each Galene sync is one request (`GET /accounts`), so 2 hours is the shortest interval that fits inside the daily budget. You can also set a connection to **Manual only** and press **Sync now** when you want it.
+
+Disconnecting a SimpleFIN connection keeps the accounts and transactions already imported.

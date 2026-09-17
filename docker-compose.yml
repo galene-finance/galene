@@ -1,0 +1,40 @@
+# Galene — single service. You bring your own reverse proxy (Caddy, nginx,
+# Traefik, …) if you want TLS; the app itself listens on plain HTTP :3000.
+#
+# Works with both `docker compose` and `podman-compose`.
+
+services:
+  galene:
+    # Local build (default). To pull a prebuilt image from GitHub Container
+    # Registry instead, comment out the `build:` block and set:
+    #   image: ghcr.io/<owner>/<repo>:app
+    image: galene:app
+    build:
+      context: .
+      target: app
+    ports:
+      - "3000:3000"
+    environment:
+      # The Dockerfile sets NODE_ENV=production, which makes the session
+      # cookie Secure by default. Over plain HTTP (no TLS-terminating proxy)
+      # browsers won't send a Secure cookie and login silently fails, so
+      # plain-HTTP self-hosting sets this to "0".
+      # If you put a TLS-terminating reverse proxy in front, set it to "1".
+      GALENE_COOKIE_SECURE: "0"
+    volumes:
+      # The database lives here, not in the container's writable layer.
+      # The app refuses to start if /app/data is not a mounted volume.
+      - galene_data:/app/data
+      # Optional: persist UI-configured database backups (Settings → Backups).
+      # /app/backups is the allowlisted backup root (GALENE_BACKUP_ROOT); set
+      # the destination folder to it (or a subfolder) and uncomment this to keep
+      # backups across container recreation.
+      # - galene_backups:/app/backups
+    restart: unless-stopped
+    # The app's shutdown handler waits up to SHUTDOWN_TIMEOUT (default 30s)
+    # to finish in-flight work; give it headroom before SIGKILL.
+    stop_grace_period: 40s
+
+volumes:
+  galene_data:
+  # galene_backups:

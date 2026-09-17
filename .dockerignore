@@ -1,0 +1,32 @@
+# dev database (contains real data; the image gets a fresh one)
+data/
+
+# rebuilt inside the image
+node_modules/
+build/
+.svelte-kit/
+
+# version control
+.git/
+
+# agent/tooling runtime artifacts
+.grok/
+.agents/
+.playwright-cli/
+.playwright/
+
+# dev-only files
+cur.yml
+requirements.txt
+scripts/
+*.log
+.env*
+.DS_Store
+*.tsbuildinfo
+.cache
+.eslintcache
+
+# root-level mockup images only — static/ (favicon.png) must ship with the app
+/cashflow-12mo.png
+/cashflow-6mo.png
+/plaid-widget.png

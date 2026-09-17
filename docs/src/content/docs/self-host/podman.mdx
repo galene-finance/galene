@@ -1,0 +1,85 @@
+---
+title: Podman (compose & quadlets)
+description: Rootless Podman, SELinux labels, podman-compose, and quadlet units.
+---
+
+The [Docker & Compose](/self-host/docker/) guide covers the images, the volume requirement, upgrades, and most of the troubleshooting; this page is what is different under Podman.
+
+## Rootless
+
+Rootless Podman is fine: the app listens on port **3000**, which is above 1024, so an unprivileged user can bind it. If you remap to a port **below 1024**, rootless needs `sysctl net.ipv4.ip_unprivileged_port_start=0` (or run privileged).
+
+## SELinux
+
+On SELinux hosts (Fedora, RHEL), append `:z` (shared) or `:Z` (private) to **bind mounts**:
+
+```bash
+podman run -d --name galene \
+  -v /var/lib/galene:/app/data:Z \
+  -p 3000:3000 \
+  galene:app
+```
+
+Named volumes are relabeled by Podman automatically and need no suffix.
+
+## podman-compose
+
+The same `docker-compose.yml` works with [`podman-compose`](https://github.com/containers/podman-compose):
+
+```bash
+podman-compose up -d
+```
+
+## Quadlet
+
+For a systemd-managed container, a quadlet unit is the cleanest path. For a rootless user, put this in `~/.config/containers/systemd/galene.container` (for a system service, `/etc/containers/systemd/` instead):
+
+```ini
+[Container]
+Image=ghcr.io/galene-finance/galene:app-latest
+ContainerName=galene
+PublishPort=3000:3000
+Volume=galene_data:/app/data
+Environment=GALENE_COOKIE_SECURE=0
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target
+```
+
+Then enable and start it:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now galene.container
+journalctl --user -u galene.container -f
+```
+
+Notes:
+
+- The named volume `galene_data` is created by Podman on first start and relabeled automatically. If you prefer a bind mount, use `Volume=/path/on/host:/app/data:Z` (`:Z` on SELinux hosts).
+- `GALENE_COOKIE_SECURE=0` is for plain HTTP; set it to `1` behind a TLS-terminating proxy ([Reverse proxy](/self-host/reverse-proxy/)).
+- For a system unit, use `WantedBy=multi-user.target` and `systemctl enable --now galene.container` (without `--user`).
+
+## Storage driver
+
+Avoid `vfs` — it is very slow for the SQLite WAL workload. `overlay`/`overlay2` (the default) is what you want.
+
+## Pulling from GHCR
+
+`podman login ghcr.io` with a **classic** personal access token that has `read:packages` (fine-grained tokens cannot access GHCR), then:
+
+```bash
+podman pull ghcr.io/galene-finance/galene:app-latest
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| Can't bind a port below 1024 as a normal user | `sysctl net.ipv4.ip_unprivileged_port_start=0`, or use a port ≥ 1024. |
+| `podman pull ghcr.io/…` fails with a fine-grained token | Use a classic PAT with `read:packages`. |
+
+Everything else — the volume requirement, healthcheck, upgrades, and the cookie behavior — is the same as [Docker & Compose](/self-host/docker/).

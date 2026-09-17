@@ -1,0 +1,67 @@
+---
+title: From source
+description: Run Galene directly with bun — development and production.
+---
+
+Galene is a SvelteKit app that runs on [bun](https://bun.sh) (1.1+; the app uses `bun:sqlite`). If you would rather run it without a container, this is the path.
+
+## Development
+
+```bash
+git clone https://github.com/galene-finance/galene.git
+cd galene-finance
+bun install
+bun run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173). On first run you are prompted to create an account (name, email, password); the first account on a server is always the **admin**, and you can optionally tick "Load demo data" to seed sample accounts, ~3 months of transactions, budgets, and rules.
+
+## Production
+
+```bash
+bun install
+bun run build
+bun run build/index.js
+```
+
+The server listens on port **3000** by default. Run it under your service manager of choice (systemd, …) so it starts on boot and restarts on failure.
+
+## Environment variables
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `GALENE_DATA_DIR` | `./data` | Where the database file lives. On Linux this must sit on its own mount — see below. |
+| `PORT` | `3000` | HTTP port. |
+| `GALENE_COOKIE_SECURE` | follows `NODE_ENV` | `0` for plain HTTP, `1` behind a TLS-terminating proxy ([Reverse proxy](/self-host/reverse-proxy/)). |
+
+The full table is in [Environment variables](/reference/environment-variables/).
+
+## The data directory on Linux
+
+The app refuses to start if its data directory sits on the root filesystem instead of a **separate mount** (the same check that container deployments rely on; on Linux it reads `/proc/mounts`). A bind mount satisfies it:
+
+```bash
+sudo mkdir -p /srv/galene-data /var/lib/galene
+sudo chown <user>:<group> /var/lib/galene
+```
+
+```
+# /etc/fstab
+/srv/galene-data  /var/lib/galene  none  bind  0  0
+```
+
+```bash
+sudo mount -a
+GALENE_DATA_DIR=/var/lib/galene bun run build/index.js
+```
+
+On macOS and Windows there is no `/proc/mounts`, so the check is skipped and `./data` works as-is — which is why development is unaffected.
+
+## First account
+
+The first account created on a fresh database is always the **admin** — create it deliberately. Additional accounts (and more admins) are created by an admin under Settings → Users.
+
+## Notes
+
+- The database is a single SQLite file (`galene.db`, WAL mode) in the data directory. Back it up the way the container deployments do — see [Backups](/self-host/backups/).
+- The production build bakes in `NODE_ENV=production`, so the session cookie is `Secure` by default; set `GALENE_COOKIE_SECURE=0` if you serve plain HTTP.

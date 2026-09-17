@@ -108,6 +108,23 @@ export interface Scheduled {
 	tag_ids?: number[];
 }
 
+export interface RecurringSuggestion {
+	key: string;
+	merchant: string;
+	hitCount: number;
+	medianAmountCents: number;
+	nextDate: string;
+	lastDate: string;
+	repeatInterval: number;
+	repeatUnit: RepeatUnit;
+	accountId: number | null;
+	accountName: string | null;
+	categoryId: number | null;
+	categoryName: string | null;
+	confidence: number;
+	sampleDates: string[];
+}
+
 export type NotificationKind = 'sync_failed' | 'sync_recovered' | 'budget_overrun' | 'bill_upcoming';
 
 export interface AppNotification {

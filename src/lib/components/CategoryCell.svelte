@@ -61,27 +61,6 @@
 	reset:false skips the default form.reset(), which would wipe the
 	combobox's display value (its default is empty) right after a selection. -->
 <div class="inline-flex items-center gap-1">
-	{#if isTransfer}
-		<span
-			class="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground"
-			title="Transfer — excluded from cashflow income/expense"
-			aria-label="Transfer category"
-		>
-			<svg
-				class="size-3.5"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				aria-hidden="true"
-			>
-				<path d="M7 16V4m0 0L3 8m4-4l4 4" />
-				<path d="M17 8v12m0 0l4-4m-4 4l-4-4" />
-			</svg>
-		</span>
-	{/if}
 	<form
 		id="cat-form-{transaction.id}"
 		method="POST"
@@ -107,6 +86,27 @@
 			class="h-8 w-full cursor-pointer"
 		/>
 	</form>
+	{#if isTransfer}
+		<span
+			class="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground"
+			title="Transfer — excluded from cashflow income/expense"
+			aria-label="Transfer category"
+		>
+			<svg
+				class="size-3.5"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M7 16V4m0 0L3 8m4-4l4 4" />
+				<path d="M17 8v12m0 0l4-4m-4 4l-4-4" />
+			</svg>
+		</span>
+	{/if}
 	{#if transaction.splits && transaction.splits.length > 1}
 		<span
 			class="ml-0.5 inline-block rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"

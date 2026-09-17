@@ -1,0 +1,141 @@
+# Mirror org Project Status → status/* issue labels (so board drags wake Lead).
+# Project: https://github.com/orgs/galene-finance/projects/1
+# Grant this repo's GitHub Actions access on the Project (Settings → Manage access).
+name: Galene status label sync
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync Project Status to status/* labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT_OWNER: galene-finance
+          PROJECT_NUMBER: '1'
+          REPO: galene-finance/galene
+        run: |
+          set -euo pipefail
+
+          # Status option name → label (exact match on Project Status titles)
+          map_status() {
+            case "$1" in
+              "Backlog") echo "status/backlog" ;;
+              "Ready") echo "status/ready" ;;
+              "In Progress") echo "status/in-progress" ;;
+              "In Review") echo "status/in-review" ;;
+              "Testing Failed") echo "status/testing-failed" ;;
+              "Ready for Main") echo "status/ready-for-main" ;;
+              "Done") echo "status/done" ;;
+              *) echo "" ;;
+            esac
+          }
+
+          ALL_STATUS_LABELS='status/backlog status/ready status/in-progress status/in-review status/testing-failed status/ready-for-main status/done'
+
+          # Resolve project node id
+          PROJECT_ID=$(gh api graphql -f query='
+            query($owner:String!,$number:Int!){
+              organization(login:$owner){
+                projectV2(number:$number){ id }
+              }
+            }' -f owner="$PROJECT_OWNER" -F number="$PROJECT_NUMBER" \
+            --jq '.data.organization.projectV2.id')
+
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
+            echo "Could not read org project (grant Actions access on the Project, or add a PAT with read:project)."
+            exit 1
+          fi
+
+          # Page open items that are Issues in this repo
+          cursor=""
+          while :; do
+            if [ -n "$cursor" ]; then
+              RESP=$(gh api graphql -f query='
+                query($id:ID!,$cursor:String!){
+                  node(id:$id){
+                    ... on ProjectV2 {
+                      items(first:50, after:$cursor){
+                        pageInfo{ hasNextPage endCursor }
+                        nodes{
+                          content{
+                            ... on Issue {
+                              number
+                              repository{ nameWithOwner }
+                              labels(first:30){ nodes{ name } }
+                            }
+                          }
+                          fieldValueByName(name:"Status"){
+                            ... on ProjectV2ItemFieldSingleSelectValue{ name }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }' -f id="$PROJECT_ID" -f cursor="$cursor")
+            else
+              RESP=$(gh api graphql -f query='
+                query($id:ID!){
+                  node(id:$id){
+                    ... on ProjectV2 {
+                      items(first:50){
+                        pageInfo{ hasNextPage endCursor }
+                        nodes{
+                          content{
+                            ... on Issue {
+                              number
+                              repository{ nameWithOwner }
+                              labels(first:30){ nodes{ name } }
+                            }
+                          }
+                          fieldValueByName(name:"Status"){
+                            ... on ProjectV2ItemFieldSingleSelectValue{ name }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }' -f id="$PROJECT_ID")
+            fi
+
+            echo "$RESP" | jq -c '.data.node.items.nodes[]?' | while read -r node; do
+              repo=$(echo "$node" | jq -r '.content.repository.nameWithOwner // empty')
+              [ "$repo" = "$REPO" ] || continue
+              num=$(echo "$node" | jq -r '.content.number // empty')
+              [ -n "$num" ] || continue
+              status=$(echo "$node" | jq -r '.fieldValueByName.name // empty')
+              desired=$(map_status "$status")
+              [ -n "$desired" ] || continue
+
+              current=$(echo "$node" | jq -r '[.content.labels.nodes[].name | select(startswith("status/"))] | join(" ")')
+              if echo " $current " | grep -q " $desired "; then
+                # already has desired; still strip other status/* 
+                extras=$(echo "$current" | tr ' ' '\n' | grep '^status/' | grep -v "^${desired}$" || true)
+                if [ -z "$extras" ]; then
+                  echo "#${num}: ok ($desired)"
+                  continue
+                fi
+              fi
+
+              echo "#${num}: Status=$status → $desired (had: ${current:-none})"
+              for old in $ALL_STATUS_LABELS; do
+                if [ "$old" != "$desired" ] && echo " $current " | grep -q " $old "; then
+                  gh issue edit "$num" -R "$REPO" --remove-label "$old" || true
+                fi
+              done
+              if ! echo " $current " | grep -q " $desired "; then
+                gh issue edit "$num" -R "$REPO" --add-label "$desired"
+              fi
+            done
+
+            has=$(echo "$RESP" | jq -r '.data.node.items.pageInfo.hasNextPage')
+            [ "$has" = "true" ] || break
+            cursor=$(echo "$RESP" | jq -r '.data.node.items.pageInfo.endCursor')
+          done

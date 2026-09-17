@@ -1,0 +1,39 @@
+# Forward status/* label events to Grok Bot → Galene Lead.
+# Secrets (repo): GALENE_BOARD_WEBHOOK_URL, GALENE_BOARD_WEBHOOK_KEY
+name: Galene board webhook
+on:
+  issues:
+    types: [labeled, unlabeled]
+
+jobs:
+  notify:
+    if: >-
+      startsWith(github.event.label.name, 'status/') &&
+      contains(fromJSON('["status/ready","status/testing-failed","status/in-review","status/ready-for-main"]'), github.event.label.name)
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST to Grok Bot webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.GALENE_BOARD_WEBHOOK_URL }}
+          WEBHOOK_KEY: ${{ secrets.GALENE_BOARD_WEBHOOK_KEY }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_LABEL: ${{ github.event.label.name }}
+          EVENT_REPO: ${{ github.repository }}
+          ISSUE_JSON: ${{ toJSON(github.event.issue) }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WEBHOOK_URL:-}" ] || [ -z "${WEBHOOK_KEY:-}" ]; then
+            echo "Missing GALENE_BOARD_WEBHOOK_URL or GALENE_BOARD_WEBHOOK_KEY — skipping"
+            exit 0
+          fi
+          # Build JSON via jq + env (avoid embedding issue body in the workflow script)
+          payload=$(jq -n \
+            --arg action "$EVENT_ACTION" \
+            --arg label "$EVENT_LABEL" \
+            --arg repo "$EVENT_REPO" \
+            --argjson issue "$ISSUE_JSON" \
+            '{source:"galene-board-webhook",action:$action,label:$label,repository:$repo,issue:$issue}')
+          curl -fsS -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${WEBHOOK_KEY}" \
+            -d "$payload"

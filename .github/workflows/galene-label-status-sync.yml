@@ -1,0 +1,137 @@
+# When a status/* label is applied, set org Project Status to match.
+# Secret: GALENE_PROJECT_TOKEN (repo + project scopes)
+name: Galene label to Status sync
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    if: startsWith(github.event.label.name, 'status/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set Project Status from status/* label
+        env:
+          GH_TOKEN: ${{ secrets.GALENE_PROJECT_TOKEN }}
+          PROJECT_OWNER: galene-finance
+          PROJECT_NUMBER: '1'
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          LABEL: ${{ github.event.label.name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "Missing GALENE_PROJECT_TOKEN"
+            exit 1
+          fi
+
+          case "$LABEL" in
+            status/backlog) STATUS_NAME="Backlog" ;;
+            status/ready) STATUS_NAME="Ready" ;;
+            status/in-progress) STATUS_NAME="In Progress" ;;
+            status/in-review) STATUS_NAME="In Review" ;;
+            status/testing-failed) STATUS_NAME="Testing Failed" ;;
+            status/ready-for-main) STATUS_NAME="Ready for Main" ;;
+            status/done) STATUS_NAME="Done" ;;
+            *) echo "Ignoring $LABEL"; exit 0 ;;
+          esac
+
+          META=$(gh api graphql -f query='
+            query($owner:String!,$number:Int!){
+              organization(login:$owner){
+                projectV2(number:$number){
+                  id
+                  field(name:"Status"){
+                    ... on ProjectV2SingleSelectField {
+                      id
+                      options { id name }
+                    }
+                  }
+                }
+              }
+            }' -f owner="$PROJECT_OWNER" -F number="$PROJECT_NUMBER")
+
+          PROJECT_ID=$(echo "$META" | jq -r '.data.organization.projectV2.id')
+          FIELD_ID=$(echo "$META" | jq -r '.data.organization.projectV2.field.id')
+          OPTION_ID=$(echo "$META" | jq -r --arg n "$STATUS_NAME" '.data.organization.projectV2.field.options[] | select(.name==$n) | .id')
+
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
+            echo "Could not read project"; exit 1
+          fi
+          if [ -z "$OPTION_ID" ] || [ "$OPTION_ID" = "null" ]; then
+            echo "No Status option named '$STATUS_NAME' — check Project Status titles"
+            exit 1
+          fi
+
+          cursor=""
+          ITEM_ID=""
+          while :; do
+            if [ -n "$cursor" ]; then
+              RESP=$(gh api graphql -f query='
+                query($id:ID!,$cursor:String!){
+                  node(id:$id){
+                    ... on ProjectV2 {
+                      items(first:50, after:$cursor){
+                        pageInfo{ hasNextPage endCursor }
+                        nodes{
+                          id
+                          content{
+                            ... on Issue { number repository{ nameWithOwner } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }' -f id="$PROJECT_ID" -f cursor="$cursor")
+            else
+              RESP=$(gh api graphql -f query='
+                query($id:ID!){
+                  node(id:$id){
+                    ... on ProjectV2 {
+                      items(first:50){
+                        pageInfo{ hasNextPage endCursor }
+                        nodes{
+                          id
+                          content{
+                            ... on Issue { number repository{ nameWithOwner } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }' -f id="$PROJECT_ID")
+            fi
+
+            ITEM_ID=$(echo "$RESP" | jq -r --argjson n "$ISSUE_NUMBER" --arg repo "$REPO" '
+              .data.node.items.nodes[]?
+              | select(.content.repository.nameWithOwner==$repo and .content.number==$n)
+              | .id' | head -1)
+
+            if [ -n "$ITEM_ID" ]; then
+              break
+            fi
+            has=$(echo "$RESP" | jq -r '.data.node.items.pageInfo.hasNextPage')
+            [ "$has" = "true" ] || break
+            cursor=$(echo "$RESP" | jq -r '.data.node.items.pageInfo.endCursor')
+          done
+
+          if [ -z "$ITEM_ID" ]; then
+            echo "Issue #$ISSUE_NUMBER not on Project $PROJECT_NUMBER — nothing to move"
+            exit 0
+          fi
+
+          gh api graphql -f query='
+            mutation($project:ID!,$item:ID!,$field:ID!,$option:String!){
+              updateProjectV2ItemFieldValue(input:{
+                projectId:$project
+                itemId:$item
+                fieldId:$field
+                value:{ singleSelectOptionId:$option }
+              }) { projectV2Item { id } }
+            }' -f project="$PROJECT_ID" -f item="$ITEM_ID" -f field="$FIELD_ID" -f option="$OPTION_ID" \
+            --jq '.data.updateProjectV2ItemFieldValue.projectV2Item.id'
+
+          echo "Moved #$ISSUE_NUMBER → $STATUS_NAME"

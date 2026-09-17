@@ -21,7 +21,7 @@ Galene is self-hostable personal finance (SvelteKit + Bun + SQLite). Prefer smal
 5. **Comment on the issue** in the same turn the work lands on `test`: short SHA + commit URL, what changed, docs note, how to verify on `:app-test`. Do **not** close the issue.
 6. **Human verifies** on `:app-test` (Settings → About / `GET /version` for the SHA). Approve by merging `test` → `main` (or asking for that ship).
 7. **Push/merge to `main`** refreshes `:app-latest` / `:mcp-latest`.
-8. **Releases only when asked:** Actions → Release → enter semver. That bumps `package.json`, tags `vX.Y.Z`, and publishes `:app-<ver>` / `:mcp-<ver>`.
+8. **Releases only when asked:** Actions → Release → enter **major.minor** (e.g. `0.2`, not `0.2.0`). That bumps `package.json`, tags `vX.Y`, and publishes `:app-<ver>` / `:mcp-<ver>`.
 
 ### Working rules
 

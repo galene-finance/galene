@@ -6,6 +6,7 @@
 	import Field from './ui/Field.svelte';
 	import Input from './ui/Input.svelte';
 	import Select from './ui/Select.svelte';
+	import { categoryPickerItems } from '$lib/categoryPicker';
 	import type { Account, CategorizationRule, Category, RuleCondition, RuleField, RuleOp } from '$lib/types';
 	import { centsToDollars } from '$lib/utils';
 	import type { SubmitFunction } from '@sveltejs/kit';
@@ -73,14 +74,7 @@
 	let conditions = $state<DialogCondition[]>([{ field: 'merchant', op: 'contains', value: '' }]);
 	let applyExisting = $state(false);
 
-	const categoryItems = $derived(
-		categories
-			.filter((c) => c.type === type || c.type === 'transfer')
-			.map((c) => ({
-				value: String(c.id),
-				label: c.type === 'transfer' ? `${c.name} (transfer)` : c.name
-			}))
-	);
+	const categoryItems = $derived(categoryPickerItems(categories));
 	const accountItems = $derived(accounts.map((a) => ({ value: String(a.id), label: a.name })));
 
 	// Keep ops valid for their field (e.g. switching Amount → Merchant drops 'gt').
@@ -98,11 +92,6 @@
 	function onTypeChange(newType: 'expense' | 'income') {
 		if (newType === type) return;
 		type = newType;
-		const cat = categories.find((c) => String(c.id) === categoryId);
-		if (cat && cat.type !== 'transfer' && cat.type !== newType) {
-			categoryId = '';
-			categoryCreate = false;
-		}
 	}
 
 	$effect(() => {

@@ -65,19 +65,28 @@ The database migrates automatically at startup (versioned `PRAGMA user_version` 
 
 ## Pulling the published images
 
-The images are published to GitHub Container Registry: `:app-latest` / `:mcp-latest` for `main`, `:app-<ver>` / `:mcp-<ver>` for releases, and `:app-test` / `:app-test-<sha>` for the `test` branch. GHCR requires a token — a **classic** personal access token with the `read:packages` scope (fine-grained tokens cannot access GHCR):
+The images are published to GitHub Container Registry: `:app-latest` / `:mcp-latest` for `main`, `:app-<ver>` / `:mcp-<ver>` for releases, and `:app-test` / `:app-test-<sha>` for the `test` branch.
+
+**Public images pull anonymously** — no GitHub login or token:
+
+```bash
+docker pull ghcr.io/galene-finance/galene:app-latest
+```
+
+Then set `image:` in the compose file as in the quick start.
+
+Only if pull fails (private package, org policy, rate limits, etc.) log in with a **classic** personal access token that has `read:packages`. Fine-grained PATs cannot authenticate to GHCR:
 
 ```bash
 echo "<PAT>" | docker login ghcr.io --username <github-user> --password-stdin
 docker pull ghcr.io/galene-finance/galene:app-latest
 ```
 
-Then set `image:` in the compose file as in the quick start.
-
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 | --- | --- |
+| `docker pull ghcr.io/…` fails after a fine-grained `docker login` | Log out (`docker logout ghcr.io`) and pull anonymously, or use a classic PAT with `read:packages`. |
 | Container exits: "the data directory … is on the container's ephemeral filesystem" | No volume mounted at `/app/data`. Add `-v galene_data:/app/data` or the compose `volumes:` entry. `GALENE_ALLOW_EPHEMERAL_DATA=1` is for throwaway containers only. |
 | Login "succeeds" but you are bounced back to the login page | The session cookie is `Secure` but you are on plain HTTP. Set `GALENE_COOKIE_SECURE=0` (the compose file ships with this). Behind a TLS proxy, set it to `1`. |
 | Sign in does nothing / console `file:///` / view-source has `http://…` under HTTPS | Behind TLS set `PROTOCOL_HEADER=x-forwarded-proto` and `HOST_HEADER=host` (see [Reverse proxy](/self-host/reverse-proxy/)). |

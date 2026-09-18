@@ -14,7 +14,7 @@
 {:else}
 	<ul class="divide-y divide-border">
 		{#each data.items as tx (tx.id)}
-			<li class="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+			<li class="flex min-w-0 items-center gap-3 py-2 first:pt-0 last:pb-0">
 				<span
 					class="size-2.5 shrink-0 rounded-full"
 					style="background: {tx.color ?? tx.category_color ?? 'transparent'}"
@@ -25,8 +25,8 @@
 						{tx.category_name ?? 'No category'} · {tx.account_name}
 					</p>
 				</div>
-				<div class="shrink-0 text-right">
-					<p class="text-sm font-medium {tx.amount_cents > 0 ? 'text-success' : ''}">
+				<div class="min-w-0 shrink-0 text-right">
+					<p class="truncate text-sm font-medium {tx.amount_cents > 0 ? 'text-success' : ''}">
 						{formatMoney(tx.amount_cents)}
 					</p>
 					<p class="text-xs text-muted-foreground">{formatDate(tx.date)}</p>

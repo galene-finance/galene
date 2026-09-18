@@ -84,14 +84,14 @@
 
 <div
 	bind:this={cardEl}
-	class="group relative flex flex-col overflow-hidden rounded-lg border bg-surface {editMode
+	class="group relative flex min-w-0 max-w-full flex-col overflow-hidden rounded-lg border bg-surface {editMode
 		? 'border-dashed'
 		: ''} {dragging ? 'opacity-40' : ''}"
 	style="grid-column: {widget.x + 1} / span {widget.w}; grid-row: {widget.y + 1} / span {widget.h}; --dh: {widget.h}"
 	ondragover={handleDragOver}
 	ondrop={handleDrop}
 >
-	<div class="flex items-center gap-1.5 border-b border-border px-3 py-2">
+	<div class="flex min-w-0 items-center gap-1.5 border-b border-border px-3 py-2">
 		{#if editMode}
 			<div
 				role="presentation"
@@ -226,7 +226,7 @@
 		{/if}
 	</div>
 
-	<div class="min-h-0 flex-1 overflow-y-auto p-3">
+	<div class="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3">
 		{#if data === undefined}
 			<p class="text-sm text-muted-foreground">Loading…</p>
 		{:else if data.kind === 'balances'}

@@ -87,9 +87,17 @@
 <style>
 	.db-grid {
 		display: grid;
+		width: 100%;
+		min-width: 0;
 		grid-template-columns: repeat(12, minmax(0, 1fr));
 		grid-auto-rows: 96px;
 		gap: 16px;
+	}
+	/* Grid items default to min-width:auto and can force horizontal page overflow
+		on narrow viewports when widget content is wide (ADO-21). */
+	.db-grid > :global(*) {
+		min-width: 0;
+		max-width: 100%;
 	}
 	/* Animate slot changes only while a drag is in progress, so the live
 		preview's shift is visible without making resize or commits lag. */

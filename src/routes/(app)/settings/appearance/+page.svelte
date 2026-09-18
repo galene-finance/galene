@@ -6,7 +6,7 @@
 	import Select from '$lib/components/ui/Select.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import { readableOn } from '$lib/color';
-	import { ICONS, getIcon } from '$lib/icons';
+	import { EMBLEM_ICON_KEY, EMBLEM_SRC, ICONS, getIcon, normalizeBrandingIcon } from '$lib/icons';
 	import { DEFAULT_THEMES, applyThemeNow, themeValue } from '$lib/themes';
 	import { toastFormResult } from '$lib/toasts';
 	import type { Theme, ThemeColors } from '$lib/types';
@@ -118,11 +118,11 @@
 
 	// --- Branding ---
 	let appName = $state(data.appName);
-	let icon = $state(data.icon);
+	let icon = $state(normalizeBrandingIcon(data.icon));
 	let favicon = $state(data.favicon);
 	$effect(() => {
 		appName = data.appName;
-		icon = data.icon;
+		icon = normalizeBrandingIcon(data.icon);
 		favicon = data.favicon;
 	});
 	const faviconIcon = $derived(getIcon(favicon));
@@ -314,7 +314,21 @@
 
 				<div>
 					<span class="mb-1.5 block text-sm font-medium">Top-left icon</span>
+					<p class="mb-2 text-xs text-muted-foreground">
+						Emblem is the default image. Pick a stroke icon to override it, or choose Emblem again to go back.
+					</p>
 					<div class="flex flex-wrap gap-1.5">
+						<button
+							type="button"
+							class="flex size-9 items-center justify-center rounded-md border-2 transition-colors {icon === EMBLEM_ICON_KEY
+								? 'border-primary bg-primary/10'
+								: 'border-border hover:bg-surface-hover'}"
+							onclick={() => (icon = EMBLEM_ICON_KEY)}
+							aria-label="Emblem"
+							title="Emblem"
+						>
+							<img src={EMBLEM_SRC} alt="" class="size-5 rounded-full object-cover" />
+						</button>
 						{#each ICONS as ic (ic.key)}
 							<button
 								type="button"

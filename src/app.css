@@ -43,6 +43,12 @@
 	--radius-xl: calc(var(--radius) + 0.25rem);
 }
 
+/* Clip horizontal overflow on the root (ADO-21 / #40). html must clip too:
+	body alone is not enough on some WebKit/Firefox-iOS paths, and 100vw-based
+	max widths can still expand the document scrollport. */
+html {
+	@apply max-w-full overflow-x-clip;
+}
 body {
-	@apply overflow-x-clip bg-background text-foreground antialiased;
+	@apply max-w-full overflow-x-clip bg-background text-foreground antialiased;
 }

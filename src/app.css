@@ -50,12 +50,14 @@ html {
 	width: 100%;
 	max-width: 100%;
 	min-height: 100%;
+	overflow-x: hidden;
 	overflow-x: clip;
 }
 body {
 	width: 100%;
 	max-width: 100%;
 	min-height: 100%;
+	overflow-x: hidden;
 	overflow-x: clip;
 	@apply bg-background text-foreground antialiased;
 }

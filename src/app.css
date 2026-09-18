@@ -43,17 +43,14 @@
 	--radius-xl: calc(var(--radius) + 0.25rem);
 }
 
-/* ADO-21: never size the root with 100vw/100dvw — iOS can paint the first
-	frame against a too-wide viewport. Prefer width:100% and --vvw from the
-	early visualViewport sync in app.html. */
+/* ADO-21: never size the root with 100vw/100dvw. width/max-width 100% only —
+	do not lock html to --vvw (that can freeze a desktop-layout width if
+	Firefox Desktop Site briefly applies). --vvw is for component caps. */
 html {
 	width: 100%;
 	max-width: 100%;
 	min-height: 100%;
 	overflow-x: clip;
-}
-html.vv-ready {
-	max-width: var(--vvw, 100%);
 }
 body {
 	width: 100%;

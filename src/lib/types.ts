@@ -276,7 +276,7 @@ export const COLORS = [
 /** Per-user branding: the name and icon shown in the top bar. */
 export interface Branding {
 	name: string;
-	/** Built-in icon key, see lib/icons.ts. */
+	/** `emblem` for the static PNG, or a stroke icon key from lib/icons.ts. */
 	icon: string;
 }
 

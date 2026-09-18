@@ -1,8 +1,9 @@
 import { getSetting } from '$lib/server/finance';
 import { getThemeSetting, resolveTheme } from '$lib/server/themes';
 import { themeCssHash } from '$lib/themes';
+import { EMBLEM_ICON_KEY, normalizeBrandingIcon } from '$lib/icons';
 
-const DEFAULT_BRANDING = { name: 'Galene', icon: 'logo' };
+const DEFAULT_BRANDING = { name: 'Galene', icon: EMBLEM_ICON_KEY };
 
 export function load({ locals, depends }) {
 	depends('user');
@@ -13,7 +14,7 @@ export function load({ locals, depends }) {
 	}
 	const userId = locals.user.id;
 	const name = (getSetting(userId, 'app_name') ?? '').trim() || DEFAULT_BRANDING.name;
-	const icon = getSetting(userId, 'icon') ?? DEFAULT_BRANDING.icon;
+	const icon = normalizeBrandingIcon(getSetting(userId, 'icon') ?? DEFAULT_BRANDING.icon);
 	const theme = resolveTheme(userId);
 	return {
 		branding: { name, icon },

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { categoryPickerItems, findOppositeTypeCategory } from '$lib/categoryPicker';
+	import CategoryCreateConflictDialog from './CategoryCreateConflictDialog.svelte';
 	import Combobox from './ui/Combobox.svelte';
 	import type { Category, Transaction } from '$lib/types';
 
@@ -16,10 +18,11 @@
 	let value = $state('');
 	let search = $state('');
 	let create = $state(false);
-	// Captured at select-time from the combobox's own search state (passed as
-	// `typed`); the combobox clears its search when the dropdown closes, which
-	// happens before the delayed submit below reads this.
 	let newCategoryName = $state('');
+	let createMode = $state<'default' | 'use_existing' | 'create_anyway'>('default');
+	let conflictOpen = $state(false);
+	let conflictExisting = $state<Category | null>(null);
+	let pendingCreateName = $state('');
 
 	$effect(() => {
 		value = transaction.category_id ? String(transaction.category_id) : '';
@@ -34,32 +37,41 @@
 		transaction.category_type === 'transfer' || selected?.type === 'transfer'
 	);
 
-	// Income/expense categories matching the signed amount, plus all transfer categories.
 	const amountType = $derived(transaction.amount_cents < 0 ? 'expense' : 'income');
-	const items = $derived([
-		{ value: '', label: 'No category' },
-		...categories
-			.filter((c) => c.type === amountType || c.type === 'transfer')
-			.map((c) => ({
-				value: String(c.id),
-				label: c.type === 'transfer' ? `${c.name} (transfer)` : c.name
-			}))
-	]);
+	const items = $derived(categoryPickerItems(categories, amountType, { includeNone: true }));
 
-	function onselect(selected: string, label: string | null, typed: string) {
-		create = label === null;
-		newCategoryName = typed;
-		// Let Svelte flush the hidden inputs before submitting
+	function submitForm() {
 		setTimeout(() => {
 			(document.getElementById(`cat-form-${transaction.id}`) as HTMLFormElement | null)?.requestSubmit();
 		}, 0);
 	}
+
+	function onselect(selected: string, label: string | null, typed: string) {
+		if (label === null) {
+			const name = typed.trim();
+			const other = findOppositeTypeCategory(categories, name, amountType);
+			if (other) {
+				pendingCreateName = name;
+				conflictExisting = other;
+				conflictOpen = true;
+				// revert combobox selection until user chooses
+				value = transaction.category_id ? String(transaction.category_id) : '';
+				create = false;
+				return;
+			}
+			create = true;
+			newCategoryName = name;
+			createMode = 'default';
+			submitForm();
+			return;
+		}
+		create = false;
+		createMode = 'default';
+		newCategoryName = '';
+		submitForm();
+	}
 </script>
 
-<!-- Enhanced (fetch) submit: no full-page reload, and no native POST in the
-	history, so a later F5 can't trigger a "resubmit this form?" 405.
-	reset:false skips the default form.reset(), which would wipe the
-	combobox's display value (its default is empty) right after a selection. -->
 <div class="inline-flex items-center gap-1">
 	<form
 		id="cat-form-{transaction.id}"
@@ -75,6 +87,7 @@
 		<input type="hidden" name="type" value={transaction.amount_cents < 0 ? 'expense' : 'income'} />
 		<input type="hidden" name="category_id" value={create ? '' : value} />
 		<input type="hidden" name="category_new" value={create ? newCategoryName : ''} />
+		<input type="hidden" name="category_create_mode" value={create ? createMode : ''} />
 		<Combobox
 			bind:value
 			bind:search
@@ -116,3 +129,23 @@
 		</span>
 	{/if}
 </div>
+
+<CategoryCreateConflictDialog
+	bind:open={conflictOpen}
+	existing={conflictExisting}
+	requestedType={amountType}
+	onUseExisting={(cat: Category) => {
+		value = String(cat.id);
+		create = false;
+		createMode = 'default';
+		newCategoryName = '';
+		submitForm();
+	}}
+	onCreateAnyway={() => {
+		create = true;
+		newCategoryName = pendingCreateName;
+		createMode = 'create_anyway';
+		value = '';
+		submitForm();
+	}}
+/>

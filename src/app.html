@@ -4,26 +4,38 @@
 		<meta charset="utf-8" />
 		<link rel="icon" href="/favicon.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<!-- ADO-21: containment before any stylesheet so first paint can't scroll wide. -->
+		<style>
+			html,
+			body {
+				width: 100%;
+				max-width: 100%;
+				min-height: 100%;
+				overflow-x: clip;
+				margin: 0;
+			}
+		</style>
 		<script>
-			// ADO-21: iOS WebKit / Firefox-iOS can lay out the first paint against a
-			// too-wide viewport; opening the browser chrome then dismissing it
-			// triggers a resize and the layout snaps. Sync --vvw from
-			// visualViewport (falling back to clientWidth) as early as possible
-			// and again on every viewport change, and poke a reflow so flex/grid
-			// settle without waiting for a menu toggle.
+			// ADO-21: first-load horizontal overflow on Firefox iOS. Prefer
+			// visualViewport.width for --vvw (dropdown caps, etc.). Do not fall
+			// back to innerWidth — that can match a desktop layout width when
+			// Desktop Site is on or half-applied. A later resize (incl. after
+			// toggling Desktop Site) updates --vvw; overflow-x clip is the
+			// always-on guard either way.
 			(function () {
 				var root = document.documentElement;
 				function measure() {
 					var vv = window.visualViewport;
-					var w = vv && vv.width ? vv.width : root.clientWidth || window.innerWidth || 0;
-					if (!(w > 0)) return;
-					root.style.setProperty('--vvw', w + 'px');
+					if (vv && vv.width > 0) {
+						root.style.setProperty('--vvw', vv.width + 'px');
+						return;
+					}
+					var w = root.clientWidth;
+					if (w > 0 && w < 480) root.style.setProperty('--vvw', w + 'px');
 				}
 				function kick() {
 					measure();
-					// Force layout so media queries / min-w-0 flex chains recompute.
 					void root.offsetWidth;
-					root.classList.add('vv-ready');
 				}
 				measure();
 				if (window.visualViewport) {

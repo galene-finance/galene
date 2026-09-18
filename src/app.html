@@ -5,6 +5,45 @@
 		<link rel="icon" href="/favicon.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<script>
+			// ADO-21: iOS WebKit / Firefox-iOS can lay out the first paint against a
+			// too-wide viewport; opening the browser chrome then dismissing it
+			// triggers a resize and the layout snaps. Sync --vvw from
+			// visualViewport (falling back to clientWidth) as early as possible
+			// and again on every viewport change, and poke a reflow so flex/grid
+			// settle without waiting for a menu toggle.
+			(function () {
+				var root = document.documentElement;
+				function measure() {
+					var vv = window.visualViewport;
+					var w = vv && vv.width ? vv.width : root.clientWidth || window.innerWidth || 0;
+					if (!(w > 0)) return;
+					root.style.setProperty('--vvw', w + 'px');
+				}
+				function kick() {
+					measure();
+					// Force layout so media queries / min-w-0 flex chains recompute.
+					void root.offsetWidth;
+					root.classList.add('vv-ready');
+				}
+				measure();
+				if (window.visualViewport) {
+					window.visualViewport.addEventListener('resize', kick);
+					window.visualViewport.addEventListener('scroll', measure);
+				}
+				window.addEventListener('resize', kick);
+				window.addEventListener('orientationchange', kick);
+				window.addEventListener('pageshow', kick);
+				window.addEventListener('load', kick);
+				if (typeof requestAnimationFrame === 'function') {
+					requestAnimationFrame(function () {
+						requestAnimationFrame(kick);
+					});
+				} else {
+					setTimeout(kick, 0);
+				}
+			})();
+		</script>
+		<script>
 			// Apply the last-used theme before first paint. The stored value is
 			// a default theme slug or a user theme id; the matching stylesheet
 			// is loaded here so the theme is visible before hydration. Unknown
@@ -24,6 +63,6 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit:load data-sveltekit:body>
-		<div class="min-h-dvh min-w-0 max-w-full overflow-x-clip">%sveltekit.body%</div>
+		<div class="min-h-screen min-w-0 w-full max-w-full overflow-x-clip">%sveltekit.body%</div>
 	</body>
 </html>

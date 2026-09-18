@@ -182,7 +182,7 @@
 					{/if}
 				{/snippet}
 
-				<div class="max-h-96 w-80 max-w-[min(20rem,calc(100dvw-2.5rem))] overflow-y-auto">
+				<div class="max-h-96 w-80 max-w-[min(20rem,calc(var(--vvw,100%)-2.5rem))] overflow-y-auto">
 					{#if items.length === 0}
 						<p class="px-2.5 py-6 text-center text-sm text-muted-foreground">No notifications</p>
 					{:else}

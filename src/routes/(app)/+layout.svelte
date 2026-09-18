@@ -36,7 +36,7 @@
 	});
 </script>
 
-<div class="flex min-h-dvh min-w-0 max-w-full flex-col overflow-x-clip">
+<div class="flex min-h-screen min-w-0 w-full max-w-full flex-col overflow-x-clip">
 	<TopNav
 		user={data.user}
 		branding={data.branding}

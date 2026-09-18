@@ -1,8 +1,10 @@
 import {
+	backfillCategorizationRules,
 	bulkAddTags,
 	bulkDeleteTransactions,
 	bulkSetCategory,
 	clearTransactionSplits,
+	countUncategorizedMatchingMerchant,
 	deleteTransaction,
 	getAccounts,
 	getCategories,
@@ -11,6 +13,8 @@ import {
 	getSetting,
 	getTags,
 	getTransactions,
+	getTransactionForRemember,
+	rememberPayeeRule,
 	saveScheduled,
 	saveTransaction,
 	saveTransactionSplits,
@@ -191,5 +195,42 @@ export const actions = {
 		const size = parseInt(String(form.get('page_size') ?? '25'), 10);
 		if (PAGE_SIZES.includes(size)) setSetting(locals.user!.id, 'tx_page_size', String(size));
 		return { ok: true };
+	},
+
+	'payee-match-count': async ({ request, locals }) => {
+		const form = await request.formData();
+		const merchant = String(form.get('merchant') ?? '').trim();
+		if (!merchant) return { count: 0 };
+		return { count: countUncategorizedMatchingMerchant(locals.user!.id, merchant) };
+	},
+
+	'remember-payee': async ({ request, locals }) => {
+		const userId = locals.user!.id;
+		const form = await request.formData();
+		const id = parseInt(String(form.get('id') ?? ''), 10);
+		if (!Number.isFinite(id)) return { error: 'Missing transaction.' };
+		const row = getTransactionForRemember(userId, id);
+		if (!row) return { error: 'Transaction not found.' };
+		const merchantOverride = String(form.get('merchant') ?? '').trim();
+		const categoryOverride = parseInt(String(form.get('category_id') ?? ''), 10);
+		const merchant = merchantOverride || row.merchant?.trim() || '';
+		const categoryId = Number.isFinite(categoryOverride) && categoryOverride > 0 ? categoryOverride : row.category_id;
+		if (!merchant) return { error: 'Add a merchant before remembering this payee.' };
+		if (categoryId == null) return { error: 'Set a category before remembering this payee.' };
+		try {
+			const { ruleId, created } = rememberPayeeRule(userId, merchant, categoryId);
+			let applied = 0;
+			if (form.get('apply_existing') === '1') {
+				applied = backfillCategorizationRules(userId, ruleId);
+			}
+			const verb = created ? 'Remembered' : 'Updated rule for';
+			const applyNote = applied > 0 ? ` Applied to ${applied} uncategorized.` : '';
+			return {
+				message: `${verb} ${merchant}.${applyNote}`,
+				ok: true
+			};
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : 'Could not remember payee.' };
+		}
 	}
 };

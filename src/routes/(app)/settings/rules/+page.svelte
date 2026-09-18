@@ -94,7 +94,7 @@
 		<div class="p-4">
 			{#if data.rules.length === 0}
 				<p class="py-4 text-center text-sm text-muted-foreground">
-					No rules yet. Create one here, or from any transaction's menu.
+					No rules yet. Create one here, or use Remember this payee on any transaction.
 				</p>
 			{:else}
 				<ul class="divide-y divide-border">

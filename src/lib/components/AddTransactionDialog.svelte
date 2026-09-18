@@ -23,7 +23,8 @@
 		tags,
 		form,
 		action = '?/save',
-		onclose
+		onclose,
+		onRememberPayee
 	}: {
 		open?: boolean;
 		editing?: Transaction | null;
@@ -33,6 +34,7 @@
 		form?: { error?: string | null };
 		action?: string;
 		onclose?: () => void;
+		onRememberPayee?: (tx: Transaction) => void;
 	} = $props();
 
 	let type = $state<'expense' | 'income'>('expense');
@@ -263,7 +265,22 @@
 			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
 		{/if}
 
-		<div class="flex justify-end gap-2">
+		<div class="flex flex-wrap justify-end gap-2">
+			{#if editing && merchant.trim() && categoryId && onRememberPayee}
+				<Button
+					type="button"
+					variant="secondary"
+					onclick={() => {
+						const cat = categories.find((c) => String(c.id) === categoryId);
+						onRememberPayee({
+							...editing,
+							merchant: merchant.trim(),
+							category_id: Number(categoryId),
+							category_name: cat?.name ?? editing.category_name
+						});
+					}}
+				>Remember this payee</Button>
+			{/if}
 			<Button variant="secondary" type="button" onclick={() => (open = false)}>Cancel</Button>
 			<Button type="submit">{editing ? 'Save changes' : 'Add transaction'}</Button>
 		</div>

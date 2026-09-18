@@ -574,6 +574,8 @@ export type DashboardWidgetData =
 					categoryName: string | null;
 				}[];
 			}[];
+			/** Undismissed recurring suggestions (ADO-13); drives Home nudge. */
+			recurringSuggestionCount: number;
 	  }
 	| {
 			kind: 'budgets';

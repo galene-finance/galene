@@ -30,7 +30,6 @@
 		{ href: '/transactions', label: 'Transactions' },
 		{ href: '/budget', label: 'Budget' },
 		{ href: '/calendar', label: 'Calendar' },
-		{ href: '/recurring', label: 'Recurring' },
 		{ href: '/cashflow', label: 'Cashflow' },
 		{ href: '/trends', label: 'Trends' },
 		{ href: '/settings', label: 'Settings' }

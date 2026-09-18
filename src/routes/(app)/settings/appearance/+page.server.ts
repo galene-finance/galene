@@ -18,7 +18,7 @@ export function load({ locals }) {
 		selected: getThemeSetting(userId),
 		appName: getSetting(userId, 'app_name') ?? '',
 		icon: normalizeBrandingIcon(getSetting(userId, 'icon') ?? EMBLEM_ICON_KEY),
-		favicon: getSetting(userId, 'favicon') ?? 'logo',
+		favicon: normalizeBrandingIcon(getSetting(userId, 'favicon') ?? EMBLEM_ICON_KEY),
 		weekStartsOn: getSetting(userId, 'week_starts_on') ?? 'sunday'
 	};
 }
@@ -88,10 +88,11 @@ export const actions = {
 		if (name.length > 40) return { error: 'App name must be 40 characters or fewer.' };
 		const iconKey = normalizeBrandingIcon(icon);
 		if (!isValidBrandingIcon(iconKey)) return { error: 'Invalid icon.' };
-		if (!ICONS.some((i) => i.key === favicon)) return { error: 'Invalid favicon.' };
+		const faviconKey = normalizeBrandingIcon(favicon);
+		if (!isValidBrandingIcon(faviconKey)) return { error: 'Invalid favicon.' };
 		setSetting(userId, 'app_name', name);
 		setSetting(userId, 'icon', iconKey);
-		setSetting(userId, 'favicon', favicon);
+		setSetting(userId, 'favicon', faviconKey);
 		return { ok: true };
 	},
 

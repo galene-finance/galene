@@ -9,9 +9,8 @@
 	import Dialog from './ui/Dialog.svelte';
 	import Field from './ui/Field.svelte';
 	import Input from './ui/Input.svelte';
-	import { categoryPickerItems, findOppositeTypeCategory } from '$lib/categoryPicker';
 	import { todayISO } from '$lib/utils';
-	import CategoryCreateConflictDialog from './CategoryCreateConflictDialog.svelte';
+	import { categoryPickerItems } from '$lib/categoryPicker';
 	import type { Account, Category, Tag, Transaction } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
 
@@ -59,7 +58,7 @@
 	const tagCreate = $derived(tagValues.includes(CREATE_VALUE));
 
 	const accountItems = $derived(accounts.map((a) => ({ value: String(a.id), label: a.name })));
-	const categoryItems = $derived(categoryPickerItems(categories, type));
+	const categoryItems = $derived(categoryPickerItems(categories));
 	const tagItems = $derived(tags.map((t) => ({ value: String(t.id), label: t.name })));
 
 	function reset() {
@@ -108,29 +107,9 @@
 		}
 	});
 
-	// #15: opposite-type categories are allowed (refunds on expense cats).
 	function onTypeChange(newType: 'expense' | 'income') {
 		if (newType === type) return;
 		type = newType;
-	}
-
-	let conflictOpen = $state(false);
-	let conflictExisting = $state<Category | null>(null);
-	let pendingCreateName = $state('');
-	let categoryCreateMode = $state<'default' | 'use_existing' | 'create_anyway'>('default');
-
-	function requestCategoryCreate(typed: string) {
-		const name = typed.trim();
-		const other = findOppositeTypeCategory(categories, name, type);
-		if (other) {
-			pendingCreateName = name;
-			conflictExisting = other;
-			conflictOpen = true;
-			return;
-		}
-		categoryCreate = true;
-		categoryNewName = name;
-		categoryCreateMode = 'default';
 	}
 
 	const handleSubmit: SubmitFunction = ({ formData }) => {
@@ -151,11 +130,9 @@
 		if (categoryCreate) {
 			formData.set('category_id', '');
 			formData.set('category_new', categoryNewName);
-			formData.set('category_create_mode', categoryCreateMode);
 		} else {
 			formData.set('category_id', categoryId);
 			formData.set('category_new', '');
-			formData.set('category_create_mode', '');
 		}
 		for (const value of formData.getAll('tags')) formData.delete('tags');
 		for (const value of tagValues) {
@@ -236,12 +213,8 @@
 					createLabel="Create category"
 					placeholder="Search or create category"
 					onselect={(_, label, typed) => {
-						if (label === null) {
-							requestCategoryCreate(typed);
-						} else {
-							categoryCreate = false;
-							categoryCreateMode = 'default';
-						}
+						categoryCreate = label === null;
+						if (label === null) categoryNewName = typed;
 					}}
 				/>
 			</Field>
@@ -300,20 +273,3 @@
 		</div>
 	</form>
 </Dialog>
-
-<CategoryCreateConflictDialog
-	bind:open={conflictOpen}
-	existing={conflictExisting}
-	requestedType={type}
-	onUseExisting={(cat: Category) => {
-		categoryId = String(cat.id);
-		categoryCreate = false;
-		categoryCreateMode = 'default';
-		categoryNewName = '';
-	}}
-	onCreateAnyway={() => {
-		categoryCreate = true;
-		categoryNewName = pendingCreateName;
-		categoryCreateMode = 'create_anyway';
-	}}
-/>

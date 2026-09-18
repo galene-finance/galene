@@ -168,7 +168,7 @@ function budgetsData(userId: number, f: DashboardFilters): DashboardWidgetData {
 			const cat = categories.find((c) => c.id === b.category_id);
 			const { from, to } = currentPeriodBounds(b.period);
 			const signed = categoryAmountInPeriod(userId, b.category_id, from, to);
-			const spent = cat?.type === 'income' ? signed : -signed;
+			const spent = Math.max(0, -signed); // #17: refunds reduce used
 			return {
 				id: b.id,
 				categoryName: b.category_name,

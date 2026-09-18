@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { categoryPickerItems, findOppositeTypeCategory } from '$lib/categoryPicker';
-	import CategoryCreateConflictDialog from './CategoryCreateConflictDialog.svelte';
+	import { categoryPickerItems } from '$lib/categoryPicker';
 	import Combobox from './ui/Combobox.svelte';
 	import type { Category, Transaction } from '$lib/types';
 
@@ -19,10 +18,6 @@
 	let search = $state('');
 	let create = $state(false);
 	let newCategoryName = $state('');
-	let createMode = $state<'default' | 'use_existing' | 'create_anyway'>('default');
-	let conflictOpen = $state(false);
-	let conflictExisting = $state<Category | null>(null);
-	let pendingCreateName = $state('');
 
 	$effect(() => {
 		value = transaction.category_id ? String(transaction.category_id) : '';
@@ -38,37 +33,14 @@
 	);
 
 	const amountType = $derived(transaction.amount_cents < 0 ? 'expense' : 'income');
-	const items = $derived(categoryPickerItems(categories, amountType, { includeNone: true }));
+	const items = $derived(categoryPickerItems(categories, { includeNone: true }));
 
-	function submitForm() {
+	function onselect(_selected: string, label: string | null, typed: string) {
+		create = label === null;
+		newCategoryName = typed;
 		setTimeout(() => {
 			(document.getElementById(`cat-form-${transaction.id}`) as HTMLFormElement | null)?.requestSubmit();
 		}, 0);
-	}
-
-	function onselect(selected: string, label: string | null, typed: string) {
-		if (label === null) {
-			const name = typed.trim();
-			const other = findOppositeTypeCategory(categories, name, amountType);
-			if (other) {
-				pendingCreateName = name;
-				conflictExisting = other;
-				conflictOpen = true;
-				// revert combobox selection until user chooses
-				value = transaction.category_id ? String(transaction.category_id) : '';
-				create = false;
-				return;
-			}
-			create = true;
-			newCategoryName = name;
-			createMode = 'default';
-			submitForm();
-			return;
-		}
-		create = false;
-		createMode = 'default';
-		newCategoryName = '';
-		submitForm();
 	}
 </script>
 
@@ -84,10 +56,9 @@
 		class="relative inline-block w-44"
 	>
 		<input type="hidden" name="id" value={transaction.id} />
-		<input type="hidden" name="type" value={transaction.amount_cents < 0 ? 'expense' : 'income'} />
+		<input type="hidden" name="type" value={amountType} />
 		<input type="hidden" name="category_id" value={create ? '' : value} />
 		<input type="hidden" name="category_new" value={create ? newCategoryName : ''} />
-		<input type="hidden" name="category_create_mode" value={create ? createMode : ''} />
 		<Combobox
 			bind:value
 			bind:search
@@ -129,23 +100,3 @@
 		</span>
 	{/if}
 </div>
-
-<CategoryCreateConflictDialog
-	bind:open={conflictOpen}
-	existing={conflictExisting}
-	requestedType={amountType}
-	onUseExisting={(cat: Category) => {
-		value = String(cat.id);
-		create = false;
-		createMode = 'default';
-		newCategoryName = '';
-		submitForm();
-	}}
-	onCreateAnyway={() => {
-		create = true;
-		newCategoryName = pendingCreateName;
-		createMode = 'create_anyway';
-		value = '';
-		submitForm();
-	}}
-/>

@@ -8,7 +8,7 @@ import {
 	deleteTransaction,
 	getAccounts,
 	getCategories,
-	resolveCategoryCreate,
+	getOrCreateCategory,
 	getOrCreateTag,
 	getSetting,
 	getTags,
@@ -63,31 +63,12 @@ export function load({ locals, url }) {
 }
 
 
-function categoryCreateMode(form: FormData): 'default' | 'use_existing' | 'create_anyway' {
-	const m = String(form.get('category_create_mode') ?? '').trim();
-	if (m === 'use_existing' || m === 'create_anyway') return m;
-	return 'default';
-}
-
-function resolveNewCategory(
-	userId: number,
-	name: string,
-	type: 'expense' | 'income',
-	form: FormData
-): { categoryId: number } | { error: string } | { categoryConflict: { id: number; name: string; type: string } } {
-	const result = resolveCategoryCreate(userId, name, type, categoryCreateMode(form));
-	if (!result.ok) {
-		return { categoryConflict: result.conflict };
-	}
-	return { categoryId: result.id };
-}
 
 export const actions = {
 	save: async ({ request, locals }) => {
 		const userId = locals.user!.id;
 		const form = await request.formData();
-		const { input, error, categoryConflict } = transactionInputFromForm(userId, form);
-		if (categoryConflict) return { categoryConflict };
+		const { input, error } = transactionInputFromForm(userId, form);
 		if (error || !input) return { error };
 		saveTransaction(userId, input);
 		return { ok: true };
@@ -122,10 +103,7 @@ export const actions = {
 		const categoryExisting = String(form.get('category_id') ?? '').trim();
 		let categoryId: number | null = null;
 		if (categoryNew) {
-			const resolved = resolveNewCategory(userId, categoryNew, type, form);
-			if ('error' in resolved) return resolved;
-			if ('categoryConflict' in resolved) return resolved;
-			categoryId = resolved.categoryId;
+			categoryId = getOrCreateCategory(userId, categoryNew, type);
 		} else if (categoryExisting) {
 			const category = getCategories(userId).find((c) => c.id === parseInt(categoryExisting, 10));
 			if (category) categoryId = category.id;
@@ -168,10 +146,7 @@ export const actions = {
 		for (let i = 0; i < catIds.length; i++) {
 			let categoryId: number | null = null;
 			if (catNews[i]) {
-				const resolved = resolveNewCategory(userId, catNews[i], type, form);
-				if ('error' in resolved) return resolved;
-				if ('categoryConflict' in resolved) return resolved;
-				categoryId = resolved.categoryId;
+				categoryId = getOrCreateCategory(userId, catNews[i], type);
 			} else if (Number.isFinite(catIds[i])) {
 				const category = getCategories(userId).find((c) => c.id === catIds[i]);
 				if (category) categoryId = category.id;
@@ -208,10 +183,7 @@ export const actions = {
 		const categoryExisting = String(form.get('category_id') ?? '').trim();
 		let categoryId: number | null = null;
 		if (categoryNew) {
-			const resolved = resolveNewCategory(userId, categoryNew, type, form);
-			if ('error' in resolved) return resolved;
-			if ('categoryConflict' in resolved) return resolved;
-			categoryId = resolved.categoryId;
+			categoryId = getOrCreateCategory(userId, categoryNew, type);
 		} else if (categoryExisting) {
 			const category = getCategories(userId).find((c) => c.id === parseInt(categoryExisting, 10));
 			if (category) categoryId = category.id;

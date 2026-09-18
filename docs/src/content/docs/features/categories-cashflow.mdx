@@ -1,26 +1,22 @@
 ---
 title: Categories & cashflow
-description: Income, expense, and transfer categories — and how they affect cashflow and budgets.
+description: Named category buckets, transfers, and how cashflow and budgets follow transaction sign.
 ---
 
 ## Category types
 
-Galene categories are one of three types:
+Galene categories are **named buckets**. A single name (for example “Coffee”) can hold both expenses and refunds — there is only one row per name for normal categories.
 
-- **Expense** — spending (groceries, rent, subscriptions).
-- **Income** — money in (salary, refunds you want to count as income).
-- **Transfer** — money moved between your own accounts (for example a credit card payment from checking).
+- **Normal categories** — unique by name per user. Income vs expense comes from each **transaction’s sign**, not from a fixed category type.
+- **Transfer** — money moved between your own accounts (for example a credit card payment from checking). Transfers use a separate flag and do not share names with normal categories.
+
+When you create a category from an income or expense flow, Galene may store a type **hint** on the row; that hint does not filter pickers or drive cashflow sectioning.
 
 Create and edit them under **Settings → Categories** (Add / Edit open in a dialog). Transfer categories show a transfer badge and a short note that they are excluded from reports by default.
 
-## Refunds and opposite-type categories
+## Categorizing transactions
 
-When categorizing a transaction, the picker lists matching-type categories first, then the other type with a badge (for example `Coffee (expense)` on an income refund). You can assign an expense category to an income transaction (or the reverse) so a refund lands on the same category as the original spend.
-
-Cashflow and similar totals follow the **transaction amount’s sign**, not only the category’s type. A refund on an expense category reduces that category’s net spend instead of appearing as a separate income category.
-
-If you type a new category name that already exists under the other type, Galene asks whether to **use the existing** category or **create** a same-name category of the current type anyway.
-
+The category picker lists **all non-transfer categories**, then transfers with a “(transfer)” label. There is no income/expense filter on the list.
 
 ## Deleting a category
 
@@ -36,7 +32,12 @@ New accounts get starter transfer categories (**Credit card payment** and **Tran
 
 ## Cashflow, budgets, and reports
 
-Cashflow **Income** / **Expenses** section placement prefers each category’s **signed net** (actuals, then forecast) so a refund on an expense category can net correctly. Transfer behavior is unchanged.
+Cashflow **Income** and **Expenses** sections follow **transaction / split sign**:
+
+- The same category can appear under **Expenses** for spending and under **Income** for refunds (or other credits) in that category.
+- Section placement does **not** use a fixed category type.
+
+Budgets use **signed activity** for the period: for example a $400 limit with −$100 spend and +$10 refund shows about **$90 used** (`used = max(0, −signed total)`). Dashboard budget widgets use the same rule.
 
 By default, transfer-categorized amounts are **excluded** from:
 

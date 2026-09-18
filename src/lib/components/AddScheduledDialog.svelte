@@ -12,6 +12,7 @@
 	import MultiCombobox from './ui/MultiCombobox.svelte';
 	import Select from './ui/Select.svelte';
 	import { todayISO } from '$lib/utils';
+	import { categoryPickerItems } from '$lib/categoryPicker';
 	import type { Account, Category, RepeatUnit, Scheduled, Tag } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
 
@@ -81,14 +82,7 @@
 	const tagCreate = $derived(tagValues.includes(CREATE_VALUE));
 
 	const accountItems = $derived(accounts.map((a) => ({ value: String(a.id), label: a.name })));
-	const categoryItems = $derived(
-		categories
-			.filter((c) => c.type === type || c.type === 'transfer')
-			.map((c) => ({
-				value: String(c.id),
-				label: c.type === 'transfer' ? `${c.name} (transfer)` : c.name
-			}))
-	);
+	const categoryItems = $derived(categoryPickerItems(categories));
 	const tagItems = $derived(tags.map((t) => ({ value: String(t.id), label: t.name })));
 
 	function reset() {
@@ -170,11 +164,6 @@
 	function onTypeChange(newType: 'expense' | 'income') {
 		if (newType === type) return;
 		type = newType;
-		const cat = categories.find((c) => String(c.id) === categoryId);
-		if (cat && cat.type !== 'transfer' && cat.type !== newType) {
-			categoryId = '';
-			categoryCreate = false;
-		}
 	}
 
 	const handleSubmit: SubmitFunction = ({ formData }) => {

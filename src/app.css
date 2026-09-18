@@ -43,12 +43,23 @@
 	--radius-xl: calc(var(--radius) + 0.25rem);
 }
 
-/* Clip horizontal overflow on the root (ADO-21 / #40). html must clip too:
-	body alone is not enough on some WebKit/Firefox-iOS paths, and 100vw-based
-	max widths can still expand the document scrollport. */
+/* ADO-21: never size the root with 100vw/100dvw — iOS can paint the first
+	frame against a too-wide viewport. Prefer width:100% and --vvw from the
+	early visualViewport sync in app.html. */
 html {
-	@apply max-w-full overflow-x-clip;
+	width: 100%;
+	max-width: 100%;
+	min-height: 100%;
+	overflow-x: clip;
+}
+html.vv-ready {
+	max-width: var(--vvw, 100%);
 }
 body {
-	@apply max-w-full overflow-x-clip bg-background text-foreground antialiased;
+	width: 100%;
+	max-width: 100%;
+	min-height: 100%;
+	overflow-x: clip;
+	@apply bg-background text-foreground antialiased;
 }
+

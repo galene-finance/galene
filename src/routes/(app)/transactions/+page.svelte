@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { flushSync } from 'svelte';
-	import { enhance } from '$app/forms';
+	import { deserialize, enhance } from '$app/forms';
 	import AddScheduledDialog from '$lib/components/AddScheduledDialog.svelte';
 	import AddTransactionDialog from '$lib/components/AddTransactionDialog.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -13,13 +13,15 @@
 	import DropdownMenu from '$lib/components/ui/DropdownMenu.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import MenuItem from '$lib/components/ui/MenuItem.svelte';
+	import RememberPayeeDialog from '$lib/components/RememberPayeeDialog.svelte';
 	import RuleDialog from '$lib/components/RuleDialog.svelte';
 	import SplitDialog from '$lib/components/SplitDialog.svelte';
 	import { formatMoney, formatDate, todayISO, dayGroupLabel } from '$lib/utils';
+	import { toastFormResult } from '$lib/toasts';
 	import type { Account, Category, RuleCondition, Tag, Transaction } from '$lib/types';
 
 	let { form, data }: {
-		form: { error?: string | null } | undefined;
+		form: { error?: string | null; message?: string | null } | undefined;
 		data: {
 			data: { items: Transaction[]; total: number; pages: number };
 			filters: {
@@ -45,6 +47,10 @@
 	const categoryItems = $derived(data.categories.map((c) => ({ value: String(c.id), label: c.name })));
 	const tagItems = $derived(data.tags.map((t) => ({ value: String(t.id), label: t.name })));
 	const tagsOf = (t: Transaction) => t.tags ?? [];
+
+	$effect(() => {
+		toastFormResult(form);
+	});
 
 	// Filter state (synced from the URL after each navigation)
 	let q = $state(data.filters.q);
@@ -175,6 +181,9 @@
 		conditions: RuleCondition[];
 		categoryId: number | null;
 	} | null>(null);
+	let rememberOpen = $state(false);
+	let rememberTx = $state<Transaction | null>(null);
+	let rememberMatchCount = $state(0);
 	let scheduledOpen = $state(false);
 
 	function openSplit(tx: Transaction) {
@@ -196,6 +205,29 @@
 
 	function closeRule() {
 		rulePrefill = null;
+	}
+
+	async function openRemember(tx: Transaction) {
+		if (!tx.merchant?.trim() || tx.category_id == null) return;
+		rememberTx = tx;
+		rememberMatchCount = 0;
+		rememberOpen = true;
+		const fd = new FormData();
+		fd.set('merchant', tx.merchant);
+		try {
+			const response = await fetch('?/payee-match-count', { method: 'POST', body: fd });
+			const result = deserialize(await response.text());
+			if (result.type === 'success' && result.data && typeof (result.data as { count?: number }).count === 'number') {
+				rememberMatchCount = (result.data as { count: number }).count;
+			}
+		} catch {
+			rememberMatchCount = 0;
+		}
+	}
+
+	function closeRemember() {
+		rememberTx = null;
+		rememberMatchCount = 0;
 	}
 
 	function deleteTx(tx: Transaction) {
@@ -601,7 +633,10 @@
 								{/snippet}
 								<MenuItem onclick={() => openEdit(tx)}>Edit</MenuItem>
 								<MenuItem onclick={() => openSplit(tx)}>Split transaction</MenuItem>
-								<MenuItem onclick={() => openRule(tx)}>Create auto-categorization rule</MenuItem>
+								{#if tx.merchant && tx.category_id != null}
+									<MenuItem onclick={() => openRemember(tx)}>Remember this payee</MenuItem>
+								{/if}
+									<MenuItem onclick={() => openRule(tx)}>Customize categorization rule…</MenuItem>
 								<MenuItem variant="destructive" onclick={() => deleteTx(tx)}>Delete</MenuItem>
 							</DropdownMenu>
 						</td>
@@ -703,7 +738,10 @@
 								{/snippet}
 								<MenuItem onclick={() => openEdit(tx)}>Edit</MenuItem>
 								<MenuItem onclick={() => openSplit(tx)}>Split transaction</MenuItem>
-								<MenuItem onclick={() => openRule(tx)}>Create auto-categorization rule</MenuItem>
+								{#if tx.merchant && tx.category_id != null}
+									<MenuItem onclick={() => openRemember(tx)}>Remember this payee</MenuItem>
+								{/if}
+									<MenuItem onclick={() => openRule(tx)}>Customize categorization rule…</MenuItem>
 								<MenuItem variant="destructive" onclick={() => deleteTx(tx)}>Delete</MenuItem>
 							</DropdownMenu>
 						</div>
@@ -770,6 +808,10 @@
 	tags={data.tags}
 	{form}
 	onclose={closeDialog}
+	onRememberPayee={(tx) => {
+		open = false;
+		void openRemember(tx);
+	}}
 />
 
 <SplitDialog
@@ -778,6 +820,14 @@
 	categories={data.categories}
 	{form}
 	onclose={() => (splittingTx = null)}
+/>
+
+<RememberPayeeDialog
+	bind:open={rememberOpen}
+	transaction={rememberTx}
+	uncategorizedMatchCount={rememberMatchCount}
+	{form}
+	onclose={closeRemember}
 />
 
 <RuleDialog

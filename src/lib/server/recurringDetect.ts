@@ -5,6 +5,7 @@
 import { db } from '$lib/server/db';
 import { getScheduled, getSetting, setSetting } from '$lib/server/finance';
 import type { RecurringSuggestion, RepeatUnit } from '$lib/types';
+import { normalizeMerchant as normalizeMerchantShared } from '$lib/merchantNormalize';
 
 const DISMISS_KEY = 'recurring_dismissed';
 const LOOKBACK_DAYS = 365;
@@ -15,13 +16,8 @@ export type RecurringGuessUnit = RepeatUnit;
 export type { RecurringSuggestion };
 
 function normalizeMerchant(raw: string | null): string | null {
-	if (!raw) return null;
-	let s = raw.trim().toLowerCase();
-	s = s.replace(/\s+/g, ' ');
-	// Drop trailing store numbers / #123
-	s = s.replace(/\s+#?\d{2,}$/g, '').trim();
-	if (s.length < 2) return null;
-	return s;
+	const s = normalizeMerchantShared(raw);
+	return s.length < 2 ? null : s;
 }
 
 function median(nums: number[]): number {

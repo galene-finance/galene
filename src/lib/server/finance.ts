@@ -1,5 +1,6 @@
 import { db } from './db';
 import { parseAmountToCents } from '$lib/utils';
+import { normalizeMerchant } from '$lib/merchantNormalize';
 import type {
 	Account,
 	AccountType,
@@ -1326,8 +1327,8 @@ function ruleMatches(
 	return conditions.every((c) => {
 		if (c.field === 'merchant') {
 			if (tx.merchant == null) return false;
-			const lm = tx.merchant.toLowerCase();
-			const lv = String(c.value ?? '').trim().toLowerCase();
+			const lm = normalizeMerchant(tx.merchant);
+			const lv = normalizeMerchant(String(c.value ?? ''));
 			if (lv === '') return false;
 			return c.op === 'equals' ? lm === lv : lm.includes(lv);
 		}
@@ -1394,6 +1395,76 @@ export function backfillCategorizationRules(userId: number, ruleId?: number): nu
 		}
 	}
 	return count;
+}
+
+
+/**
+ * One-click “remember this payee” (ADO-14): upsert an enabled rule
+ * merchant contains (normalized) → category. Does not touch existing
+ * categorized transactions; use backfillCategorizationRules for that.
+ * Returns rule id + whether it was created or updated.
+ */
+/** Minimal txn row for remember-payee (ADO-14). */
+export function getTransactionForRemember(
+	userId: number,
+	id: number
+): { id: number; merchant: string | null; category_id: number | null; category_name: string | null } | null {
+	const row = db()
+		.query(
+			`SELECT t.id, t.merchant, t.category_id, c.name AS category_name
+			 FROM transactions t
+			 LEFT JOIN categories c ON c.id = t.category_id
+			 WHERE t.id = ? AND t.user_id = ?`
+		)
+		.get(id, userId) as
+		| { id: number; merchant: string | null; category_id: number | null; category_name: string | null }
+		| undefined;
+	return row ?? null;
+}
+
+export function rememberPayeeRule(
+	userId: number,
+	merchant: string,
+	categoryId: number
+): { ruleId: number; created: boolean; pattern: string } {
+	const pattern = normalizeMerchant(merchant);
+	if (!pattern) throw new Error('Merchant is required to remember a payee.');
+	const cat = getCategories(userId).find((c) => c.id === categoryId);
+	if (!cat) throw new Error('Select a valid category.');
+
+	const rules = getRules(userId);
+	for (const rule of rules) {
+		if (rule.conditions.length !== 1) continue;
+		const c = rule.conditions[0]!;
+		if (c.field !== 'merchant' || c.op !== 'contains') continue;
+		if (normalizeMerchant(String(c.value ?? '')) !== pattern) continue;
+		// Update category (and keep name if already custom)
+		const name = rule.name.startsWith('Payee:') ? `Payee: ${merchant.trim()}` : rule.name;
+		saveRule(userId, rule.id, {
+			name,
+			conditions: [{ field: 'merchant', op: 'contains', value: pattern }],
+			categoryId
+		});
+		setRuleEnabled(userId, rule.id, true);
+		return { ruleId: rule.id, created: false, pattern };
+	}
+
+	const ruleId = saveRule(userId, null, {
+		name: `Payee: ${merchant.trim()}`,
+		conditions: [{ field: 'merchant', op: 'contains', value: pattern }],
+		categoryId
+	});
+	return { ruleId, created: true, pattern };
+}
+
+/** Count uncategorized txns that would match a merchant-contains pattern. */
+export function countUncategorizedMatchingMerchant(userId: number, merchantPattern: string): number {
+	const lv = normalizeMerchant(merchantPattern);
+	if (!lv) return 0;
+	const txs = db()
+		.query('SELECT merchant FROM transactions WHERE user_id = ? AND category_id IS NULL AND merchant IS NOT NULL')
+		.all(userId) as { merchant: string }[];
+	return txs.filter((t) => normalizeMerchant(t.merchant).includes(lv)).length;
 }
 
 /** Number of the user's transactions that have no category. */

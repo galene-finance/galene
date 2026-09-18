@@ -6,6 +6,8 @@
 	import Field from './ui/Field.svelte';
 	import Input from './ui/Input.svelte';
 	import { formatMoney, parseAmountToCents } from '$lib/utils';
+	import { categoryPickerItems, findOppositeTypeCategory } from '$lib/categoryPicker';
+	import CategoryCreateConflictDialog from './CategoryCreateConflictDialog.svelte';
 	import type { Category, Transaction } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
 
@@ -14,6 +16,7 @@
 		categorySearch: string;
 		categoryCreate: boolean;
 		categoryNewName: string;
+		createMode: 'default' | 'use_existing' | 'create_anyway';
 		amount: string;
 	};
 
@@ -34,15 +37,31 @@
 	let rows = $state<SplitRow[]>([]);
 	let showError = $state(false);
 
-	const isExpense = $derived(transaction ? transaction.amount_cents < 0 : true);
-	const categoryItems = $derived(
-		categories
-			.filter((c) => c.type === (isExpense ? 'expense' : 'income') || c.type === 'transfer')
-			.map((c) => ({
-				value: String(c.id),
-				label: c.type === 'transfer' ? `${c.name} (transfer)` : c.name
-			}))
+	const amountType = $derived<'expense' | 'income'>(
+		transaction ? (transaction.amount_cents < 0 ? 'expense' : 'income') : 'expense'
 	);
+	const categoryItems = $derived(categoryPickerItems(categories, amountType));
+
+	let conflictOpen = $state(false);
+	let conflictExisting = $state<Category | null>(null);
+	let conflictRowIndex = $state(0);
+	let pendingCreateName = $state('');
+	let categoryCreateMode = $state<'default' | 'use_existing' | 'create_anyway'>('default');
+
+	function requestRowCreate(index: number, typed: string) {
+		const name = typed.trim();
+		const other = findOppositeTypeCategory(categories, name, amountType);
+		if (other) {
+			conflictRowIndex = index;
+			pendingCreateName = name;
+			conflictExisting = other;
+			conflictOpen = true;
+			return;
+		}
+		rows[index].categoryCreate = true;
+		rows[index].categoryNewName = name;
+		rows[index].createMode = 'default';
+	}
 	const total = $derived(transaction ? Math.abs(transaction.amount_cents) : 0);
 	const sum = $derived(rows.reduce((s, r) => s + (parseAmountToCents(r.amount) ?? 0), 0));
 	const remaining = $derived(total - sum);
@@ -56,6 +75,7 @@
 				categorySearch: '',
 				categoryCreate: false,
 				categoryNewName: '',
+				createMode: 'default',
 				amount: (s.amount_cents / 100).toFixed(2)
 			}));
 		} else {
@@ -65,9 +85,10 @@
 					categorySearch: '',
 					categoryCreate: false,
 					categoryNewName: '',
+					createMode: 'default',
 					amount: (total / 100).toFixed(2)
 				},
-				{ categoryId: '', categorySearch: '', categoryCreate: false, categoryNewName: '', amount: '' }
+				{ categoryId: '', categorySearch: '', categoryCreate: false, categoryNewName: '', createMode: 'default', amount: '' }
 			];
 		}
 	});
@@ -78,6 +99,7 @@
 			categoryId: '',
 			categorySearch: '',
 			categoryCreate: false,
+			createMode: 'default',
 			categoryNewName: '',
 			amount: leftover > 0 ? (leftover / 100).toFixed(2) : ''
 		});
@@ -98,11 +120,15 @@
 	const handleSubmit: SubmitFunction = ({ formData }) => {
 		if (!transaction) return;
 		formData.set('id', String(transaction.id));
-		formData.set('type', isExpense ? 'expense' : 'income');
+		formData.set('type', amountType);
 		formData.set('unsplit', '0');
 		for (const key of ['cat_id', 'cat_new', 'amount']) {
 			for (const _ of formData.getAll(key)) formData.delete(key);
 		}
+		const mode = rows.some((r) => r.categoryCreate && r.createMode === 'create_anyway')
+			? 'create_anyway'
+			: 'default';
+		formData.set('category_create_mode', mode);
 		for (const r of rows) {
 			formData.append('cat_id', r.categoryCreate ? '' : r.categoryId);
 			formData.append('cat_new', r.categoryCreate ? r.categoryNewName : '');
@@ -111,7 +137,10 @@
 		return async ({ result, update }) => {
 			await update();
 			// 'success' also covers actions that return an error object — only close when there is none.
-			if (result.type === 'redirect' || (result.type === 'success' && !result.data?.error)) {
+			if (
+				result.type === 'redirect' ||
+				(result.type === 'success' && !result.data?.error && !result.data?.categoryConflict)
+			) {
 				open = false;
 				onclose?.();
 			} else if (result.type === 'success' && result.data?.error) {
@@ -156,8 +185,12 @@
 							placeholder="Category"
 							class="min-w-44 flex-1"
 							onselect={(_, label, typed) => {
-								row.categoryCreate = label === null;
-								if (label === null) row.categoryNewName = typed;
+								if (label === null) {
+									requestRowCreate(i, typed);
+								} else {
+									row.categoryCreate = false;
+									row.createMode = 'default';
+								}
 							}}
 						/>
 						<Input
@@ -203,3 +236,24 @@
 		</div>
 	</form>
 </Dialog>
+
+<CategoryCreateConflictDialog
+	bind:open={conflictOpen}
+	existing={conflictExisting}
+	requestedType={amountType}
+	onUseExisting={(cat: Category) => {
+		const row = rows[conflictRowIndex];
+		if (!row) return;
+		row.categoryId = String(cat.id);
+		row.categoryCreate = false;
+		row.createMode = 'default';
+		row.categoryNewName = '';
+	}}
+	onCreateAnyway={() => {
+		const row = rows[conflictRowIndex];
+		if (!row) return;
+		row.categoryCreate = true;
+		row.categoryNewName = pendingCreateName;
+		row.createMode = 'create_anyway';
+	}}
+/>

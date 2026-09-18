@@ -13,6 +13,15 @@ Galene categories are one of three types:
 
 Create and edit them under **Settings → Categories** (Add / Edit open in a dialog). Transfer categories show a transfer badge and a short note that they are excluded from reports by default.
 
+## Refunds and opposite-type categories
+
+When categorizing a transaction, the picker lists matching-type categories first, then the other type with a badge (for example `Coffee (expense)` on an income refund). You can assign an expense category to an income transaction (or the reverse) so a refund lands on the same category as the original spend.
+
+Cashflow and similar totals follow the **transaction amount’s sign**, not only the category’s type. A refund on an expense category reduces that category’s net spend instead of appearing as a separate income category.
+
+If you type a new category name that already exists under the other type, Galene asks whether to **use the existing** category or **create** a same-name category of the current type anyway.
+
+
 ## Deleting a category
 
 Deleting a category opens a confirm dialog. Choose **Move transactions to…** another category, or **None (uncategorized)**. Galene reassigns that category’s transactions (and any subcategories’ transactions), then deletes the category. Subcategories are removed with the parent. Budgets and rules that pointed only at the deleted category are removed as well.
@@ -26,6 +35,8 @@ Paying a credit card from checking usually creates two bank transactions: a debi
 New accounts get starter transfer categories (**Credit card payment** and **Transfer**). Demo data also seeds transfer categories for checking↔savings moves. Existing category names are never renamed automatically.
 
 ## Cashflow, budgets, and reports
+
+Cashflow **Income** / **Expenses** section placement prefers each category’s **signed net** (actuals, then forecast) so a refund on an expense category can net correctly. Transfer behavior is unchanged.
 
 By default, transfer-categorized amounts are **excluded** from:
 

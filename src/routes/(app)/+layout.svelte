@@ -36,7 +36,7 @@
 	});
 </script>
 
-<div class="flex min-h-screen min-w-0 flex-col overflow-x-clip">
+<div class="galene-shell flex min-h-screen min-w-0 w-full max-w-full flex-col overflow-x-hidden overflow-x-clip">
 	<TopNav
 		user={data.user}
 		branding={data.branding}
@@ -48,7 +48,7 @@
 		bind:open={mobileNavOpen}
 	/>
 
-	<main class="min-w-0 flex-1 p-4 md:p-6">
+	<main class="min-w-0 max-w-full flex-1 overflow-x-clip p-4 md:p-6">
 		{@render children()}
 	</main>
 

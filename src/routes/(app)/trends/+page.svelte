@@ -219,7 +219,7 @@
 		</div>
 	{:else}
 		<div class="rounded-lg border border-border bg-surface p-4">
-			<svg viewBox="0 0 {W} {H}" class="w-full" role="img" aria-label="Spending bar chart">
+			<svg viewBox="0 0 {W} {H}" width="100%" class="galene-chart w-full" style="width:100%;max-width:100%;height:auto" role="img" aria-label="Spending bar chart">
 				{#each gridFracs as g}
 					{@const y = PAD_T + plotH * g}
 					{@const val = Math.round(maxVal * (1 - g))}

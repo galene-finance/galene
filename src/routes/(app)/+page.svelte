@@ -267,7 +267,7 @@
 
 <Title title="Home" />
 
-<div class="mx-auto flex max-w-5xl flex-col gap-4 2xl:max-w-7xl">
+<div class="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-4 2xl:max-w-7xl">
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">Home</h1>

@@ -141,7 +141,7 @@
 			<span class="truncate text-base font-semibold tracking-tight">{branding.name}</span>
 		</a>
 
-		<nav class="ml-4 hidden items-center gap-1 lg:flex">
+		<nav class="galene-nav-desktop ml-4 hidden items-center gap-1 lg:flex">
 			{#each nav as item (item.href)}
 				<a
 					href={item.href}
@@ -154,7 +154,7 @@
 			{/each}
 		</nav>
 
-		<div class="ml-auto flex min-w-0 shrink-0 items-center gap-1 sm:gap-1.5">
+		<div class="ml-auto flex min-w-0 shrink items-center gap-0.5 sm:gap-1.5">
 			<DropdownMenu
 				bind:open={menuOpen}
 				ariaLabel="Notifications"
@@ -182,7 +182,7 @@
 					{/if}
 				{/snippet}
 
-				<div class="max-h-96 w-80 max-w-[calc(100vw-2.5rem)] overflow-y-auto">
+				<div class="max-h-96 w-80 max-w-[min(20rem,calc(var(--vvw,100%)-2.5rem))] overflow-y-auto">
 					{#if items.length === 0}
 						<p class="px-2.5 py-6 text-center text-sm text-muted-foreground">No notifications</p>
 					{:else}
@@ -231,7 +231,7 @@
 					</div>
 				{/if}
 			</DropdownMenu>
-			<div class="min-w-0 max-w-[7.5rem] sm:max-w-none">
+			<div class="min-w-0 max-w-[5.5rem] sm:max-w-none">
 				<ThemePicker {themes} selected={selectedTheme} action={themeAction} />
 			</div>
 			<DropdownMenu ariaLabel="Account" class="shrink-0">

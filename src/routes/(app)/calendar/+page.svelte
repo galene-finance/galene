@@ -180,7 +180,7 @@
 		</div>
 	</div>
 
-	<div class="overflow-x-auto rounded-lg border border-border">
+	<div class="galene-scroll-x min-w-0 max-w-full overflow-x-auto rounded-lg border border-border">
 		<div class="grid min-w-[840px] grid-cols-7 gap-px bg-border">
 			{#each dayLabels as d}
 				<div class="bg-surface px-2 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">

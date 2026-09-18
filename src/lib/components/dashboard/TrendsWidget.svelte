@@ -47,7 +47,7 @@
 {#if !anySpend}
 	<p class="text-sm text-muted-foreground">No spending recorded in the last {data.months} months.</p>
 {:else}
-	<svg viewBox="0 0 {W} {H}" class="w-full" role="img" aria-label="Monthly spending bar chart">
+	<svg viewBox="0 0 {W} {H}" width="100%" class="galene-chart w-full" style="width:100%;max-width:100%;height:auto" role="img" aria-label="Monthly spending bar chart">
 		{#each gridFracs as g}
 			{@const y = PAD_T + plotH * g}
 			{@const val = Math.round(maxVal * (1 - g))}

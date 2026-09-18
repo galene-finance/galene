@@ -13,7 +13,7 @@
 		{#each list as t (t.id)}
 			<div
 				role="status"
-				class="flex w-80 max-w-[calc(100vw-2rem)] items-start gap-3 rounded-lg border border-border bg-surface p-4 shadow-xl"
+				class="flex w-80 max-w-[min(20rem,calc(var(--vvw,100%)-2rem))] items-start gap-3 rounded-lg border border-border bg-surface p-4 shadow-xl"
 			>
 				{#if t.kind === 'success'}
 					<svg

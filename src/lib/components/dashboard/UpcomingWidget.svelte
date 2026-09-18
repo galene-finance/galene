@@ -30,7 +30,7 @@
 				<p class="mb-1.5 text-xs font-medium text-muted-foreground">{day.label}</p>
 				<ul class="flex flex-col gap-1.5">
 					{#each day.items as it (it.id + day.date)}
-						<li class="flex items-center gap-2.5">
+						<li class="flex min-w-0 items-center gap-2.5">
 							<span class="size-2.5 shrink-0 rounded-full" style="background: {it.color ?? 'transparent'}"></span>
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-sm font-medium">{it.name}</p>
@@ -40,7 +40,7 @@
 									</p>
 								{/if}
 							</div>
-							<p class="shrink-0 text-sm font-medium">{formatMoney(it.amountCents)}</p>
+							<p class="min-w-0 shrink-0 truncate text-sm font-medium">{formatMoney(it.amountCents)}</p>
 						</li>
 					{/each}
 				</ul>

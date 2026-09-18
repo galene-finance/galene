@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" href="/favicon.svg" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<script>
 			// Apply the last-used theme before first paint. The stored value is
 			// a default theme slug or a user theme id; the matching stylesheet
@@ -24,6 +24,6 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit:load data-sveltekit:body>
-		<div style="display: contents">%sveltekit.body%</div>
+		<div class="min-h-dvh min-w-0 max-w-full overflow-x-clip">%sveltekit.body%</div>
 	</body>
 </html>

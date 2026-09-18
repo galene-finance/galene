@@ -182,7 +182,7 @@
 				</div>
 			{/if}
 
-			<div class="mt-4 overflow-x-auto rounded-md border border-border">
+			<div class="mt-4 min-w-0 max-w-full overflow-x-auto rounded-md border border-border">
 				<table class="w-full min-w-[720px] text-left text-sm">
 					<thead class="border-b border-border bg-muted/40 text-xs text-muted-foreground">
 						<tr>

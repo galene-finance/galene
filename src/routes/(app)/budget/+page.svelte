@@ -129,7 +129,7 @@
 			</p>
 		</div>
 	{:else}
-		<div class="overflow-x-auto rounded-lg border border-border bg-surface">
+		<div class="min-w-0 max-w-full overflow-x-auto rounded-lg border border-border bg-surface">
 			<table class="w-full min-w-[760px] text-sm">
 				<thead>
 					<tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">

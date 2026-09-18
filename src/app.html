@@ -4,9 +4,10 @@
 		<meta charset="utf-8" />
 		<link rel="icon" href="/favicon.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-		<!-- ADO-21: first-paint containment BEFORE Tailwind. Desktop nav uses
-			Tailwind `hidden lg:flex`; without CSS it renders as a long row and
-			overflows. Same for chart SVGs that only get width from `w-full`. -->
+		<!-- ADO-21: first-paint containment BEFORE Tailwind (FOUC desktop nav / chart
+			intrinsic width). Kept even though Simulator Safari did not repro —
+			cheap insurance. Primary open signal is Firefox iOS layout viewport
+			vs visualViewport (Desktop Site). -->
 		<style>
 			html,
 			body {
@@ -14,10 +15,9 @@
 				max-width: 100%;
 				min-height: 100%;
 				margin: 0;
-				overflow-x: hidden; /* widely supported; clip alone is flaky on iOS */
+				overflow-x: hidden;
 				overflow-x: clip;
 			}
-			/* FOUC-proof: hide desktop horizontal nav below lg */
 			.galene-nav-desktop {
 				display: none !important;
 			}
@@ -26,20 +26,17 @@
 					display: flex !important;
 				}
 			}
-			/* Chart SVGs: viewBox alone can intrinsic-size to 720px before utilities */
 			svg.galene-chart {
 				display: block;
 				width: 100%;
 				max-width: 100%;
 				height: auto;
 			}
-			/* Wide tables/calendars: contain horizontal scroll without Tailwind */
 			.galene-scroll-x {
 				max-width: 100%;
 				overflow-x: auto;
 				-webkit-overflow-scrolling: touch;
 			}
-			/* SO-style inner shell: overflow + position, no Tailwind required */
 			.galene-shell {
 				position: relative;
 				width: 100%;
@@ -49,30 +46,51 @@
 				overflow-x: hidden;
 				overflow-x: clip;
 			}
+			/* When Firefox (or any UA) uses a desktop layout viewport wider than
+			   the screen, html.galene-vv-clamp locks to --vvw (visual width). */
+			html.galene-vv-clamp,
+			html.galene-vv-clamp body,
+			html.galene-vv-clamp .galene-shell {
+				max-width: var(--vvw, 100%) !important;
+				width: var(--vvw, 100%) !important;
+				overflow-x: hidden !important;
+			}
 		</style>
 		<script>
-			// ADO-21: --vvw from visualViewport for component max-widths.
-			// Do not fall back to innerWidth (can be a desktop-layout width).
-			// Root overflow + FOUC-proof nav/chart CSS are the main guards.
+			// ADO-21: Firefox iOS Desktop Site (and similar) can give a layout
+			// viewport much wider than visualViewport. Clamp root to visual
+			// width when that gap appears. No 100vw; no minimum-scale hacks.
 			(function () {
 				var root = document.documentElement;
-				function measure() {
+				function visualWidth() {
 					var vv = window.visualViewport;
-					if (vv && vv.width > 0) {
-						root.style.setProperty('--vvw', vv.width + 'px');
-						return;
-					}
-					var w = root.clientWidth;
-					if (w > 0 && w < 480) root.style.setProperty('--vvw', w + 'px');
+					if (vv && vv.width > 0) return vv.width;
+					return 0;
+				}
+				function layoutWidth() {
+					return Math.max(
+						root.clientWidth || 0,
+						window.innerWidth || 0,
+						document.body ? document.body.clientWidth || 0 : 0
+					);
 				}
 				function kick() {
-					measure();
+					var vis = visualWidth();
+					if (!(vis > 0)) return;
+					root.style.setProperty('--vvw', vis + 'px');
+					var layout = layoutWidth();
+					// Desktop-site / wrong-first-paint signature: layout >> visual
+					if (layout > vis + 8) {
+						root.classList.add('galene-vv-clamp');
+					} else {
+						root.classList.remove('galene-vv-clamp');
+					}
 					void root.offsetWidth;
 				}
-				measure();
+				kick();
 				if (window.visualViewport) {
 					window.visualViewport.addEventListener('resize', kick);
-					window.visualViewport.addEventListener('scroll', measure);
+					window.visualViewport.addEventListener('scroll', kick);
 				}
 				window.addEventListener('resize', kick);
 				window.addEventListener('orientationchange', kick);
@@ -85,14 +103,20 @@
 				} else {
 					setTimeout(kick, 0);
 				}
+				// A few delayed kicks: Firefox sometimes settles viewport late.
+				setTimeout(kick, 50);
+				setTimeout(kick, 250);
+				setTimeout(kick, 1000);
 			})();
 		</script>
 		<script>
-			// ADO-21: ?ado21debug=1 outlines elements past the viewport (device diagnose).
+			// ADO-21: ?ado21debug=1 outlines elements past the viewport.
 			(function () {
 				if (!/[?&]ado21debug=1(?:&|$)/.test(location.search)) return;
 				function paint() {
-					var vw = document.documentElement.clientWidth;
+					var vw =
+						(window.visualViewport && window.visualViewport.width) ||
+						document.documentElement.clientWidth;
 					document.querySelectorAll('[data-ado21]').forEach(function (el) {
 						el.removeAttribute('data-ado21');
 						el.style.outline = '';
@@ -113,8 +137,19 @@
 							});
 						}
 					});
-					list.sort(function (a, b) { return b.right - a.right; });
-					console.log('[ado21debug] vw=' + vw + ' offenders', list.slice(0, 20));
+					list.sort(function (a, b) {
+						return b.right - a.right;
+					});
+					console.log(
+						'[ado21debug] vis=' +
+							Math.round(vw) +
+							' layout=' +
+							document.documentElement.clientWidth +
+							' clamp=' +
+							document.documentElement.classList.contains('galene-vv-clamp') +
+							' offenders',
+						list.slice(0, 20)
+					);
 				}
 				window.addEventListener('load', function () {
 					paint();

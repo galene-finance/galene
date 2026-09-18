@@ -48,7 +48,10 @@
 	const tagItems = $derived(data.tags.map((t) => ({ value: String(t.id), label: t.name })));
 	const tagsOf = (t: Transaction) => t.tags ?? [];
 
+	let lastForm = form;
 	$effect(() => {
+		if (form === lastForm) return;
+		lastForm = form;
 		toastFormResult(form);
 	});
 

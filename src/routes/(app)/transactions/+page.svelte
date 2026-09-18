@@ -5,6 +5,8 @@
 	import AddTransactionDialog from '$lib/components/AddTransactionDialog.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import CategoryCell from '$lib/components/CategoryCell.svelte';
+	import CategoryCreateConflictDialog from '$lib/components/CategoryCreateConflictDialog.svelte';
+	import { categoryPickerItems, findOppositeTypeCategory } from '$lib/categoryPicker';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
 	import Combobox from '$lib/components/ui/Combobox.svelte';
 	import Title from '$lib/components/Title.svelte';
@@ -44,7 +46,6 @@
 	} = $props();
 
 	const accountItems = $derived(data.accounts.map((a) => ({ value: String(a.id), label: a.name })));
-	const categoryItems = $derived(data.categories.map((c) => ({ value: String(c.id), label: c.name })));
 	const tagItems = $derived(data.tags.map((t) => ({ value: String(t.id), label: t.name })));
 	const tagsOf = (t: Transaction) => t.tags ?? [];
 
@@ -119,6 +120,32 @@
 	const bulkType = $derived(
 		selectedItems.length > 0 && selectedItems.every((t) => t.amount_cents > 0) ? 'income' : 'expense'
 	);
+	const categoryItems = $derived(categoryPickerItems(data.categories, bulkType));
+	const filterCategoryItems = $derived(
+		data.categories.map((c) => ({
+			value: String(c.id),
+			label: c.type === 'transfer' ? `${c.name} (transfer)` : c.name
+		}))
+	);
+
+	let bulkCatCreateMode = $state<'default' | 'use_existing' | 'create_anyway'>('default');
+	let bulkConflictOpen = $state(false);
+	let bulkConflictExisting = $state<Category | null>(null);
+	let bulkPendingCreateName = $state('');
+
+	function requestBulkCategoryCreate(typed: string) {
+		const name = typed.trim();
+		const other = findOppositeTypeCategory(data.categories, name, bulkType);
+		if (other) {
+			bulkPendingCreateName = name;
+			bulkConflictExisting = other;
+			bulkConflictOpen = true;
+			return;
+		}
+		bulkCatCreate = true;
+		bulkCatNewName = name;
+		bulkCatCreateMode = 'default';
+	}
 
 	// Bulk category picker
 	let bulkCatValue = $state('');
@@ -249,6 +276,7 @@
 		bulkCatSearch = '';
 		bulkCatCreate = false;
 		bulkCatNewName = '';
+		bulkCatCreateMode = 'default';
 		bulkTagValues = [];
 		bulkTagSearch = '';
 		bulkTagNewName = '';
@@ -402,7 +430,7 @@
 				<span class="text-xs font-medium text-muted-foreground">Categories</span>
 				<MultiCombobox
 					bind:value={filterCategories}
-					items={categoryItems}
+					items={filterCategoryItems}
 					placeholder="All categories"
 				/>
 				{#each filterCategories as v (v)}
@@ -484,6 +512,7 @@
 				<input type="hidden" name="type" value={bulkType} />
 				<input type="hidden" name="category_id" value={bulkCatCreate ? '' : bulkCatValue} />
 				<input type="hidden" name="category_new" value={bulkCatCreate ? bulkCatNewName : ''} />
+				<input type="hidden" name="category_create_mode" value={bulkCatCreate ? bulkCatCreateMode : ''} />
 				<Combobox
 					bind:value={bulkCatValue}
 					bind:search={bulkCatSearch}
@@ -493,8 +522,12 @@
 					placeholder="Apply category"
 					class="w-48"
 					onselect={(_, label, typed) => {
-						bulkCatCreate = label === null;
-						if (label === null) bulkCatNewName = typed;
+						if (label === null) {
+							requestBulkCategoryCreate(typed);
+						} else {
+							bulkCatCreate = false;
+							bulkCatCreateMode = 'default';
+						}
 					}}
 				/>
 				<Button type="submit" size="sm" variant="secondary">Apply</Button>
@@ -812,7 +845,7 @@
 	{form}
 	onclose={closeDialog}
 	onRememberPayee={(tx) => {
-		open = false;
+		dialogOpen = false;
 		void openRemember(tx);
 	}}
 />

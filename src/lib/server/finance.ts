@@ -488,6 +488,66 @@ export function getOrCreateCategory(userId: number, name: string, type: Category
 	return Number(result.lastInsertRowid);
 }
 
+export type CategoryCreateMode = 'default' | 'use_existing' | 'create_anyway';
+
+export type CategoryCreateResult =
+	| { ok: true; id: number; created: boolean }
+	| { ok: false; conflict: { id: number; name: string; type: CategoryType } };
+
+/**
+ * Create-or-resolve a category for txn pickers. Same-type name reuses the row.
+ * Other-type same name: return conflict unless mode is use_existing / create_anyway.
+ * Transfers are never matched as "other type" twins.
+ */
+export function resolveCategoryCreate(
+	userId: number,
+	name: string,
+	type: CategoryType,
+	mode: CategoryCreateMode = 'default'
+): CategoryCreateResult {
+	const trimmed = name.trim();
+	if (!trimmed) throw new Error('Category name is required.');
+	if (type === 'transfer') {
+		return { ok: true, id: getOrCreateCategory(userId, trimmed, type), created: false };
+	}
+	const fields = categoryDbFields(type);
+	const same = db()
+		.query(
+			`SELECT id FROM categories
+			 WHERE user_id = ? AND lower(name) = lower(?) AND type = ? AND is_transfer = ?`
+		)
+		.get(userId, trimmed, fields.type, fields.is_transfer) as { id: number } | undefined;
+	if (same) return { ok: true, id: same.id, created: false };
+
+	const otherType = type === 'income' ? 'expense' : 'income';
+	const otherFields = categoryDbFields(otherType);
+	const other = db()
+		.query(
+			`SELECT id, name, type, is_transfer FROM categories
+			 WHERE user_id = ? AND lower(name) = lower(?) AND type = ? AND is_transfer = ?`
+		)
+		.get(userId, trimmed, otherFields.type, otherFields.is_transfer) as
+		| { id: number; name: string; type: string; is_transfer: number }
+		| undefined;
+
+	if (other && mode === 'default') {
+		return {
+			ok: false,
+			conflict: { id: other.id, name: other.name, type: otherType }
+		};
+	}
+	if (other && mode === 'use_existing') {
+		return { ok: true, id: other.id, created: false };
+	}
+	// create_anyway, or no conflict
+	const result = db()
+		.query(
+			'INSERT INTO categories (user_id, name, type, parent_id, is_transfer) VALUES (?, ?, ?, NULL, ?)'
+		)
+		.run(userId, trimmed, fields.type, fields.is_transfer);
+	return { ok: true, id: Number(result.lastInsertRowid), created: true };
+}
+
 /** Create an account if it does not exist (case-insensitive name match). Returns the id. */
 export function getOrCreateAccount(userId: number, name: string, type: AccountType = 'bank'): number {
 	const trimmed = name.trim();
@@ -649,7 +709,14 @@ export interface TransactionInput {
  * Parses a transaction form (the Add/Edit dialog layout) into a TransactionInput.
  * Shared by the transactions page and the calendar page.
  */
-export function transactionInputFromForm(userId: number, form: FormData): { input?: TransactionInput; error?: string } {
+export function transactionInputFromForm(
+	userId: number,
+	form: FormData
+): {
+	input?: TransactionInput;
+	error?: string;
+	categoryConflict?: { id: number; name: string; type: CategoryType };
+} {
 	const id = form.get('id') ? parseInt(String(form.get('id')), 10) : null;
 	const type = form.get('type') === 'income' ? 'income' : 'expense';
 	const amount = parseAmountToCents(String(form.get('amount') ?? ''));
@@ -678,7 +745,12 @@ export function transactionInputFromForm(userId: number, form: FormData): { inpu
 	const categoryExisting = String(form.get('category_id') ?? '').trim();
 	let categoryId: number | null = null;
 	if (categoryNew) {
-		categoryId = getOrCreateCategory(userId, categoryNew, type);
+		const modeRaw = String(form.get('category_create_mode') ?? '').trim();
+		const mode =
+			modeRaw === 'use_existing' || modeRaw === 'create_anyway' ? modeRaw : 'default';
+		const resolved = resolveCategoryCreate(userId, categoryNew, type, mode);
+		if (!resolved.ok) return { categoryConflict: resolved.conflict };
+		categoryId = resolved.id;
 	} else if (categoryExisting) {
 		const category = getCategories(userId).find((c) => c.id === parseInt(categoryExisting, 10));
 		if (category) categoryId = category.id;
@@ -1830,21 +1902,33 @@ export function cashflowForMonths(
 					// Specific category list: drop uncategorized and non-selected.
 					if (id == null || !categoryFilter.has(id)) return null;
 				}
-				// Uncategorized counts as expense, matching forecastByCategory's sign.
-				const isIncome = id != null && cat?.type === 'income';
-				if (type === 'income' ? !isIncome : isIncome) return null;
-				// Raw signed values: income positive, expense negative.
+				// Raw signed values: income positive, expense negative (txn/split sign).
 				const cells = monthList.map((_, i) => ({
 					forecastCents: Math.round(forecastByMonth[i].get(id) ?? 0),
 					actualCents: Math.round(actualByMonth[i].get(id) ?? 0)
 				}));
+				const totalForecastCents = cells.reduce((s, c) => s + c.forecastCents, 0);
+				const totalActualCents = cells.reduce((s, c) => s + c.actualCents, 0);
+				// #15: when a category can hold both directions (e.g. expense + refund),
+				// section membership follows signed totals, not category.type alone.
+				// Prefer actual net; fall back to forecast; then category type.
+				const signedHint =
+					totalActualCents !== 0
+						? totalActualCents
+						: totalForecastCents !== 0
+							? totalForecastCents
+							: cat?.type === 'income'
+								? 1
+								: -1;
+				const isIncome = signedHint > 0;
+				if (type === 'income' ? !isIncome : isIncome) return null;
 				return {
 					categoryId: id,
 					categoryName: cat?.name ?? 'Uncategorized',
 					categoryColor: cat?.color ?? null,
 					cells,
-					totalForecastCents: cells.reduce((s, c) => s + c.forecastCents, 0),
-					totalActualCents: cells.reduce((s, c) => s + c.actualCents, 0)
+					totalForecastCents,
+					totalActualCents
 				};
 			})
 			.filter((r): r is CashflowSectionRow => r !== null)

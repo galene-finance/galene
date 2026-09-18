@@ -493,7 +493,161 @@ ALTER TABLE accounts ADD COLUMN opening_as_of TEXT;
 -- Manual accounts stay null (no fake bank balance). Not used to adjust the ledger.
 ALTER TABLE accounts ADD COLUMN provider_balance_cents INTEGER;
 ALTER TABLE accounts ADD COLUMN provider_balance_as_of TEXT;
-`
+`,
+{
+	// Phase: category name uniqueness (issue #17). Normal categories are unique
+	// per (user_id, name, is_transfer) so one name can hold expenses and refunds.
+	// Merge existing same-name expense+income twins, then rebuild the table.
+	sql: `-- #17: twin merge + UNIQUE(user_id, name, is_transfer) runs in after()`,
+	after(database) {
+		type CatRow = {
+			id: number;
+			user_id: number;
+			name: string;
+			type: string;
+			is_transfer: number;
+		};
+		const cats = database
+			.query(
+				`SELECT id, user_id, name, type, COALESCE(is_transfer, 0) AS is_transfer
+				 FROM categories WHERE COALESCE(is_transfer, 0) = 0`
+			)
+			.all() as CatRow[];
+
+		const groups = new Map<string, CatRow[]>();
+		for (const c of cats) {
+			const key = `${c.user_id}\0${c.name.trim().toLowerCase()}`;
+			const list = groups.get(key) ?? [];
+			list.push(c);
+			groups.set(key, list);
+		}
+
+		const refCount = (id: number): number => {
+			const tx = (
+				database.query('SELECT COUNT(*) AS n FROM transactions WHERE category_id = ?').get(id) as {
+					n: number;
+				}
+			).n;
+			const splits = (
+				database
+					.query('SELECT COUNT(*) AS n FROM transaction_splits WHERE category_id = ?')
+					.get(id) as { n: number }
+			).n;
+			const budgets = (
+				database.query('SELECT COUNT(*) AS n FROM budgets WHERE category_id = ?').get(id) as {
+					n: number;
+				}
+			).n;
+			const scheduled = (
+				database.query('SELECT COUNT(*) AS n FROM scheduled WHERE category_id = ?').get(id) as {
+					n: number;
+				}
+			).n;
+			const rules = (
+				database
+					.query('SELECT COUNT(*) AS n FROM categorization_rules WHERE category_id = ?')
+					.get(id) as { n: number }
+			).n;
+			const children = (
+				database.query('SELECT COUNT(*) AS n FROM categories WHERE parent_id = ?').get(id) as {
+					n: number;
+				}
+			).n;
+			return tx + splits + budgets + scheduled + rules + children;
+		};
+
+		const pickSurvivor = (rows: CatRow[]): CatRow => {
+			return [...rows].sort((a, b) => {
+				const rb = refCount(b.id) - refCount(a.id);
+				if (rb !== 0) return rb;
+				// Prefer expense over income on a tie, then lower id.
+				if (a.type !== b.type) return a.type === 'expense' ? -1 : 1;
+				return a.id - b.id;
+			})[0]!;
+		};
+
+		const repoint = (fromId: number, toId: number) => {
+			database.query('UPDATE transactions SET category_id = ? WHERE category_id = ?').run(toId, fromId);
+			database
+				.query('UPDATE transaction_splits SET category_id = ? WHERE category_id = ?')
+				.run(toId, fromId);
+			database.query('UPDATE scheduled SET category_id = ? WHERE category_id = ?').run(toId, fromId);
+			database
+				.query('UPDATE categorization_rules SET category_id = ? WHERE category_id = ?')
+				.run(toId, fromId);
+			database.query('UPDATE categories SET parent_id = ? WHERE parent_id = ?').run(toId, fromId);
+			// Budgets: UNIQUE(user_id, category_id, period) — drop loser rows that collide.
+			const loserBudgets = database
+				.query('SELECT id, period FROM budgets WHERE category_id = ?')
+				.all(fromId) as { id: number; period: string }[];
+			for (const b of loserBudgets) {
+				const exists = database
+					.query('SELECT id FROM budgets WHERE category_id = ? AND period = ?')
+					.get(toId, b.period) as { id: number } | null;
+				if (exists) {
+					database.query('DELETE FROM budgets WHERE id = ?').run(b.id);
+				} else {
+					database.query('UPDATE budgets SET category_id = ? WHERE id = ?').run(toId, b.id);
+				}
+			}
+			database.query('DELETE FROM categories WHERE id = ?').run(fromId);
+		};
+
+		for (const rows of groups.values()) {
+			if (rows.length < 2) continue;
+			const survivor = pickSurvivor(rows);
+			for (const loser of rows) {
+				if (loser.id === survivor.id) continue;
+				repoint(loser.id, survivor.id);
+			}
+		}
+
+		// Sign scheduled amounts from legacy category.type so forecast no longer
+		// needs category.type after the bucket remodel (amount becomes signed).
+		const scheduled = database
+			.query(
+				`SELECT s.id, s.amount_cents, c.type AS cat_type, COALESCE(c.is_transfer, 0) AS is_transfer
+				 FROM scheduled s
+				 LEFT JOIN categories c ON c.id = s.category_id`
+			)
+			.all() as {
+				id: number;
+				amount_cents: number;
+				cat_type: string | null;
+				is_transfer: number;
+			}[];
+		for (const s of scheduled) {
+			const mag = Math.abs(s.amount_cents);
+			const income = s.is_transfer === 0 && s.cat_type === 'income';
+			const signed = income ? mag : -mag;
+			if (signed !== s.amount_cents) {
+				database.query('UPDATE scheduled SET amount_cents = ? WHERE id = ?').run(signed, s.id);
+			}
+		}
+
+		database.exec(`
+CREATE TABLE categories_new (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	name TEXT NOT NULL,
+	type TEXT NOT NULL DEFAULT 'expense' CHECK (type IN ('expense','income')),
+	parent_id INTEGER,
+	color TEXT,
+	is_transfer INTEGER NOT NULL DEFAULT 0,
+	UNIQUE (user_id, name, is_transfer)
+);
+INSERT INTO categories_new (id, user_id, name, type, parent_id, color, is_transfer)
+SELECT id, user_id, name, type, parent_id, color, COALESCE(is_transfer, 0) FROM categories;
+DROP TABLE categories;
+ALTER TABLE categories_new RENAME TO categories;
+CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
+`);
+		const maxId = (
+			database.query('SELECT MAX(id) AS m FROM categories').get() as { m: number | null } | null
+		)?.m;
+		database.query('UPDATE sqlite_sequence SET seq = ? WHERE name = ?').run(maxId ?? 0, 'categories');
+	}
+}
 ];
 
 function migrate(database: Database) {

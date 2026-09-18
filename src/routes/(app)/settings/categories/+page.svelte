@@ -104,7 +104,7 @@
 		blocked.add(pendingDelete.id);
 		for (const c of data.categories) {
 			if (blocked.has(c.id)) continue;
-			const suffix = c.type === 'transfer' ? ' (transfer)' : ` (${c.type})`;
+			const suffix = c.type === 'transfer' ? ' (transfer)' : '';
 			items.push({ value: String(c.id), label: `${c.name}${suffix}` });
 		}
 		return items;
@@ -162,7 +162,7 @@
 		<div class="border-b border-border px-4 py-3">
 			<h2 class="font-medium">Categories</h2>
 			<p class="text-sm text-muted-foreground">
-				Expense, income, and transfer categories, with optional subcategories. Transfer categories
+				Named category buckets and transfers, with optional subcategories. Transfer categories
 				(for example credit card payments) move money between your accounts and are excluded from
 				cashflow income/expense and other income/expense reports and budgets by default.
 			</p>
@@ -199,10 +199,6 @@
 									</svg>
 									transfer
 								</span>
-							{:else}
-								<span class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-									>{category.type}</span
-								>
 							{/if}
 							<button
 								type="button"
@@ -231,7 +227,7 @@
 	title={catEditId ? 'Edit category' : 'Add category'}
 	description={catEditId
 		? 'Update this category. Transfer categories stay out of cashflow income/expense by default.'
-		: 'Create an expense, income, or transfer category. Optional subcategory and color.'}
+		: 'Create a named category bucket (or a transfer). Optional subcategory and color.'}
 >
 	<form method="POST" action="?/save-category" use:enhance class="flex flex-col gap-4">
 		<input type="hidden" name="id" value={catEditId ?? ''} />
@@ -240,7 +236,7 @@
 		</Field>
 		<Field
 			label="Type"
-			hint="Transfer is excluded from cashflow income/expense reports and budgets by default."
+			hint="Expense/income is only a create hint. Transfer is excluded from cashflow and budgets by default."
 		>
 			<Select name="type" bind:value={catType} items={typeItems} />
 		</Field>

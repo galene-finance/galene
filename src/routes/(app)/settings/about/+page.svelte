@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Title from '$lib/components/Title.svelte';
-	import { iconPaths } from '$lib/icons';
+	import BrandMark from '$lib/components/BrandMark.svelte';
 	import { repoUrl, shortCommit } from '$lib/version';
 	import type { Branding } from '$lib/types';
 
@@ -13,7 +13,6 @@
 		};
 	} = $props();
 
-	const logo = $derived(iconPaths(data.branding.icon));
 	const commit = $derived(data.version.commit ?? '');
 	const builtAt = $derived(data.version.built_at ?? '');
 </script>
@@ -28,19 +27,7 @@
 
 	<section class="rounded-lg border border-border bg-surface">
 		<div class="flex items-center gap-3 border-b border-border px-4 py-3">
-			<span class="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-				<svg
-					class="size-4"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				>
-					{@html logo}
-				</svg>
-			</span>
+			<BrandMark icon={data.branding.icon} class="size-8" />
 			<div class="min-w-0">
 				<h2 class="font-medium">{data.branding.name}</h2>
 				<p class="text-sm text-muted-foreground">Calm seas. Clear books.</p>

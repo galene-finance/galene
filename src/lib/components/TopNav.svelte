@@ -2,6 +2,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import DropdownMenu from '$lib/components/ui/DropdownMenu.svelte';
+	import BrandMark from './BrandMark.svelte';
 	import ThemePicker from './ThemePicker.svelte';
 	import type { AppNotification, Branding, NotificationKind, Theme, User } from '$lib/types';
 
@@ -130,14 +131,7 @@
 		</button>
 
 		<a href="/" class="flex min-w-0 flex-1 items-center gap-2 lg:flex-none">
-			<img
-				src="/brand/galene-emblem.png"
-				alt=""
-				width="28"
-				height="28"
-				class="size-7 shrink-0 rounded-full object-cover"
-				decoding="async"
-			/>
+			<BrandMark icon={branding.icon} class="size-7" />
 			<span class="truncate text-base font-semibold tracking-tight">{branding.name}</span>
 		</a>
 
@@ -283,14 +277,7 @@
 {#if open}
 	<nav class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-border bg-surface lg:hidden">
 		<div class="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
-			<img
-					src="/brand/galene-emblem.png"
-					alt=""
-					width="28"
-					height="28"
-					class="size-7 shrink-0 rounded-full object-cover"
-					decoding="async"
-				/>
+			<BrandMark icon={branding.icon} class="size-7" />
 			<span class="truncate text-base font-semibold tracking-tight">{branding.name}</span>
 		</div>
 

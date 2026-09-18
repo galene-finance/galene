@@ -83,3 +83,22 @@ export function getIcon(key: string): AppIcon {
 export function iconPaths(key: string): string {
 	return getIcon(key).d.map((p) => `<path d="${p}"/>`).join('');
 }
+
+/** Sentinel: use the static emblem PNG instead of a stroke icon. */
+export const EMBLEM_ICON_KEY = 'emblem';
+export const EMBLEM_SRC = '/brand/galene-emblem.png';
+
+export function isEmblemIcon(key: string | null | undefined): boolean {
+	return !key || key === EMBLEM_ICON_KEY || key === 'none';
+}
+
+/** Valid values for the Appearance top-left icon setting. */
+export function isValidBrandingIcon(key: string): boolean {
+	return isEmblemIcon(key) || ICONS.some((i) => i.key === key);
+}
+
+/** Normalize stored icon to a canonical key (`emblem` or a stroke icon). */
+export function normalizeBrandingIcon(key: string | null | undefined): string {
+	if (isEmblemIcon(key)) return EMBLEM_ICON_KEY;
+	return ICONS.some((i) => i.key === key) ? (key as string) : EMBLEM_ICON_KEY;
+}

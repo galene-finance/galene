@@ -8,7 +8,7 @@ import {
 	saveUserTheme
 } from '$lib/server/themes';
 import { DEFAULT_THEME_SLUG, RADIUS_RE, isHexColor } from '$lib/themes';
-import { ICONS } from '$lib/icons';
+import { EMBLEM_ICON_KEY, ICONS, isValidBrandingIcon, normalizeBrandingIcon } from '$lib/icons';
 import type { ThemeColors } from '$lib/types';
 
 export function load({ locals }) {
@@ -17,7 +17,7 @@ export function load({ locals }) {
 		themes: getUserThemes(userId),
 		selected: getThemeSetting(userId),
 		appName: getSetting(userId, 'app_name') ?? '',
-		icon: getSetting(userId, 'icon') ?? 'logo',
+		icon: normalizeBrandingIcon(getSetting(userId, 'icon') ?? EMBLEM_ICON_KEY),
 		favicon: getSetting(userId, 'favicon') ?? 'logo',
 		weekStartsOn: getSetting(userId, 'week_starts_on') ?? 'sunday'
 	};
@@ -86,10 +86,11 @@ export const actions = {
 		const icon = String(form.get('icon') ?? '').trim();
 		const favicon = String(form.get('favicon') ?? '').trim();
 		if (name.length > 40) return { error: 'App name must be 40 characters or fewer.' };
-		if (!ICONS.some((i) => i.key === icon)) return { error: 'Invalid icon.' };
+		const iconKey = normalizeBrandingIcon(icon);
+		if (!isValidBrandingIcon(iconKey)) return { error: 'Invalid icon.' };
 		if (!ICONS.some((i) => i.key === favicon)) return { error: 'Invalid favicon.' };
 		setSetting(userId, 'app_name', name);
-		setSetting(userId, 'icon', icon);
+		setSetting(userId, 'icon', iconKey);
 		setSetting(userId, 'favicon', favicon);
 		return { ok: true };
 	},

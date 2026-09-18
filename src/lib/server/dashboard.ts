@@ -27,6 +27,7 @@ import {
 import { listNotifications, unreadCount } from './notifications';
 import { dayGroupLabel, monthLabel, todayISO } from '$lib/utils';
 import { db } from './db';
+import { detectRecurringSuggestions } from './recurringDetect';
 
 /** The user's saved layout, or the default one when nothing is stored yet. */
 export function getDashboardLayout(userId: number): DashboardWidget[] {
@@ -150,7 +151,8 @@ function upcomingData(userId: number, f: DashboardFilters): DashboardWidgetData 
 		label: dayGroupLabel(date),
 		items: byDate.get(date)!.sort((a, b) => a.name.localeCompare(b.name))
 	}));
-	return { kind: 'upcoming', days: daysOut };
+	const recurringSuggestionCount = detectRecurringSuggestions(userId).length;
+	return { kind: 'upcoming', days: daysOut, recurringSuggestionCount };
 }
 
 function budgetsData(userId: number, f: DashboardFilters): DashboardWidgetData {

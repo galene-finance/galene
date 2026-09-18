@@ -171,6 +171,10 @@
 					}}
 				/>
 			</form>
+			<a
+				href="/recurring"
+				class="inline-flex h-9 items-center justify-center rounded-md border border-border bg-surface px-4 text-sm font-medium hover:bg-muted"
+			>Find recurring bills</a>
 			<Button variant="secondary" type="button" onclick={openNewScheduled}>+ New scheduled</Button>
 			<Button type="button" onclick={() => (txOpen = true)}>+ Add transaction</Button>
 		</div>

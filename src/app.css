@@ -43,6 +43,22 @@
 	--radius-xl: calc(var(--radius) + 0.25rem);
 }
 
-body {
-	@apply overflow-x-clip bg-background text-foreground antialiased;
+/* ADO-21: never size the root with 100vw/100dvw. width/max-width 100% only —
+	do not lock html to --vvw (that can freeze a desktop-layout width if
+	Firefox Desktop Site briefly applies). --vvw is for component caps. */
+html {
+	width: 100%;
+	max-width: 100%;
+	min-height: 100%;
+	overflow-x: hidden;
+	overflow-x: clip;
 }
+body {
+	width: 100%;
+	max-width: 100%;
+	min-height: 100%;
+	overflow-x: hidden;
+	overflow-x: clip;
+	@apply bg-background text-foreground antialiased;
+}
+

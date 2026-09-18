@@ -51,7 +51,7 @@
 			class="flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-border px-2 py-1.5 text-sm transition-colors hover:bg-surface-hover sm:px-2.5"
 		>
 			<span class="size-2.5 shrink-0 rounded-full" style="background: {currentTheme.colors.primary}"></span>
-			<span class="min-w-0 truncate">{currentTheme.name}</span>
+			<span class="hidden min-w-0 truncate sm:inline">{currentTheme.name}</span>
 			<svg
 				class="size-3.5 shrink-0 text-muted-foreground"
 				viewBox="0 0 24 24"

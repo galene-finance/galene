@@ -361,7 +361,7 @@
 			</p>
 		</div>
 	{:else}
-		<div class="overflow-x-auto rounded-lg border border-border bg-surface">
+		<div class="galene-scroll-x min-w-0 max-w-full overflow-x-auto rounded-lg border border-border bg-surface">
 			<table class="w-full min-w-max text-sm">
 				<thead>
 					<tr class="text-xs uppercase tracking-wide text-muted-foreground">

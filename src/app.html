@@ -3,7 +3,161 @@
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" href="/favicon.svg" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<!-- ADO-21: first-paint containment BEFORE Tailwind (FOUC desktop nav / chart
+			intrinsic width). Kept even though Simulator Safari did not repro —
+			cheap insurance. Primary open signal is Firefox iOS layout viewport
+			vs visualViewport (Desktop Site). -->
+		<style>
+			html,
+			body {
+				width: 100%;
+				max-width: 100%;
+				min-height: 100%;
+				margin: 0;
+				overflow-x: hidden;
+				overflow-x: clip;
+			}
+			.galene-nav-desktop {
+				display: none !important;
+			}
+			@media (min-width: 1024px) {
+				.galene-nav-desktop {
+					display: flex !important;
+				}
+			}
+			svg.galene-chart {
+				display: block;
+				width: 100%;
+				max-width: 100%;
+				height: auto;
+			}
+			.galene-scroll-x {
+				max-width: 100%;
+				overflow-x: auto;
+				-webkit-overflow-scrolling: touch;
+			}
+			.galene-shell {
+				position: relative;
+				width: 100%;
+				max-width: 100%;
+				min-height: 100%;
+				min-height: 100vh;
+				overflow-x: hidden;
+				overflow-x: clip;
+			}
+			/* When Firefox (or any UA) uses a desktop layout viewport wider than
+			   the screen, html.galene-vv-clamp locks to --vvw (visual width). */
+			html.galene-vv-clamp,
+			html.galene-vv-clamp body,
+			html.galene-vv-clamp .galene-shell {
+				max-width: var(--vvw, 100%) !important;
+				width: var(--vvw, 100%) !important;
+				overflow-x: hidden !important;
+			}
+		</style>
+		<script>
+			// ADO-21: Firefox iOS Desktop Site (and similar) can give a layout
+			// viewport much wider than visualViewport. Clamp root to visual
+			// width when that gap appears. No 100vw; no minimum-scale hacks.
+			(function () {
+				var root = document.documentElement;
+				function visualWidth() {
+					var vv = window.visualViewport;
+					if (vv && vv.width > 0) return vv.width;
+					return 0;
+				}
+				function layoutWidth() {
+					return Math.max(
+						root.clientWidth || 0,
+						window.innerWidth || 0,
+						document.body ? document.body.clientWidth || 0 : 0
+					);
+				}
+				function kick() {
+					var vis = visualWidth();
+					if (!(vis > 0)) return;
+					root.style.setProperty('--vvw', vis + 'px');
+					var layout = layoutWidth();
+					// Desktop-site / wrong-first-paint signature: layout >> visual
+					if (layout > vis + 8) {
+						root.classList.add('galene-vv-clamp');
+					} else {
+						root.classList.remove('galene-vv-clamp');
+					}
+					void root.offsetWidth;
+				}
+				kick();
+				if (window.visualViewport) {
+					window.visualViewport.addEventListener('resize', kick);
+					window.visualViewport.addEventListener('scroll', kick);
+				}
+				window.addEventListener('resize', kick);
+				window.addEventListener('orientationchange', kick);
+				window.addEventListener('pageshow', kick);
+				window.addEventListener('load', kick);
+				if (typeof requestAnimationFrame === 'function') {
+					requestAnimationFrame(function () {
+						requestAnimationFrame(kick);
+					});
+				} else {
+					setTimeout(kick, 0);
+				}
+				// A few delayed kicks: Firefox sometimes settles viewport late.
+				setTimeout(kick, 50);
+				setTimeout(kick, 250);
+				setTimeout(kick, 1000);
+			})();
+		</script>
+		<script>
+			// ADO-21: ?ado21debug=1 outlines elements past the viewport.
+			(function () {
+				if (!/[?&]ado21debug=1(?:&|$)/.test(location.search)) return;
+				function paint() {
+					var vw =
+						(window.visualViewport && window.visualViewport.width) ||
+						document.documentElement.clientWidth;
+					document.querySelectorAll('[data-ado21]').forEach(function (el) {
+						el.removeAttribute('data-ado21');
+						el.style.outline = '';
+					});
+					var list = [];
+					document.querySelectorAll('body *').forEach(function (el) {
+						var r = el.getBoundingClientRect();
+						if (r.width < 2 || r.height < 2) return;
+						if (r.right > vw + 1 || el.scrollWidth > el.clientWidth + 1) {
+							el.setAttribute('data-ado21', '1');
+							el.style.outline = '2px solid magenta';
+							list.push({
+								tag: el.tagName,
+								cls: (typeof el.className === 'string' ? el.className : '').slice(0, 80),
+								right: Math.round(r.right),
+								sw: el.scrollWidth,
+								cw: el.clientWidth
+							});
+						}
+					});
+					list.sort(function (a, b) {
+						return b.right - a.right;
+					});
+					console.log(
+						'[ado21debug] vis=' +
+							Math.round(vw) +
+							' layout=' +
+							document.documentElement.clientWidth +
+							' clamp=' +
+							document.documentElement.classList.contains('galene-vv-clamp') +
+							' offenders',
+						list.slice(0, 20)
+					);
+				}
+				window.addEventListener('load', function () {
+					paint();
+					setTimeout(paint, 300);
+					setTimeout(paint, 1000);
+				});
+			})();
+		</script>
 		<script>
 			// Apply the last-used theme before first paint. The stored value is
 			// a default theme slug or a user theme id; the matching stylesheet
@@ -24,6 +178,6 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit:load data-sveltekit:body>
-		<div style="display: contents">%sveltekit.body%</div>
+		<div class="galene-shell min-h-screen min-w-0 w-full max-w-full overflow-x-hidden overflow-x-clip">%sveltekit.body%</div>
 	</body>
 </html>

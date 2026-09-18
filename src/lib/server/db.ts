@@ -48,14 +48,26 @@ export function db(): Database {
 	if (!_db) {
 		assertDataDirOnVolume();
 		mkdirSync(dirname(DB_PATH), { recursive: true });
-		_db = new Database(DB_PATH, { create: true });
-		_db.exec('PRAGMA journal_mode = WAL;');
-		_db.exec('PRAGMA foreign_keys = ON;');
-		// Writers that lose the write-lock race (e.g. two concurrent first
-		// signups in separate processes) wait for it instead of failing with
-		// SQLITE_BUSY, so the loser can re-check state and reject cleanly.
-		_db.exec('PRAGMA busy_timeout = 5000;');
-		migrate(_db);
+		const database = new Database(DB_PATH, { create: true });
+		try {
+			database.exec('PRAGMA journal_mode = WAL;');
+			database.exec('PRAGMA foreign_keys = ON;');
+			// Writers that lose the write-lock race (e.g. two concurrent first
+			// signups in separate processes) wait for it instead of failing with
+			// SQLITE_BUSY, so the loser can re-check state and reject cleanly.
+			database.exec('PRAGMA busy_timeout = 5000;');
+			migrate(database);
+			_db = database;
+		} catch (error) {
+			// Don't leave a half-migrated connection as the singleton — later
+			// requests would skip migrate() and serve the old schema.
+			try {
+				database.close();
+			} catch {
+				/* ignore close errors */
+			}
+			throw error;
+		}
 	}
 	return _db;
 }
@@ -498,7 +510,7 @@ ALTER TABLE accounts ADD COLUMN provider_balance_as_of TEXT;
 	// Phase: category name uniqueness (issue #17). Normal categories are unique
 	// per (user_id, name, is_transfer) so one name can hold expenses and refunds.
 	// Merge existing same-name expense+income twins, then rebuild the table.
-	sql: `-- #17: twin merge + UNIQUE(user_id, name, is_transfer) runs in after()`,
+	sql: `SELECT 1; -- #17: twin merge + UNIQUE(user_id, name, is_transfer) runs in after()`,
 	after(database) {
 		type CatRow = {
 			id: number;
@@ -659,7 +671,13 @@ function migrate(database: Database) {
 	try {
 		for (let i = current; i < MIGRATIONS.length; i++) {
 			const migration = MIGRATIONS[i];
-			database.exec(typeof migration === 'string' ? migration : migration.sql);
+			const sql = typeof migration === 'string' ? migration : migration.sql;
+			// bun:sqlite exec() rejects empty / comment-only statements.
+			if (sql.replace(/--[^\n]*/g, '').trim()) {
+				database.exec(sql);
+			} else if (typeof migration === 'string' || !migration.after) {
+				throw new Error(`Migration ${i} has no executable SQL`);
+			}
 			if (typeof migration !== 'string') {
 				if (migration.after) migration.after(database);
 				if (migration.vacuum) needsVacuum = true;

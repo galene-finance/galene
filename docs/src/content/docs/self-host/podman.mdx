@@ -69,17 +69,19 @@ Avoid `vfs` — it is very slow for the SQLite WAL workload. `overlay`/`overlay2
 
 ## Pulling from GHCR
 
-`podman login ghcr.io` with a **classic** personal access token that has `read:packages` (fine-grained tokens cannot access GHCR), then:
+**Public images pull anonymously** — no login:
 
 ```bash
 podman pull ghcr.io/galene-finance/galene:app-latest
 ```
+
+Only if pull fails (private package, org policy, rate limits, etc.) run `podman login ghcr.io` with a **classic** personal access token that has `read:packages`. Fine-grained tokens cannot authenticate to GHCR.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
 | Can't bind a port below 1024 as a normal user | `sysctl net.ipv4.ip_unprivileged_port_start=0`, or use a port ≥ 1024. |
-| `podman pull ghcr.io/…` fails with a fine-grained token | Use a classic PAT with `read:packages`. |
+| `podman pull ghcr.io/…` fails after a fine-grained login | `podman logout ghcr.io` and pull anonymously, or use a classic PAT with `read:packages`. |
 
 Everything else — the volume requirement, healthcheck, upgrades, and the cookie behavior — is the same as [Docker & Compose](/self-host/docker/).

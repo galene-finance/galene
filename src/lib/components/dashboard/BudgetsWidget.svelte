@@ -17,7 +17,7 @@
 			{@const over = b.spentCents > b.limitCents}
 			{@const pct = Math.min(100, Math.round((b.spentCents / Math.max(1, b.limitCents)) * 100))}
 			<li>
-				<div class="mb-1 flex items-center justify-between gap-2 text-sm">
+				<div class="mb-1 flex min-w-0 items-center justify-between gap-2 text-sm">
 					<span class="flex min-w-0 items-center gap-2">
 						<span class="size-2.5 shrink-0 rounded-full" style="background: {b.categoryColor ?? 'transparent'}"></span>
 						<span class="truncate">{b.categoryName}</span>
@@ -27,7 +27,7 @@
 				<div class="h-2 w-full overflow-hidden rounded-full bg-muted">
 					<div class="h-full rounded-full {over ? 'bg-destructive' : 'bg-primary'}" style="width: {pct}%"></div>
 				</div>
-				<p class="mt-1 text-xs text-muted-foreground">
+				<p class="mt-1 truncate text-xs text-muted-foreground">
 					<span class="font-medium {over ? 'text-destructive' : 'text-foreground'}">{formatMoney(b.spentCents)}</span>
 					of {formatMoney(b.limitCents)}{#if over} · over by {formatMoney(b.spentCents - b.limitCents)}{/if}
 				</p>

@@ -141,7 +141,7 @@
 			<span class="truncate text-base font-semibold tracking-tight">{branding.name}</span>
 		</a>
 
-		<nav class="ml-4 hidden items-center gap-1 lg:flex">
+		<nav class="galene-nav-desktop ml-4 hidden items-center gap-1 lg:flex">
 			{#each nav as item (item.href)}
 				<a
 					href={item.href}

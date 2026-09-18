@@ -79,7 +79,15 @@ export function db(): Database {
  * whole database after the migration commits, so data replaced by the
  * migration (e.g. a raw token) doesn't linger in freed pages or backups.
  */
-type Migration = string | { sql: string; after?: (database: Database) => void; vacuum?: boolean };
+type Migration =
+	| string
+	| {
+			sql: string;
+			after?: (database: Database) => void;
+			/** Runs after the main migrate transaction commits, with foreign_keys OFF (#20). */
+			afterFkOff?: (database: Database) => void;
+			vacuum?: boolean;
+	  };
 
 const MIGRATIONS: Migration[] = [
 	`
@@ -637,6 +645,10 @@ ALTER TABLE accounts ADD COLUMN provider_balance_as_of TEXT;
 			}
 		}
 
+	},
+	afterFkOff(database) {
+		// Must run with foreign_keys OFF *outside* a parent transaction — SQLite
+		// ignores PRAGMA foreign_keys changes while a txn is open (#20).
 		database.exec(`
 CREATE TABLE categories_new (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -662,11 +674,80 @@ CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
 }
 ];
 
-function migrate(database: Database) {
+/** Target PRAGMA user_version after all migrations. */
+export function migrationCount(): number {
+	return MIGRATIONS.length;
+}
+
+/** Snapshot of category-linked rows — used to fail migrate if a rebuild wipes FKs (#20). */
+function categoryLinkSnapshot(database: Database): {
+	categorizedTxns: number;
+	splits: number;
+	budgets: number;
+	rules: number;
+	scheduledCategorized: number;
+} {
+	const has = (table: string) =>
+		!!(
+			database
+				.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = ?`)
+				.get(table) as { o: number } | null
+		);
+	const n = (sql: string) => (database.query(sql).get() as { n: number }).n;
+	return {
+		categorizedTxns: has('transactions')
+			? n('SELECT COUNT(*) AS n FROM transactions WHERE category_id IS NOT NULL')
+			: 0,
+		splits: has('transaction_splits') ? n('SELECT COUNT(*) AS n FROM transaction_splits') : 0,
+		budgets: has('budgets') ? n('SELECT COUNT(*) AS n FROM budgets') : 0,
+		rules: has('categorization_rules')
+			? n('SELECT COUNT(*) AS n FROM categorization_rules')
+			: 0,
+		scheduledCategorized: has('scheduled')
+			? n('SELECT COUNT(*) AS n FROM scheduled WHERE category_id IS NOT NULL')
+			: 0
+	};
+}
+
+/**
+ * Apply pending schema migrations. Exported for the migrate harness test (#20).
+ * Does not open or close the connection.
+ */
+
+function assertCategoryLinksPreserved(
+	before: ReturnType<typeof categoryLinkSnapshot>,
+	after: ReturnType<typeof categoryLinkSnapshot>
+) {
+	if (after.categorizedTxns < before.categorizedTxns) {
+		throw new Error(
+			`Migration aborted: categorized transactions fell from ${before.categorizedTxns} to ${after.categorizedTxns} (likely DROP TABLE with foreign_keys ON)`
+		);
+	}
+	if (after.splits < before.splits) {
+		throw new Error(
+			`Migration aborted: transaction_splits fell from ${before.splits} to ${after.splits}`
+		);
+	}
+	if (after.rules < before.rules) {
+		throw new Error(
+			`Migration aborted: categorization_rules fell from ${before.rules} to ${after.rules}`
+		);
+	}
+	if (after.scheduledCategorized < before.scheduledCategorized) {
+		throw new Error(
+			`Migration aborted: categorized scheduled rows fell from ${before.scheduledCategorized} to ${after.scheduledCategorized}`
+		);
+	}
+}
+
+export function migrate(database: Database) {
 	const row = database.query('PRAGMA user_version').get() as { user_version: number } | null;
 	const current = row?.user_version ?? 0;
 	if (current >= MIGRATIONS.length) return;
 	let needsVacuum = false;
+	const before = categoryLinkSnapshot(database);
+	const fkOffHooks: Array<(database: Database) => void> = [];
+
 	database.run('BEGIN');
 	try {
 		for (let i = current; i < MIGRATIONS.length; i++) {
@@ -675,26 +756,50 @@ function migrate(database: Database) {
 			// bun:sqlite exec() rejects empty / comment-only statements.
 			if (sql.replace(/--[^\n]*/g, '').trim()) {
 				database.exec(sql);
-			} else if (typeof migration === 'string' || !migration.after) {
+			} else if (typeof migration === 'string' || (!migration.after && !migration.afterFkOff)) {
 				throw new Error(`Migration ${i} has no executable SQL`);
 			}
 			if (typeof migration !== 'string') {
 				if (migration.after) migration.after(database);
+				if (migration.afterFkOff) fkOffHooks.push(migration.afterFkOff);
 				if (migration.vacuum) needsVacuum = true;
 			}
 		}
+		assertCategoryLinksPreserved(before, categoryLinkSnapshot(database));
+		database.run('COMMIT');
+	} catch (error) {
+		database.run('ROLLBACK');
+		throw error;
+	}
+
+	// Table rebuilds that DROP a referenced parent must run with foreign_keys OFF,
+	// and SQLite will not honor that pragma inside an open transaction (#20).
+	for (const hook of fkOffHooks) {
+		database.exec('PRAGMA foreign_keys = OFF');
+		try {
+			database.run('BEGIN');
+			try {
+				hook(database);
+				assertCategoryLinksPreserved(before, categoryLinkSnapshot(database));
+				database.run('COMMIT');
+			} catch (error) {
+				database.run('ROLLBACK');
+				throw error;
+			}
+		} finally {
+			database.exec('PRAGMA foreign_keys = ON');
+		}
+	}
+
+	database.run('BEGIN');
+	try {
 		database.run(`PRAGMA user_version = ${MIGRATIONS.length}`);
 		database.run('COMMIT');
 	} catch (error) {
 		database.run('ROLLBACK');
 		throw error;
 	}
-	// VACUUM can't run inside a transaction, so it happens after the commit.
-	// In WAL mode its output lands in the -wal file, which keeps the old
-	// frames (with the replaced data) until a checkpoint drops them, so the
-	// TRUNCATE checkpoint moves everything into the main file and zeroes the
-	// WAL. A failure here only leaves replaced data in the file — the hashed
-	// columns are already in place — so warn instead of failing startup.
+
 	if (needsVacuum) {
 		try {
 			database.exec('VACUUM;');

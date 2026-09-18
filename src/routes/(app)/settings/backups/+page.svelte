@@ -82,6 +82,11 @@
 		>← Back to Settings</a
 	>
 	<h1 class="text-2xl font-semibold tracking-tight">Backups</h1>
+	<p class="mt-2 max-w-2xl text-sm text-muted-foreground">
+		Take a backup before upgrading the app image when schema migrations may run. If category links
+		were lost after an upgrade, restore the database file from a pre-upgrade backup — Galene does
+		not invent a silent repair. See the self-host Backups docs.
+	</p>
 
 	<section class="rounded-lg border border-border bg-surface">
 		<div class="border-b border-border px-4 py-3">

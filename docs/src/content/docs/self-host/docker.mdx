@@ -61,7 +61,7 @@ The compose file sets `GALENE_COOKIE_SECURE: "0"` for plain-HTTP self-hosting (L
 2. Pull the new image (`docker compose pull`) or rebuild.
 3. Recreate the container: `docker compose up -d`.
 
-The database migrates automatically at startup (versioned `PRAGMA user_version` migrations, in a transaction). Your data, sessions, and API tokens live on the volume, not in the image.
+The database migrates automatically at startup (versioned `PRAGMA user_version` migrations, in a transaction). Your data, sessions, and API tokens live on the volume, not in the image. Take a [Backups](/self-host/backups/) copy before upgrading images that include schema changes.
 
 ## Pulling the published images
 

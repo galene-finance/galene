@@ -18,3 +18,20 @@ Then in the UI: Settings → Backups → Folder → `/app/backups` → Save fold
 :::warning
 Backups are full copies of the database file, so they contain every user's data and all stored credentials. Keep the backups volume private, and copy it off-box if you want redundancy beyond the host.
 :::
+
+## Before upgrading
+
+Take a backup (or confirm scheduled backups are current) **before** pulling a new app image that may run database migrations. Migrations are automatic at startup; a pre-upgrade copy is the recovery path if something goes wrong.
+
+## If category links disappeared after an upgrade
+
+A bad schema rebuild (fixed in #20) could null `transactions.category_id` and cascade-delete splits, budgets, and rules while leaving category rows intact.
+
+Galene does **not** invent a silent reattach. Recovery:
+
+1. Stop the app.
+2. Restore the database file from a **Settings → Backups** copy taken **before** that upgrade (replace `galene.db` / the data volume DB with the backup file — see your host’s volume layout in [Docker & Compose](/self-host/docker/) or [From source](/self-host/from-source/)).
+3. Start the app on a build that includes the #20 migration fix, then upgrade again.
+
+If you only have a post-wipe database, restore from the pre-upgrade backup; do not expect an in-app “guess” repair.
+

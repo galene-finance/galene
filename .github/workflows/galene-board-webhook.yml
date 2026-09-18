@@ -1,14 +1,15 @@
-# Forward status/* label events to Grok Bot → Galene Lead.
+# Forward actionable status/* label events to Grok Bot → Galene Lead.
 # Secrets (repo): GALENE_BOARD_WEBHOOK_URL, GALENE_BOARD_WEBHOOK_KEY
+# Only "labeled" (not unlabeled) — status swaps used to storm the webhook.
 name: Galene board webhook
 on:
   issues:
-    types: [labeled, unlabeled]
+    types: [labeled]
 
 jobs:
   notify:
     if: >-
-      startsWith(github.event.label.name, 'status/') &&
+      github.event.action == 'labeled' &&
       contains(fromJSON('["status/ready","status/testing-failed","status/in-review","status/ready-for-main"]'), github.event.label.name)
     runs-on: ubuntu-latest
     steps:
@@ -26,7 +27,6 @@ jobs:
             echo "Missing GALENE_BOARD_WEBHOOK_URL or GALENE_BOARD_WEBHOOK_KEY — skipping"
             exit 0
           fi
-          # Build JSON via jq + env (avoid embedding issue body in the workflow script)
           payload=$(jq -n \
             --arg action "$EVENT_ACTION" \
             --arg label "$EVENT_LABEL" \

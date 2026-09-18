@@ -9,7 +9,8 @@
     "preview": "bun -b vite preview",
     "check": "svelte-kit sync && svelte-check",
     "mcp": "bun mcp/index.ts",
-    "playwright": "playwright-cli"
+    "playwright": "playwright-cli",
+    "test:migrate": "bun test src/lib/server/db.migrate.test.ts"
   },
   "devDependencies": {
     "@internationalized/date": "^3.12.4",

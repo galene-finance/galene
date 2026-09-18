@@ -29,3 +29,11 @@ Galene is self-hostable personal finance (SvelteKit + Bun + SQLite). Prefer smal
 - Do not cut a release unless asked.
 - Ask before pushing to GitHub remotes if your local policy requires it; bots that are authorized to push still must follow the flow above.
 - Docker images are **always** multi-arch (`linux/amd64` + `linux/arm64`).
+
+## Schema migrations (SQLite)
+
+- Migrations run at startup (`PRAGMA user_version`, transactional). Prefer additive SQL.
+- **Never `DROP TABLE` a parent** that children reference with `ON DELETE SET NULL` / `CASCADE` while `PRAGMA foreign_keys = ON`. That wipes or deletes child rows even if you recreate the parent with the same ids (#20).
+- SQLite **ignores** `PRAGMA foreign_keys = OFF` inside an open transaction. Use the migration `afterFkOff` hook (runs after COMMIT, with FKs off) for parent-table rebuilds.
+- Before bumping `user_version`, migrate asserts categorized txn / split / rule counts did not fall.
+- Recommend operators take a **Settings → Backups** copy before upgrading images that include schema migrations.

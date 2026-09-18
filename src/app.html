@@ -39,6 +39,16 @@
 				overflow-x: auto;
 				-webkit-overflow-scrolling: touch;
 			}
+			/* SO-style inner shell: overflow + position, no Tailwind required */
+			.galene-shell {
+				position: relative;
+				width: 100%;
+				max-width: 100%;
+				min-height: 100%;
+				min-height: 100vh;
+				overflow-x: hidden;
+				overflow-x: clip;
+			}
 		</style>
 		<script>
 			// ADO-21: --vvw from visualViewport for component max-widths.
@@ -133,6 +143,6 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit:load data-sveltekit:body>
-		<div class="min-h-screen min-w-0 w-full max-w-full overflow-x-clip">%sveltekit.body%</div>
+		<div class="galene-shell min-h-screen min-w-0 w-full max-w-full overflow-x-hidden overflow-x-clip">%sveltekit.body%</div>
 	</body>
 </html>

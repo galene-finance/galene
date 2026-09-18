@@ -6,7 +6,7 @@
 	import Select from '$lib/components/ui/Select.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import { readableOn } from '$lib/color';
-	import { EMBLEM_ICON_KEY, EMBLEM_SRC, ICONS, getIcon, normalizeBrandingIcon } from '$lib/icons';
+	import { EMBLEM_ICON_KEY, EMBLEM_SRC, ICONS, getIcon, isEmblemIcon, normalizeBrandingIcon } from '$lib/icons';
 	import { DEFAULT_THEMES, applyThemeNow, themeValue } from '$lib/themes';
 	import { toastFormResult } from '$lib/toasts';
 	import type { Theme, ThemeColors } from '$lib/types';
@@ -119,11 +119,11 @@
 	// --- Branding ---
 	let appName = $state(data.appName);
 	let icon = $state(normalizeBrandingIcon(data.icon));
-	let favicon = $state(data.favicon);
+	let favicon = $state(normalizeBrandingIcon(data.favicon));
 	$effect(() => {
 		appName = data.appName;
 		icon = normalizeBrandingIcon(data.icon);
-		favicon = data.favicon;
+		favicon = normalizeBrandingIcon(data.favicon);
 	});
 	const faviconIcon = $derived(getIcon(favicon));
 
@@ -360,26 +360,44 @@
 						<span class="text-sm font-medium">Favicon</span>
 						<span class="flex items-center gap-1.5 text-xs text-muted-foreground">
 							Preview
-							<span
-								class="flex size-7 items-center justify-center rounded-md"
-								style="background: {selectedTheme.colors.primary}"
-							>
-								<svg
-									class="size-4"
-									style="color: {readableOn(selectedTheme.colors.primary)}"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
+							{#if isEmblemIcon(favicon)}
+								<img src={EMBLEM_SRC} alt="" class="size-7 rounded-md object-cover" />
+							{:else}
+								<span
+									class="flex size-7 items-center justify-center rounded-md"
+									style="background: {selectedTheme.colors.primary}"
 								>
-									{@html faviconIcon.d.map((p) => `<path d="${p}"/>`).join('')}
-								</svg>
-							</span>
+									<svg
+										class="size-4"
+										style="color: {readableOn(selectedTheme.colors.primary)}"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									>
+										{@html faviconIcon.d.map((p) => `<path d="${p}"/>`).join('')}
+									</svg>
+								</span>
+							{/if}
 						</span>
 					</div>
+					<p class="mb-2 text-xs text-muted-foreground">
+						Emblem is the default tab icon. Pick a stroke icon to override, or Emblem to restore the image.
+					</p>
 					<div class="flex flex-wrap gap-1.5">
+						<button
+							type="button"
+							class="flex size-9 items-center justify-center rounded-md border-2 transition-colors {favicon === EMBLEM_ICON_KEY
+								? 'border-primary bg-primary/10'
+								: 'border-border hover:bg-surface-hover'}"
+							onclick={() => (favicon = EMBLEM_ICON_KEY)}
+							aria-label="Emblem"
+							title="Emblem"
+						>
+							<img src={EMBLEM_SRC} alt="" class="size-5 rounded-full object-cover" />
+						</button>
 						{#each ICONS as ic (ic.key)}
 							<button
 								type="button"

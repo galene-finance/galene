@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { flushSync } from 'svelte';
 	import { deserialize, enhance } from '$app/forms';
+	import { page } from '$app/state';
 	import AddScheduledDialog from '$lib/components/AddScheduledDialog.svelte';
+	import CsvIoIcons from '$lib/components/CsvIoIcons.svelte';
 	import AddTransactionDialog from '$lib/components/AddTransactionDialog.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import CategoryCell from '$lib/components/CategoryCell.svelte';
@@ -325,6 +327,14 @@
 	);
 
 	// Mobile list is grouped by day; items arrive date-descending
+	const exportHref = $derived.by(() => {
+		const params = new URLSearchParams(page.url.searchParams);
+		params.delete('page');
+		params.delete('page_size');
+		const q = params.toString();
+		return q ? `/transactions/export.csv?${q}` : '/transactions/export.csv';
+	});
+
 	const groups = $derived.by(() => {
 		const out: { label: string; items: Transaction[] }[] = [];
 		for (const t of data.data.items) {
@@ -341,11 +351,8 @@
 <div class="mx-auto flex max-w-6xl flex-col gap-4 2xl:max-w-7xl">
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<h1 class="text-2xl font-semibold tracking-tight">Transactions</h1>
-		<div class="flex flex-wrap gap-2">
-			<a
-				href="/transactions/import"
-				class="inline-flex h-9 items-center justify-center rounded-md border border-border bg-surface px-4 text-sm font-medium hover:bg-muted"
-			>Import CSV</a>
+		<div class="flex flex-wrap items-center gap-2">
+			<CsvIoIcons {exportHref} />
 			<Button variant="secondary" type="button" onclick={() => (scheduledOpen = true)}>+ New scheduled</Button>
 			<Button type="button" onclick={openAdd}>+ Add transaction</Button>
 		</div>

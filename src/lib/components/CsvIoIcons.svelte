@@ -1,7 +1,7 @@
 <script lang="ts">
 	let {
 		importHref = '/transactions/import',
-		exportHref = '/transactions/export.csv',
+		exportHref = '/transactions/export',
 		size = 'md'
 	}: {
 		importHref?: string;

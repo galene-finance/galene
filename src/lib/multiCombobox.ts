@@ -31,3 +31,18 @@ export function removeLastPill(values: readonly string[]): string[] {
 export function shouldRemoveLastOnBackspace(search: string, values: readonly string[]): boolean {
 	return search === '' && values.length > 0;
 }
+
+/** Dropdown options: search match, minus values already shown as pills. */
+export function availableItems(
+	items: readonly MultiComboboxItem[],
+	values: readonly string[],
+	search: string
+): MultiComboboxItem[] {
+	const selected = new Set(values);
+	const q = search.trim().toLowerCase();
+	return items.filter((i) => {
+		if (selected.has(i.value)) return false;
+		if (q === '') return true;
+		return i.label.toLowerCase().includes(q);
+	});
+}

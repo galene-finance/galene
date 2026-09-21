@@ -3,6 +3,7 @@
 	import { Combobox as BitsCombobox } from 'bits-ui';
 	import {
 		CREATE_VALUE,
+		availableItems,
 		removeLastPill,
 		removeValue,
 		selectedPills,
@@ -29,11 +30,7 @@
 		closeOnSelect = true
 	} = $props();
 
-	const filtered = $derived(
-		search.trim() === ''
-			? items
-			: items.filter((i) => i.label.toLowerCase().includes(search.trim().toLowerCase()))
-	);
+	const filtered = $derived(availableItems(items, value, search));
 	const canCreate = $derived(
 		allowCreate &&
 			search.trim() !== '' &&
@@ -43,10 +40,21 @@
 	const pills = $derived(selectedPills(value, items, lastCreated));
 
 	let container: HTMLDivElement | undefined;
+	let fieldWidth = $state(0);
 	let open = $state(false);
 	function inputEl() {
 		return container?.querySelector('input') as HTMLInputElement | null;
 	}
+
+	function measureField() {
+		fieldWidth = container?.offsetWidth ?? 0;
+	}
+
+	$effect(() => {
+		value;
+		pills;
+		measureField();
+	});
 
 	function clearSearchInput() {
 		search = '';
@@ -119,7 +127,10 @@
 	{name}
 	onValueChange={handleValueChange}
 	onOpenChange={(o) => {
-		if (o) return;
+		if (o) {
+			measureField();
+			return;
+		}
 		search = '';
 		const el = inputEl();
 		if (el) el.value = '';
@@ -171,7 +182,9 @@
 	</div>
 	<BitsCombobox.Portal>
 		<BitsCombobox.Content
-			class="z-50 max-h-72 w-[var(--bits-combobox-anchor-width)] overflow-auto rounded-md border border-border bg-surface p-1 shadow-md"
+			class="z-50 max-h-72 min-w-0 overflow-auto rounded-md border border-border bg-surface p-1 shadow-md"
+			style="width: {fieldWidth}px"
+			customAnchor={container ?? null}
 			sideOffset={4}
 		>
 			{#if filtered.length === 0 && !canCreate}
@@ -182,7 +195,7 @@
 						{...item}
 						class="data-[highlighted]:bg-muted flex cursor-pointer items-center rounded-sm px-3 py-2 text-sm"
 					>
-						{item.label}
+						<span class="truncate">{item.label}</span>
 					</BitsCombobox.Item>
 				{/each}
 				{#if canCreate}

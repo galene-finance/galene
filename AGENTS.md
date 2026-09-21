@@ -7,6 +7,7 @@ Galene is self-hostable personal finance (SvelteKit + Bun + SQLite). Prefer smal
 ## Privacy (issues / PRs / comments)
 
 - Never put personal computer names, hostnames, LAN IPs, home-lab topology, or private domains in GitHub issues, PRs, comments, or in-repo docs meant for the public.
+- Never put the maintainer’s given name in GitHub issues, PRs, comments, or public docs. Use “the maintainer” or omit.
 - Prefer generic labels: local build host, app host, reverse-proxy host, `:app-test`, production URL (or omit).
 - Public product names (SimpleFIN, Plaid, Caddy, Authentik, etc.) and generic reverse-proxy examples are fine.
 

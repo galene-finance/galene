@@ -34,8 +34,9 @@ function categoryValue(t: Transaction): string | null {
 	if (t.splits && t.splits.length > 0) {
 		return t.splits
 			.map((s) => {
-				const name = present(s.category_name) ?? 'Split';
-				return `${name} ${formatMoney(s.amount_cents)}`;
+				const amount = formatMoney(s.amount_cents);
+				const name = present(s.category_name);
+				return name ? `${name} ${amount}` : amount;
 			})
 			.join(', ');
 	}
@@ -44,7 +45,7 @@ function categoryValue(t: Transaction): string | null {
 
 export function transactionPillRows(t: Transaction): PillPopupRow[] {
 	const rows: PillPopupRow[] = [];
-	push(rows, 'Name', t.merchant ?? t.category_name ?? 'Transaction');
+	push(rows, 'Name', present(t.merchant) ?? present(t.category_name) ?? 'Transaction');
 	push(rows, 'Amount', formatMoney(t.amount_cents));
 	push(rows, 'Start', formatDate(t.date));
 	push(rows, 'Notes', t.notes);
@@ -68,12 +69,20 @@ export function scheduledPillRows(s: Scheduled): PillPopupRow[] {
 	return rows;
 }
 
-export function popupPosition(rect: {
-	top: number;
-	bottom: number;
-	left: number;
-	width: number;
-}, viewport: { width: number; height: number } = { width: 1280, height: 800 }): { top: number; left: number } {
+export function estimatedPopupHeight(rowCount: number): number {
+	return Math.max(40, rowCount * 22 + 16);
+}
+
+export function popupPosition(
+	rect: {
+		top: number;
+		bottom: number;
+		left: number;
+		width: number;
+	},
+	viewport: { width: number; height: number } = { width: 1280, height: 800 },
+	height = 160
+): { top: number; left: number } {
 	const popupWidth = 224;
 	const gap = 6;
 	const margin = 8;
@@ -81,6 +90,6 @@ export function popupPosition(rect: {
 	if (left + popupWidth > viewport.width - margin) left = viewport.width - popupWidth - margin;
 	if (left < margin) left = margin;
 	const spaceBelow = viewport.height - rect.bottom;
-	const top = spaceBelow < 160 ? Math.max(margin, rect.top - 160 - gap) : rect.bottom + gap;
+	const top = spaceBelow < height ? Math.max(margin, rect.top - height - gap) : rect.bottom + gap;
 	return { top, left };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	estimatedPopupHeight,
 	formatRepeat,
 	popupPosition,
 	scheduledPillRows,
@@ -88,6 +89,7 @@ describe('transactionPillRows', () => {
 				'Name'
 			)
 		).toBe('Transaction');
+		expect(value(transactionPillRows(txn({ merchant: '   ' })), 'Name')).toBe('Coffee');
 	});
 
 	test('does not invent until or repeat rows', () => {
@@ -106,6 +108,18 @@ describe('transactionPillRows', () => {
 			})
 		);
 		expect(value(rows, 'Category')).toBe('Coffee -$4.00, Snack -$8.50');
+	});
+
+	test('omits invented split names when a split has no category', () => {
+		const rows = transactionPillRows(
+			txn({
+				splits: [
+					{ category_id: 2, category_name: null, amount_cents: -400 },
+					{ category_id: 4, category_name: 'Snack', amount_cents: -850 }
+				]
+			})
+		);
+		expect(value(rows, 'Category')).toBe('-$4.00, Snack -$8.50');
 	});
 });
 
@@ -179,5 +193,16 @@ describe('popupPosition', () => {
 			{ width: 800, height: 600 }
 		);
 		expect(pos.left).toBe(800 - 224 - 8);
+	});
+
+	test('flips using the estimated popup height, not a fixed 160px', () => {
+		const tall = estimatedPopupHeight(9);
+		expect(tall).toBeGreaterThan(160);
+		const pos = popupPosition(
+			{ top: 400, bottom: 420, left: 40, width: 80 },
+			{ width: 800, height: 600 },
+			tall
+		);
+		expect(pos.top).toBe(400 - tall - 6);
 	});
 });

@@ -8,6 +8,7 @@
 		scheduledPillRows,
 		transactionPillRows,
 		popupPosition,
+		estimatedPopupHeight,
 		type PillPopupRow
 	} from '$lib/calendarPillPopup';
 	import { toastFormResult } from '$lib/toasts';
@@ -136,10 +137,14 @@
 		if (popupSource && popupSource !== el) popupSource.removeAttribute('aria-describedby');
 		el.setAttribute('aria-describedby', PILL_POPUP_ID);
 		popupSource = el;
-		const pos = popupPosition(el.getBoundingClientRect(), {
-			width: window.innerWidth,
-			height: window.innerHeight
-		});
+		const pos = popupPosition(
+			el.getBoundingClientRect(),
+			{
+				width: window.innerWidth,
+				height: window.innerHeight
+			},
+			estimatedPopupHeight(rows.length)
+		);
 		popup = { rows, ...pos };
 	}
 
@@ -147,6 +152,11 @@
 		if (popupSource) popupSource.removeAttribute('aria-describedby');
 		popupSource = null;
 		popup = null;
+	}
+
+	function hidePillPopupOnLeave(el: EventTarget | null) {
+		if (el instanceof HTMLElement && document.activeElement === el) return;
+		hidePillPopup();
 	}
 
 	$effect(() => {
@@ -256,15 +266,15 @@
 					>
 						{cell.day}
 					</span>
-					<div class="relative z-10 mt-1 flex flex-col gap-1">
+					<div class="pointer-events-none relative z-10 mt-1 flex flex-col gap-1">
 						{#each shown as item (item.kind + (item.kind === 'tx' ? item.t.id : item.o.scheduled.id))}
 							{#if item.kind === 'tx'}
 								<button
 									type="button"
-									class="flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-left text-xs"
+									class="pointer-events-auto flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-left text-xs"
 									style="border-left: 3px solid {item.t.color ?? item.t.category_color ?? 'transparent'}"
 									onpointerenter={(e) => showPillPopup(e.currentTarget, transactionPillRows(item.t))}
-									onpointerleave={hidePillPopup}
+									onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
 									onfocus={(e) => showPillPopup(e.currentTarget, transactionPillRows(item.t))}
 									onblur={hidePillPopup}
 								>
@@ -276,7 +286,7 @@
 							{:else}
 								<button
 									type="button"
-									class="flex cursor-pointer items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-left text-xs {item
+									class="pointer-events-auto flex cursor-pointer items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-left text-xs {item
 										.o.scheduled.color
 										? ''
 										: 'border-primary/60 bg-primary/10'}"
@@ -285,7 +295,7 @@
 										: undefined}
 									onclick={() => openScheduledEdit(item.o.scheduled)}
 									onpointerenter={(e) => showPillPopup(e.currentTarget, scheduledPillRows(item.o.scheduled))}
-									onpointerleave={hidePillPopup}
+									onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
 									onfocus={(e) => showPillPopup(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 									onblur={hidePillPopup}
 								>

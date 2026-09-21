@@ -1,8 +1,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { Combobox as BitsCombobox } from 'bits-ui';
-
-	const CREATE_VALUE = '__create__';
+	import {
+		CREATE_VALUE,
+		removeLastPill,
+		removeValue,
+		selectedPills,
+		shouldRemoveLastOnBackspace
+	} from '$lib/multiCombobox';
 
 	let {
 		value = $bindable([] as string[]),
@@ -20,7 +25,7 @@
 		// can be stale/empty if selection lands in the same flush window as the
 		// last keystroke.
 		onselect = undefined as ((value: string, label: string | null, typed: string) => void) | undefined,
-		/** Close the menu after each add/remove so the selection shows in the input (filters). */
+		/** Close the menu after each add so the next type starts from an empty search. */
 		closeOnSelect = true
 	} = $props();
 
@@ -34,14 +39,8 @@
 			search.trim() !== '' &&
 			!items.some((i) => i.label.toLowerCase() === search.trim().toLowerCase())
 	);
-	// The name of the last on-the-fly created value, kept so the closed input can
-	// display it (the create sentinel has no entry in `items`).
 	let lastCreated = $state('');
-	// Seeds the input so preselected values are visible (e.g. edit dialogs,
-	// active filters); bits-ui only initializes it once, and the dialog remounts on each open.
-	const selectedLabels = $derived(
-		value.map((v) => (v === CREATE_VALUE ? lastCreated : (items.find((i) => i.value === v)?.label ?? v))).join(', ')
-	);
+	const pills = $derived(selectedPills(value, items, lastCreated));
 
 	let container: HTMLDivElement | undefined;
 	let open = $state(false);
@@ -49,28 +48,14 @@
 		return container?.querySelector('input') as HTMLInputElement | null;
 	}
 
-	// While closed, the input shows the selected labels (restored after a
-	// search, or after values change via navigation). While open it shows
-	// the search text, cleared after each selection so the next item can
-	// be typed (bits-ui otherwise leaves the picked label in the input and
-	// typing would append to it).
-	$effect(() => {
-		if (open) return;
-		const el = inputEl();
-		if (el && el.value !== selectedLabels) el.value = selectedLabels;
-	});
+	function clearSearchInput() {
+		search = '';
+		void tick().then(() => {
+			const el = inputEl();
+			if (el) el.value = '';
+		});
+	}
 
-	let prevValue: string[] = value;
-
-	$effect(() => {
-		prevValue = value;
-	});
-
-	// Select the on-the-fly create option (see the single Combobox for why
-	// bits-ui's own path can't reach it). Keeps a single pending create: the
-	// server accepts one `tag_new` per submit, so a new create replaces any
-	// previous one instead of accumulating (bits-ui's toggle would otherwise
-	// remove the first pending create on a second one).
 	function selectCreate() {
 		const typed = search.trim();
 		if (!typed) return;
@@ -78,22 +63,18 @@
 		onselect?.(CREATE_VALUE, null, typed);
 		value = [...value.filter((v) => v !== CREATE_VALUE), CREATE_VALUE];
 		prevValue = value;
-		search = '';
 		if (closeOnSelect) open = false;
-		const labels = value
-			.map((v) => (v === CREATE_VALUE ? lastCreated : (items.find((i) => i.value === v)?.label ?? v)))
-			.join(', ');
-		void tick().then(() => {
-			const el = inputEl();
-			if (!el) return;
-			// Stay open (multi-add): clear for next type. Closed: show selection.
-			el.value = open ? '' : labels;
-		});
+		clearSearchInput();
 	}
+
+	let prevValue: string[] = value;
+
+	$effect(() => {
+		prevValue = value;
+	});
 
 	function handleValueChange(newValue: string[]) {
 		const added = newValue.find((v) => !prevValue.includes(v));
-		const removed = prevValue.find((v) => !newValue.includes(v));
 		prevValue = newValue;
 		const typed = search.trim();
 		if (added === CREATE_VALUE) lastCreated = typed;
@@ -103,21 +84,31 @@
 				added === CREATE_VALUE ? null : items.find((i) => i.value === added)?.label ?? null,
 				typed
 			);
-		}
-		// After any change: if the menu stays open, clear the input for the next
-		// search; if we closed (filters), show the selected labels immediately.
-		if (added !== undefined || removed !== undefined) {
 			if (closeOnSelect) open = false;
-			search = '';
-			const labels = newValue
-				.map((v) => (v === CREATE_VALUE ? lastCreated : (items.find((i) => i.value === v)?.label ?? v)))
-				.join(', ');
-			void tick().then(() => {
-				const el = inputEl();
-				if (!el) return;
-				el.value = open ? '' : labels;
-			});
+			clearSearchInput();
 		}
+	}
+
+	function removePill(target: string) {
+		value = removeValue(value, target);
+		prevValue = value;
+		if (target === CREATE_VALUE) lastCreated = '';
+	}
+
+	function onInputKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && !e.isComposing && open && canCreate && filtered.length === 0) {
+			e.preventDefault();
+			selectCreate();
+			return;
+		}
+		if (e.key !== 'Backspace' || e.isComposing) return;
+		const el = e.currentTarget as HTMLInputElement;
+		if (!shouldRemoveLastOnBackspace(el.value, value)) return;
+		e.preventDefault();
+		const next = removeLastPill(value);
+		if (value.at(-1) === CREATE_VALUE) lastCreated = '';
+		value = next;
+		prevValue = next;
 	}
 </script>
 
@@ -126,32 +117,53 @@
 	bind:value
 	bind:open
 	{name}
-	inputValue={selectedLabels}
 	onValueChange={handleValueChange}
 	onOpenChange={(o) => {
-		if (!o) search = '';
+		if (o) return;
+		search = '';
+		const el = inputEl();
+		if (el) el.value = '';
 	}}
 >
-	<div class="relative" bind:this={container}>
+	<div
+		class="flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border border-input bg-surface px-2 py-1 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30 {className}"
+		bind:this={container}
+		onclick={(e) => {
+			if ((e.target as HTMLElement).closest('button')) return;
+			inputEl()?.focus();
+			open = true;
+		}}
+	>
+		{#each pills as pill (pill.value)}
+			<span
+				class="inline-flex max-w-full items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-xs text-foreground"
+			>
+				<span class="truncate">{pill.label}</span>
+				<button
+					type="button"
+					class="flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+					aria-label="Remove {pill.label}"
+					onclick={(e) => {
+						e.stopPropagation();
+						removePill(pill.value);
+					}}
+				>
+					<svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+						<path d="M18 6 6 18M6 6l12 12" />
+					</svg>
+				</button>
+			</span>
+		{/each}
 		<BitsCombobox.Input
-			placeholder={placeholder}
+			placeholder={pills.length === 0 ? placeholder : ''}
 			oninput={(e) => (search = e.currentTarget.value)}
-			onfocus={(e) => {
-				e.currentTarget.select();
+			onfocus={() => {
 				open = true;
 			}}
-			onkeydown={(e) => {
-				// Enter with the create option as the sole candidate: select it.
-				// preventDefault stops bits-ui's handler, which would otherwise use
-				// a stale highlighted node and select the wrong item or nothing.
-				if (e.key === 'Enter' && !e.isComposing && open && canCreate && filtered.length === 0) {
-					e.preventDefault();
-					selectCreate();
-				}
-			}}
-			class="h-9 w-full rounded-md border border-input bg-surface px-3 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 {className}"
+			onkeydown={onInputKeydown}
+			class="min-w-16 flex-1 border-0 bg-transparent px-0.5 py-0.5 text-sm outline-none placeholder:text-muted-foreground"
 		/>
-		<BitsCombobox.Trigger class="absolute end-2 top-1/2 -translate-y-1/2">
+		<BitsCombobox.Trigger class="ms-auto shrink-0">
 			<svg class="size-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 				<path d="m6 9 6 6 6-6" />
 			</svg>

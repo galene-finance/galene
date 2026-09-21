@@ -4,6 +4,13 @@
 	import Title from '$lib/components/Title.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
+	import {
+		scheduledPillRows,
+		transactionPillRows,
+		popupPosition,
+		estimatedPopupHeight,
+		type PillPopupRow
+	} from '$lib/calendarPillPopup';
 	import { toastFormResult } from '$lib/toasts';
 	import { formatMoney, monthLabel, todayISO } from '$lib/utils';
 	import type { Account, Category, Scheduled, Tag, Transaction } from '$lib/types';
@@ -93,18 +100,21 @@
 	let txOpen = $state(false);
 
 	function openScheduledFor(date: string) {
+		hidePillPopup();
 		scheduledEditing = null;
 		scheduledPrefill = date;
 		scheduledOpen = true;
 	}
 
 	function openNewScheduled() {
+		hidePillPopup();
 		scheduledEditing = null;
 		scheduledPrefill = todayISO();
 		scheduledOpen = true;
 	}
 
 	function openScheduledEdit(s: Scheduled) {
+		hidePillPopup();
 		scheduledEditing = s;
 		scheduledPrefill = null;
 		scheduledOpen = true;
@@ -114,6 +124,50 @@
 		scheduledEditing = null;
 		scheduledPrefill = null;
 	}
+
+	const PILL_POPUP_ID = 'calendar-pill-popup';
+	let popup = $state<{ rows: PillPopupRow[]; top: number; left: number } | null>(null);
+	let popupSource: HTMLElement | null = null;
+
+	function showPillPopup(el: EventTarget | null, rows: PillPopupRow[]) {
+		if (!(el instanceof HTMLElement) || rows.length === 0) {
+			hidePillPopup();
+			return;
+		}
+		if (popupSource && popupSource !== el) popupSource.removeAttribute('aria-describedby');
+		el.setAttribute('aria-describedby', PILL_POPUP_ID);
+		popupSource = el;
+		const pos = popupPosition(
+			el.getBoundingClientRect(),
+			{
+				width: window.innerWidth,
+				height: window.innerHeight
+			},
+			estimatedPopupHeight(rows.length)
+		);
+		popup = { rows, ...pos };
+	}
+
+	function hidePillPopup() {
+		if (popupSource) popupSource.removeAttribute('aria-describedby');
+		popupSource = null;
+		popup = null;
+	}
+
+	function hidePillPopupOnLeave(el: EventTarget | null) {
+		if (el instanceof HTMLElement && document.activeElement === el) return;
+		hidePillPopup();
+	}
+
+	$effect(() => {
+		const hide = () => hidePillPopup();
+		window.addEventListener('scroll', hide, true);
+		window.addEventListener('resize', hide);
+		return () => {
+			window.removeEventListener('scroll', hide, true);
+			window.removeEventListener('resize', hide);
+		};
+	});
 
 	// Toast the latest action result (replaces the old top-of-page status block).
 	let lastForm = form;
@@ -194,14 +248,17 @@
 				{@const hidden = (data.hideActuals ? 0 : cell.transactions.length) +
 					cell.occurrences.length -
 					shown.length}
-				<button
-					type="button"
-					class="min-h-28 bg-surface p-1.5 text-left align-top transition-colors hover:bg-muted/50"
-					onclick={() => openScheduledFor(cell.iso)}
-					title="Click to add a scheduled expectation on this day"
-				>
+				<div class="relative flex min-h-28 flex-col bg-surface p-1.5 text-left align-top transition-colors hover:bg-muted/50">
+					<button
+						type="button"
+						class="absolute inset-0 z-0"
+						onclick={() => openScheduledFor(cell.iso)}
+						title="Click to add a scheduled expectation on this day"
+						aria-label="Add a scheduled expectation on {cell.iso}"
+					></button>
 					<span
-						class="inline-flex min-w-6 items-center justify-center rounded-full px-1.5 text-xs {cell.iso === today
+						class="pointer-events-none relative z-10 inline-flex min-w-6 items-center justify-center self-start rounded-full px-1.5 text-xs {cell.iso ===
+						today
 							? 'bg-primary font-semibold text-primary-foreground'
 							: cell.inMonth
 								? 'font-medium'
@@ -209,39 +266,38 @@
 					>
 						{cell.day}
 					</span>
-					<span class="mt-1 flex flex-col gap-1">
+					<div class="pointer-events-none relative z-10 mt-1 flex flex-col gap-1">
 						{#each shown as item (item.kind + (item.kind === 'tx' ? item.t.id : item.o.scheduled.id))}
 							{#if item.kind === 'tx'}
-								<span
-									class="flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs"
+								<button
+									type="button"
+									class="pointer-events-auto flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-left text-xs"
 									style="border-left: 3px solid {item.t.color ?? item.t.category_color ?? 'transparent'}"
+									onpointerenter={(e) => showPillPopup(e.currentTarget, transactionPillRows(item.t))}
+									onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
+									onfocus={(e) => showPillPopup(e.currentTarget, transactionPillRows(item.t))}
+									onblur={hidePillPopup}
 								>
 									<span class="truncate">{item.t.merchant ?? item.t.category_name ?? 'Transaction'}</span>
 									<span class="ml-auto shrink-0 font-medium {item.t.amount_cents > 0 ? 'text-success' : ''}">
 										{formatMoney(item.t.amount_cents)}
 									</span>
-								</span>
+								</button>
 							{:else}
-								<span
-									role="button"
-									tabindex="0"
-									class="flex cursor-pointer items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-xs {item.o.scheduled.color
+								<button
+									type="button"
+									class="pointer-events-auto flex cursor-pointer items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-left text-xs {item
+										.o.scheduled.color
 										? ''
 										: 'border-primary/60 bg-primary/10'}"
 									style={item.o.scheduled.color
 										? `border-color: ${item.o.scheduled.color}; background: ${item.o.scheduled.color}1a`
 										: undefined}
-									onclick={(e) => {
-										e.stopPropagation();
-										openScheduledEdit(item.o.scheduled);
-									}}
-									onkeydown={(e) => {
-										if (e.key === 'Enter' || e.key === ' ') {
-											e.preventDefault();
-											e.stopPropagation();
-											openScheduledEdit(item.o.scheduled);
-										}
-									}}
+									onclick={() => openScheduledEdit(item.o.scheduled)}
+									onpointerenter={(e) => showPillPopup(e.currentTarget, scheduledPillRows(item.o.scheduled))}
+									onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
+									onfocus={(e) => showPillPopup(e.currentTarget, scheduledPillRows(item.o.scheduled))}
+									onblur={hidePillPopup}
 								>
 									{#if item.o.scheduled.repeat_interval}
 										<svg
@@ -264,14 +320,14 @@
 									>
 										{formatMoney(item.o.scheduled.amount_cents)}
 									</span>
-								</span>
+								</button>
 							{/if}
 						{/each}
 						{#if hidden > 0}
-							<span class="px-1.5 text-xs text-muted-foreground">+{hidden} more</span>
+							<span class="pointer-events-none px-1.5 text-xs text-muted-foreground">+{hidden} more</span>
 						{/if}
-					</span>
-				</button>
+					</div>
+				</div>
 			{/each}
 		</div>
 	</div>
@@ -280,6 +336,22 @@
 		Dashed pills are scheduled expectations — click a day to add one.
 	</p>
 </div>
+
+{#if popup}
+	<div
+		id={PILL_POPUP_ID}
+		role="tooltip"
+		class="pointer-events-none fixed z-50 w-56 rounded-md border border-border bg-surface px-3 py-2 text-xs shadow-lg"
+		style="top: {popup.top}px; left: {popup.left}px"
+	>
+		<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+			{#each popup.rows as row (row.label)}
+				<dt class="text-muted-foreground">{row.label}</dt>
+				<dd class="min-w-0 break-words font-medium">{row.value}</dd>
+			{/each}
+		</dl>
+	</div>
+{/if}
 
 <AddTransactionDialog
 	bind:open={txOpen}

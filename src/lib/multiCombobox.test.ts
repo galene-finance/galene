@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	CREATE_VALUE,
+	availableItems,
 	pillLabel,
 	removeLastPill,
 	removeValue,
@@ -47,5 +48,20 @@ describe('removeLastPill', () => {
 		expect(shouldRemoveLastOnBackspace('cof', ['1'])).toBe(false);
 		expect(shouldRemoveLastOnBackspace('', [])).toBe(false);
 		expect(removeLastPill([])).toEqual([]);
+	});
+});
+
+describe('availableItems', () => {
+	test('drops values already in the pill set until they are removed', () => {
+		expect(availableItems(items, ['3'], '')).toEqual([
+			{ value: '1', label: 'Groceries' },
+			{ value: '2', label: 'Coffee' }
+		]);
+		expect(availableItems(items, [], '')).toEqual(items);
+	});
+
+	test('still filters by search among remaining options', () => {
+		expect(availableItems(items, ['1'], 'che')).toEqual([{ value: '3', label: 'Checking' }]);
+		expect(availableItems(items, ['3'], 'che')).toEqual([]);
 	});
 });

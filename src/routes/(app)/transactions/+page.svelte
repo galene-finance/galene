@@ -332,7 +332,7 @@
 		params.delete('page');
 		params.delete('page_size');
 		const q = params.toString();
-		return q ? `/transactions/export.csv?${q}` : '/transactions/export.csv';
+		return q ? `/transactions/export?${q}` : '/transactions/export';
 	});
 
 	const groups = $derived.by(() => {

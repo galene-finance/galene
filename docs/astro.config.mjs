@@ -44,7 +44,7 @@ export default defineConfig({
             { label: 'Budgets & rules', slug: 'features/budgets-rules' },
             { label: 'Categories & cashflow', slug: 'features/categories-cashflow' },
             { label: 'Accounts & tags', slug: 'features/accounts-tags' },
-            { label: 'Import transactions', slug: 'features/import-transactions' },
+            { label: 'Import and export', slug: 'features/import-transactions' },
             { label: 'API & MCP', slug: 'features/api-mcp' },
           ],
         },

@@ -22,7 +22,7 @@ Galene is a self-hostable personal finance app. You connect bank accounts (or en
 
 It values **privacy by default** (your SQLite database on your host), **clarity over clutter**, and **features you can verify**: opening balances, transfer categories that stay out of income/expense reports, optional TOTP, backups, and a read-only API/MCP for scripts and assistants.
 
-**Highlights:** multi-account transactions · budgets & calendar expectations · cashflow & trends · SimpleFIN / Plaid / demo sync · per-user settings and admin tools · Docker/Podman or from-source installs.
+**Highlights:** multi-account transactions · CSV import and export · budgets & calendar expectations · cashflow & trends · SimpleFIN / Plaid / demo sync · per-user settings and admin tools · Docker/Podman or from-source installs.
 
 ## Getting started
 

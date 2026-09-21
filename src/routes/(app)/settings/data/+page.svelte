@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import CsvIoIcons from '$lib/components/CsvIoIcons.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import Field from '$lib/components/ui/Field.svelte';
@@ -107,13 +108,18 @@
 							</p>
 							<p class="text-sm text-muted-foreground">{t.description}</p>
 						</div>
-						<button
-							type="button"
-							class="shrink-0 text-sm text-destructive hover:underline"
-							onclick={() => openDelete(t)}
-						>
-							Delete
-						</button>
+						<div class="flex shrink-0 items-center gap-2">
+							{#if t.key === 'transactions'}
+								<CsvIoIcons size="sm" />
+							{/if}
+							<button
+								type="button"
+								class="text-sm text-destructive hover:underline"
+								onclick={() => openDelete(t)}
+							>
+								Delete
+							</button>
+						</div>
 					</li>
 				{/each}
 			</ul>

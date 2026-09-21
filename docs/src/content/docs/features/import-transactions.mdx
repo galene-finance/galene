@@ -1,13 +1,13 @@
 ---
-title: Import transactions
-description: Download a CSV template, preview rows, then confirm the import.
+title: Import and export transactions
+description: Download a CSV template, preview rows, confirm the import, and export transactions as CSV.
 ---
 
-Galene can import transactions from a **CSV file** you fill out — useful when a bank isn’t connected yet or you have history from another tool.
+Galene can import transactions from a **CSV file** you fill out — useful when a bank isn’t connected yet or you have history from another tool. You can also **export** CSV from `/transactions/export`, with the same columns as import (or a subset you check).
 
-## Flow
+## Import flow
 
-1. Open **Transactions → Import CSV** (or go to `/transactions/import`).
+1. Open **Transactions** and use the **Import CSV** icon (arrow into a tray), or go to `/transactions/import`. The same icon sits on **Settings → Data** next to Delete on the Transactions row.
 2. **Download** the CSV template.
 3. Optionally opt in to **create missing accounts, categories, or tags** (off by default — never silent).
 4. Fill rows and **upload** the file.
@@ -16,23 +16,39 @@ Galene can import transactions from a **CSV file** you fill out — useful when 
 
 Nothing is written until you confirm.
 
+## Export
+
+1. On **Transactions**, use the **Export CSV** icon (arrow out of a tray). That opens `/transactions/export` with the **current list filters** in the query string (not a direct file download). Pagination (`page`, `page_size`) is dropped.
+2. On **Settings → Data**, the same icon on the Transactions row opens `/transactions/export` with **no filters** (the full set).
+3. On the export page, change filters (they apply as you go; there is no Filter button). Selected accounts, categories, and tags are pills with ×. Check the columns to include (all seven on by default; at least one required), then **Export CSV**. The file matches the matching-count on the page.
+
+The download is UTF-8 CSV named like `galene-transactions-YYYY-MM-DD.csv`. One row per transaction. Split parts are not extra columns; the primary category name is used when `category` is checked. There is no `id`, splits, or provider column.
+
+You need to be signed in. The file does not include bank secrets, provider ids, or external ids.
+
+The authenticated file URL is `/transactions/export.csv` with the same filter query plus `fields`. Prefer the export page rather than bookmarking the `.csv` URL.
+
 ## Columns
 
-| Column | Required | Meaning |
-| --- | --- | --- |
-| `date` | yes | See date formats below |
-| `account` | yes | Match an existing account name (case-insensitive), or create if opted in |
-| `amount` | yes | Dollars; **negative = expense**, **positive = income** |
-| `merchant` | no | Payee / description |
-| `notes` | no | Free text |
-| `category` | no | Existing category name, or create if opted in (type from amount sign) |
-| `tags` | no | Names separated by `;` or `\|` — existing, or create if opted in |
+These columns are the import template and the default export header. Unchecked columns are omitted from the file.
 
-Header aliases such as `payee` → merchant and `account_name` → account are accepted.
+| Column | Required on import | Meaning |
+| --- | --- | --- |
+| `date` | yes | See date formats below. Export writes `YYYY-MM-DD`. |
+| `account` | yes | Match an existing account name (case-insensitive), or create if opted in. Export writes the account name. |
+| `amount` | yes | Dollars; **negative = expense**, **positive = income**. Export uses the same signs. |
+| `merchant` | no | Payee / description. Empty when unset. |
+| `notes` | no | Free text. Empty when unset. |
+| `category` | no | Existing category name, or create if opted in (type from amount sign). Empty when uncategorized. |
+| `tags` | no | Names separated by `;` or `\|` on import. Export joins existing tag names with `;`. Empty when there are none. |
+
+Header aliases such as `payee` → merchant and `account_name` → account are accepted on import.
+
+A file exported from Galene can be re-imported when the accounts, categories, and tags already exist. Turn create-if-missing off to confirm the preview does not invent column errors on well-formed rows.
 
 ## Date formats
 
-Accepted and normalized to `YYYY-MM-DD` in the preview:
+Accepted on import and normalized to `YYYY-MM-DD` in the preview:
 
 - `YYYY-MM-DD`
 - `YYYY/MM/DD`

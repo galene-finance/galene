@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { CSV_EXPORT_HEADER, csvField, transactionToCsvRow, transactionsToCsv } from './csvExport';
+import {
+	CSV_EXPORT_COLUMNS,
+	CSV_EXPORT_HEADER,
+	csvField,
+	parseExportColumns,
+	transactionToCsvRow,
+	transactionsToCsv
+} from './csvExport';
 import type { Transaction } from '../types';
 
 function txn(over: Partial<Transaction> = {}): Transaction {
@@ -25,6 +32,28 @@ describe('csvField', () => {
 		expect(csvField('a,b')).toBe('"a,b"');
 		expect(csvField('say "hi"')).toBe('"say ""hi"""');
 		expect(csvField('line\nbreak')).toBe('"line\nbreak"');
+	});
+});
+
+describe('parseExportColumns', () => {
+	test('defaults to every import column when fields is omitted', () => {
+		expect(parseExportColumns(new URL('https://example.test/transactions/export.csv'))).toEqual([
+			...CSV_EXPORT_COLUMNS
+		]);
+	});
+
+	test('keeps checked columns in canonical order', () => {
+		const url = new URL(
+			'https://example.test/transactions/export.csv?fields=tags&fields=date&fields=amount&fields=id'
+		);
+		expect(parseExportColumns(url)).toEqual(['date', 'amount', 'tags']);
+	});
+
+	test('empty selection when fields_present is set and nothing valid is checked', () => {
+		const url = new URL(
+			'https://example.test/transactions/export.csv?fields_present=1&fields=id&fields=splits'
+		);
+		expect(parseExportColumns(url)).toEqual([]);
 	});
 });
 
@@ -67,6 +96,14 @@ describe('transactionToCsvRow', () => {
 		expect(row).not.toContain('Coffee');
 		expect(row).not.toContain('Snack');
 	});
+
+	test('subset columns omit the rest, including id', () => {
+		const row = transactionToCsvRow(txn(), ['merchant', 'amount']);
+		expect(row).toBe('Cafe Luna,-12.50');
+		expect(row.split(',')).toEqual(['Cafe Luna', '-12.50']);
+		expect(row).not.toContain('Checking');
+		expect(row).not.toContain('Iced latte');
+	});
 });
 
 describe('transactionsToCsv', () => {
@@ -80,5 +117,14 @@ describe('transactionsToCsv', () => {
 
 	test('header only when there are no rows', () => {
 		expect(transactionsToCsv([])).toBe(CSV_EXPORT_HEADER + '\n');
+	});
+
+	test('checked columns only, never id splits or provider', () => {
+		const csv = transactionsToCsv([txn()], ['date', 'merchant']);
+		expect(csv).toBe('date,merchant\n2026-09-21,Cafe Luna\n');
+		expect(csv).not.toContain('id');
+		expect(csv).not.toContain('splits');
+		expect(csv).not.toContain('provider');
+		expect(csv).not.toContain('account_id');
 	});
 });

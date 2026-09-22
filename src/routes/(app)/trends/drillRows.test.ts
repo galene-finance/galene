@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { drillRows, type TrendDrillRow } from './+page.server';
+import { drillRows, type TrendDrillRow } from '$lib/trendDrill';
 import type { Transaction } from '$lib/types';
 
 function tx(partial: Partial<Transaction> & Pick<Transaction, 'id' | 'date' | 'amount_cents'>): Transaction {

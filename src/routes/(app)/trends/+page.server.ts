@@ -1,7 +1,8 @@
 import { redirect } from '@sveltejs/kit';
 import { budgetsForCategory, getCategories, getTransactionsInPeriod, monthSpendingCents, saveBudget } from '$lib/server/finance';
-import { inclusiveEnd, mondayOnOrBefore, parseISO, toISO, type TrendPeriod, type TrendPoint } from '$lib/trendsChart';
-import type { Budget, Transaction } from '$lib/types';
+import { mondayOnOrBefore, parseISO, toISO, type TrendPeriod, type TrendPoint } from '$lib/trendsChart';
+import { drillRows } from '$lib/trendDrill';
+import type { Budget } from '$lib/types';
 
 type Period = TrendPeriod;
 
@@ -146,52 +147,6 @@ export function load({ locals, url }) {
 			? Math.round(points.reduce((s, p) => s + p.spentCents, 0) / points.length)
 			: 0
 	};
-}
-
-export interface TrendDrillRow {
-	id: string;
-	date: string;
-	label: string;
-	amountCents: number;
-	categoryId: number | null;
-}
-
-/** Rows that contribute to a trends bar: non-transfer spending, split-aware, same sign rule as the bar total. */
-export function drillRows(
-	transactions: Transaction[],
-	categoryId: number | null,
-	transferIds: ReadonlySet<number>
-): TrendDrillRow[] {
-	const out: TrendDrillRow[] = [];
-	for (const t of transactions) {
-		if (t.splits && t.splits.length > 0) {
-			for (const s of t.splits) {
-				if (transferIds.has(s.category_id)) continue;
-				if (categoryId != null && s.category_id !== categoryId) continue;
-				const amountCents = s.amount_cents * Math.sign(t.amount_cents);
-				if (amountCents === 0) continue;
-				out.push({
-					id: `${t.id}-${s.category_id}`,
-					date: t.date,
-					label: t.merchant ?? t.account_name ?? 'Transaction',
-					amountCents,
-					categoryId: s.category_id
-				});
-			}
-			continue;
-		}
-		if (t.category_id != null && transferIds.has(t.category_id)) continue;
-		if (categoryId != null && t.category_id !== categoryId) continue;
-		if (t.amount_cents === 0) continue;
-		out.push({
-			id: String(t.id),
-			date: t.date,
-			label: t.merchant ?? t.account_name ?? 'Transaction',
-			amountCents: t.amount_cents,
-			categoryId: t.category_id
-		});
-	}
-	return out;
 }
 
 // Read-only page: a stray POST (e.g. a refresh re-POSTing a stale history

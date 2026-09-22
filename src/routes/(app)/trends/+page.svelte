@@ -7,7 +7,7 @@
 	import Select from '$lib/components/ui/Select.svelte';
 	import { budgetLabelAnchor, budgetLinePoints, budgetPolyline, inclusiveEnd, type TrendPoint } from '$lib/trendsChart';
 	import { formatMoney, monthLabel } from '$lib/utils';
-	import type { TrendDrillRow } from './+page.server';
+	import type { TrendDrillRow } from '$lib/trendDrill';
 	import type { Category } from '$lib/types';
 
 	let { data }: {

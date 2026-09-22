@@ -42,7 +42,7 @@ RUN bun run build
 
 # The MCP bundle bakes in the package.json version (bun build can't bundle
 # JSON imports, so it's passed as a define).
-RUN bun build mcp/index.ts --target=bun --define GALENE_VERSION='"$APP_VERSION"' --outfile=mcp-dist/mcp-bundle.js
+RUN bun build mcp/index.ts --target=bun --define GALENE_VERSION="\"$$APP_VERSION\"" --outfile=mcp-dist/mcp-bundle.js
 
 # ---------- app ----------
 FROM oven/bun:1.4.0-slim AS app

@@ -278,6 +278,7 @@ interface OrphanRow {
 	account_id: number;
 	date: string;
 	amount_cents: number;
+	merchant: string | null;
 	category_id: number | null;
 	color: string | null;
 	notes: string | null;
@@ -291,6 +292,13 @@ interface ReplacementRow {
 	notes: string | null;
 	external_id: string;
 	split_count: number;
+	amount_cents: number;
+	merchant: string | null;
+}
+
+/** Compare payee text the way a pending→posted pair should: case and surrounding space do not matter. */
+function merchantKey(merchant: string | null): string {
+	return (merchant ?? '').trim().toLowerCase();
 }
 
 /**
@@ -302,17 +310,25 @@ interface ReplacementRow {
  * copy gets a fresh id and the old one stops appearing in the response). The
  * upsert in syncNow has already imported the new copy, so the old row is now
  * a stale duplicate. For every such row inside the fetch window, if exactly
- * one live row matches on account, amount and a date within a few days after
- * it, the stale row's user-owned data (category, color, notes, tags, splits)
- * is folded into the live row and the duplicate is deleted. Rows with no
- * single clear match are left for the user to resolve.
+ * one live row matches, the stale row's user-owned data (category, color,
+ * notes, tags, splits) is folded into the live row and the duplicate is
+ * deleted. A match is the same account, a date within a few days after the
+ * stale row, and either the same amount or the same merchant (a pending
+ * charge that posts at a different amount). The live row keeps the posted
+ * amount. Rows with no single clear match are left for the user to resolve.
  *
  * Returns the number of rows merged away.
  */
-export function mergeRepostedTransactions(userId: number, providerId: string, since: string, liveIds: Set<string>): number {
-	const orphans = db()
+export function mergeRepostedTransactions(
+	userId: number,
+	providerId: string,
+	since: string,
+	liveIds: Set<string>,
+	database = db()
+): number {
+	const orphans = database
 		.query(
-			`SELECT id, account_id, date, amount_cents, category_id, color, notes, external_id
+			`SELECT id, account_id, date, amount_cents, merchant, category_id, color, notes, external_id
 			 FROM transactions
 			 WHERE user_id = ? AND provider = ? AND date >= ?
 			   AND external_id IS NOT NULL AND external_id != ''`
@@ -321,36 +337,42 @@ export function mergeRepostedTransactions(userId: number, providerId: string, si
 	let merged = 0;
 	for (const orphan of orphans) {
 		if (liveIds.has(orphan.external_id)) continue; // still reported — not stale
-		const candidates = db()
+		const candidates = database
 			.query(
-				`SELECT id, category_id, color, notes, external_id,
+				`SELECT id, category_id, color, notes, external_id, amount_cents, merchant,
 					(SELECT COUNT(*) FROM transaction_splits s WHERE s.transaction_id = t.id) AS split_count
 				 FROM transactions t
 				 WHERE t.user_id = ? AND t.provider = ? AND t.account_id = ?
-				   AND t.amount_cents = ? AND t.date >= ? AND t.date <= ?
+				   AND t.id != ?
+				   AND t.date >= ? AND t.date <= ?
 				   AND t.external_id IS NOT NULL AND t.external_id != ''`
 			)
 			.all(
 				userId,
 				providerId,
 				orphan.account_id,
-				orphan.amount_cents,
+				orphan.id,
 				orphan.date,
 				shiftDate(orphan.date, REPOST_WINDOW_DAYS)
 			) as ReplacementRow[];
-		const live = candidates.filter((c) => liveIds.has(c.external_id));
+		const merchant = merchantKey(orphan.merchant);
+		const live = candidates.filter(
+			(c) =>
+				liveIds.has(c.external_id) &&
+				(c.amount_cents === orphan.amount_cents || (merchant !== '' && merchantKey(c.merchant) === merchant))
+		);
 		if (live.length !== 1) continue; // 0 or ambiguous — leave for the user
 		const target = live[0];
 		const orphanSplits = (
-			db().query('SELECT COUNT(*) AS c FROM transaction_splits WHERE transaction_id = ?').get(orphan.id) as { c: number }
+			database.query('SELECT COUNT(*) AS c FROM transaction_splits WHERE transaction_id = ?').get(orphan.id) as { c: number }
 		).c;
 		if (orphanSplits > 0 && target.split_count > 0) continue; // two split layouts can't be combined
-		db().run('BEGIN');
+		database.run('BEGIN');
 		try {
 			// User-owned fields move over only where the live row has none of
 			// its own; the live row's existing values (and its just-refreshed
 			// provider data) win.
-			db()
+			database
 				.query(
 					`UPDATE transactions
 					 SET category_id = COALESCE(category_id, ?),
@@ -362,7 +384,7 @@ export function mergeRepostedTransactions(userId: number, providerId: string, si
 				.run(orphan.category_id, orphan.color, orphan.notes, target.id, userId);
 			// Tags: the orphan's are copied across; the originals are dropped
 			// with the row.
-			db()
+			database
 				.query(
 					`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
 					 SELECT ?, tag_id FROM transaction_tags WHERE transaction_id = ?`
@@ -370,17 +392,17 @@ export function mergeRepostedTransactions(userId: number, providerId: string, si
 				.run(target.id, orphan.id);
 			// Splits: re-point the orphan's to the live row when it has none.
 			if (orphanSplits > 0 && target.split_count === 0) {
-				db().query('UPDATE transaction_splits SET transaction_id = ? WHERE transaction_id = ?').run(target.id, orphan.id);
+				database.query('UPDATE transaction_splits SET transaction_id = ? WHERE transaction_id = ?').run(target.id, orphan.id);
 			}
-			db().query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(orphan.id, userId);
-			db().run('COMMIT');
+			database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(orphan.id, userId);
+			database.run('COMMIT');
 			merged++;
 			// The merchant may have changed on the re-post (e.g. a corrected
 			// name); let the user's rules categorize the survivor if it has
 			// no category yet.
 			if (orphan.category_id == null && target.category_id == null) applyCategorizationRules(userId, target.id);
 		} catch (error) {
-			db().run('ROLLBACK');
+			database.run('ROLLBACK');
 			throw error;
 		}
 	}

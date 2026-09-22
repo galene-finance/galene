@@ -1,29 +1,14 @@
 import { redirect } from '@sveltejs/kit';
-import { budgetsForCategory, getCategories, monthSpendingCents } from '$lib/server/finance';
-import type { Budget } from '$lib/types';
+import { budgetsForCategory, getCategories, getTransactionsInPeriod, monthSpendingCents, saveBudget } from '$lib/server/finance';
+import { inclusiveEnd, mondayOnOrBefore, parseISO, toISO, type TrendPeriod, type TrendPoint } from '$lib/trendsChart';
+import type { Budget, Transaction } from '$lib/types';
 
-type Period = 'week' | 'month' | 'year';
+type Period = TrendPeriod;
 
 const isDate = (s: string | null) =>
 	s != null && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s);
 
-const pad = (n: number) => String(n).padStart(2, '0');
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function toISO(d: Date): string {
-	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function parseISO(iso: string): Date {
-	const [y, m, d] = iso.split('-').map(Number);
-	return new Date(y, m - 1, d);
-}
-
-/** Monday on or before the given date (weeks are Monday-start, matching budgets). */
-function mondayOnOrBefore(d: Date): Date {
-	const dow = (d.getDay() + 6) % 7;
-	return new Date(d.getTime() - dow * 86400000);
-}
 
 export function load({ locals, url }) {
 	const userId = locals.user!.id;
@@ -90,7 +75,7 @@ export function load({ locals, url }) {
 	const daysInMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
 	const daysInYear = (y: number) => (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0) ? 366 : 365);
 
-	const points: { key: string; label: string; spentCents: number; budgetCents: number | null }[] = [];
+	const points: TrendPoint[] = [];
 	if (period === 'month') {
 		let cur = new Date(from.getFullYear(), from.getMonth(), 1);
 		const last = new Date(to.getFullYear(), to.getMonth(), 1);
@@ -101,7 +86,9 @@ export function load({ locals, url }) {
 				key: fromISO.slice(0, 7),
 				label: `${MONTHS[cur.getMonth()]} ${String(cur.getFullYear()).slice(2)}`,
 				spentCents: monthSpendingCents(userId, fromISO, toISO(next), categoryId),
-				budgetCents: toBudgetCents(daysInMonth(cur))
+				budgetCents: toBudgetCents(daysInMonth(cur)),
+				from: fromISO,
+				to: toISO(next)
 			});
 			cur = next;
 		}
@@ -116,7 +103,9 @@ export function load({ locals, url }) {
 				key: fromISO,
 				label: `${MONTHS[cur.getMonth()]} ${cur.getDate()}`,
 				spentCents: monthSpendingCents(userId, fromISO, toISO(next), categoryId),
-				budgetCents: weekBudget
+				budgetCents: weekBudget,
+				from: fromISO,
+				to: toISO(next)
 			});
 			cur = next;
 		}
@@ -126,24 +115,104 @@ export function load({ locals, url }) {
 				key: String(y),
 				label: String(y),
 				spentCents: monthSpendingCents(userId, `${y}-01-01`, `${y + 1}-01-01`, categoryId),
-				budgetCents: toBudgetCents(daysInYear(y))
+				budgetCents: toBudgetCents(daysInYear(y)),
+				from: `${y}-01-01`,
+				to: `${y + 1}-01-01`
 			});
 		}
 	}
 
+	const rangeFrom = points[0]?.from ?? toISO(from);
+	const rangeTo = points[points.length - 1]?.to ?? toISO(to);
+	const transferIds = new Set(categories.filter((c) => c.type === 'transfer').map((c) => c.id));
+	const drillTransactions = drillRows(
+		getTransactionsInPeriod(userId, rangeFrom, rangeTo),
+		categoryId,
+		transferIds
+	);
+
 	return {
 		categoryId,
 		categoryName: cat ? cat.name : null,
+		categoryType: cat ? cat.type : null,
 		period,
 		from: toISO(from),
 		to: toISO(to),
 		points,
-		categories
+		categories,
+		drillTransactions,
+		hasBudget: budgets.length > 0,
+		avgSpentCents: points.length
+			? Math.round(points.reduce((s, p) => s + p.spentCents, 0) / points.length)
+			: 0
 	};
+}
+
+export interface TrendDrillRow {
+	id: string;
+	date: string;
+	label: string;
+	amountCents: number;
+	categoryId: number | null;
+}
+
+/** Rows that contribute to a trends bar: non-transfer spending, split-aware, same sign rule as the bar total. */
+export function drillRows(
+	transactions: Transaction[],
+	categoryId: number | null,
+	transferIds: ReadonlySet<number>
+): TrendDrillRow[] {
+	const out: TrendDrillRow[] = [];
+	for (const t of transactions) {
+		if (t.splits && t.splits.length > 0) {
+			for (const s of t.splits) {
+				if (transferIds.has(s.category_id)) continue;
+				if (categoryId != null && s.category_id !== categoryId) continue;
+				const amountCents = s.amount_cents * Math.sign(t.amount_cents);
+				if (amountCents === 0) continue;
+				out.push({
+					id: `${t.id}-${s.category_id}`,
+					date: t.date,
+					label: t.merchant ?? t.account_name ?? 'Transaction',
+					amountCents,
+					categoryId: s.category_id
+				});
+			}
+			continue;
+		}
+		if (t.category_id != null && transferIds.has(t.category_id)) continue;
+		if (categoryId != null && t.category_id !== categoryId) continue;
+		if (t.amount_cents === 0) continue;
+		out.push({
+			id: String(t.id),
+			date: t.date,
+			label: t.merchant ?? t.account_name ?? 'Transaction',
+			amountCents: t.amount_cents,
+			categoryId: t.category_id
+		});
+	}
+	return out;
 }
 
 // Read-only page: a stray POST (e.g. a refresh re-POSTing a stale history
 // entry) would otherwise 405. Bounce it back to a GET of the same page.
 export const actions = {
-	default: ({ url }) => redirect(303, url.pathname + url.search)
+	default: ({ url }) => redirect(303, url.pathname + url.search),
+
+	'create-budget': async ({ request, locals, url }) => {
+		const userId = locals.user!.id;
+		const form = await request.formData();
+		const categoryId = parseInt(String(form.get('category_id') ?? ''), 10);
+		const period = String(form.get('period') ?? '');
+		const limitCents = parseInt(String(form.get('limit_cents') ?? ''), 10);
+		const cat = getCategories(userId).find((c) => c.id === categoryId);
+		if (!cat || cat.type === 'transfer') return { error: 'Select a category that can have a budget.' };
+		if (period !== 'week' && period !== 'month' && period !== 'year') return { error: 'Invalid period.' };
+		if (!Number.isFinite(limitCents) || limitCents <= 0) return { error: 'Enter a positive amount.' };
+		if (budgetsForCategory(userId, categoryId).length > 0) {
+			return { error: 'This category already has a budget.' };
+		}
+		saveBudget(userId, null, { categoryId, period, limitCents });
+		redirect(303, url.pathname + url.search);
+	}
 };

@@ -227,14 +227,30 @@
 	const drillTitle = $derived(
 		drill
 			? `${drill.categoryName} · ${drill.kind === 'forecast' ? 'Forecast' : 'Actual'} · ${
-				drill.months.length === 1
-					? monthLabel(`${drill.months[0]}-01`)
-					: `${monthLabel(`${drill.months[0]}-01`)} – ${monthLabel(
-							`${drill.months[drill.months.length - 1]}-01`
-					  )}`
+					drill.months.length === 1
+						? monthLabel(`${drill.months[0]}-01`)
+						: `${monthLabel(`${drill.months[0]}-01`)} – ${monthLabel(
+								`${drill.months[drill.months.length - 1]}-01`
+						  )}`
 			  }`
 			: ''
 	);
+
+	function lastDayOfMonth(month: string): string {
+		const [y, m] = month.split('-').map(Number);
+		const days = new Date(y, m, 0).getDate();
+		return `${month}-${String(days).padStart(2, '0')}`;
+	}
+
+	const drillTransactionsHref = $derived.by(() => {
+		const d = drill;
+		if (!d || d.kind !== 'actual' || d.months.length === 0) return null;
+		const params = new URLSearchParams();
+		if (d.categoryId != null) params.set('category', String(d.categoryId));
+		params.set('date_from', `${d.months[0]}-01`);
+		params.set('date_to', lastDayOfMonth(d.months[d.months.length - 1]));
+		return `/transactions?${params.toString()}`;
+	});
 
 	function daysInMonthOf(iso: string): number {
 		const [y, m] = iso.split('-').map(Number);
@@ -592,6 +608,11 @@
 						</li>
 					</ul>
 				{/if}
+			{/if}
+			{#if drillTransactionsHref}
+				<a class="text-sm text-primary hover:underline" href={drillTransactionsHref}>
+					View on Transactions
+				</a>
 			{/if}
 		</div>
 	{/if}

@@ -109,7 +109,9 @@
 	async function onItemClick(e: MouseEvent, n: AppNotification) {
 		e.preventDefault();
 		await post({ action: 'mark_read', id: n.id });
-		window.location.assign(n.link ?? '/');
+		// A full navigation unmounts the open menu and reloads the page at
+		// scroll 0. Mark-read updates the list in place. The href remains for
+		// a modified click.
 	}
 </script>
 

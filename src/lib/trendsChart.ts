@@ -61,21 +61,3 @@ export function budgetLinePoints(
 export function budgetPolyline(vertices: BudgetVertex[]): string {
 	return vertices.map((v) => `${v.x},${v.y}`).join(' ');
 }
-
-/**
- * Place the budget label off the line, then a short dotted leader back to it.
- * Prefer above the line. If that sits on a bar total (the band just above the
- * line, where bar labels live) or leaves the plot, drop below.
- */
-export function budgetLabelAnchor(
-	lineY: number,
-	plotTop: number,
-	plotBottom: number
-): { labelY: number; leaderY1: number; leaderY2: number } {
-	const gap = 16;
-	const above = lineY - gap;
-	const below = lineY + gap;
-	const labelY = above >= plotTop + 8 ? above : below <= plotBottom - 4 ? below : plotTop + 8;
-	const towardLine = labelY < lineY ? 4 : -4;
-	return { labelY, leaderY1: labelY + towardLine, leaderY2: lineY };
-}

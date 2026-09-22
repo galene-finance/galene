@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-	budgetLabelAnchor,
 	budgetLinePoints,
 	budgetPolyline,
 	inclusiveEnd,
@@ -25,22 +24,6 @@ describe('budget line', () => {
 	test('one point is still a point on that bar', () => {
 		const verts = budgetLinePoints([{ budgetCents: 40 }], () => 12, (c) => c);
 		expect(verts).toEqual([{ x: 12, y: 40 }]);
-	});
-});
-
-describe('budget label', () => {
-	test('sits above the line with a leader down to it', () => {
-		const a = budgetLabelAnchor(80, 16, 288);
-		expect(a.labelY).toBe(64);
-		expect(a.leaderY2).toBe(80);
-		expect(a.leaderY1).toBeLessThan(a.leaderY2);
-	});
-
-	test('drops below when above would leave the plot', () => {
-		const a = budgetLabelAnchor(20, 16, 288);
-		expect(a.labelY).toBe(36);
-		expect(a.leaderY1).toBe(32);
-		expect(a.leaderY2).toBe(20);
 	});
 });
 

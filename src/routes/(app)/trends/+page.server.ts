@@ -164,13 +164,6 @@ export const actions = {
 			return { error: 'This category already has a budget.' };
 		}
 		saveBudget(userId, null, { categoryId, period, limitCents });
-		const params = new URLSearchParams();
-		params.set('category', String(categoryId));
-		params.set('period', period);
-		const nextFrom = String(form.get('next_from') ?? '');
-		const nextTo = String(form.get('next_to') ?? '');
-		if (isDate(nextFrom)) params.set('from', nextFrom);
-		if (isDate(nextTo)) params.set('to', nextTo);
-		redirect(303, `/trends?${params.toString()}`);
+		redirect(303, '/budget');
 	}
 };

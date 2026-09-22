@@ -150,7 +150,7 @@ export function load({ locals, url }) {
 }
 
 export const actions = {
-	'create-budget': async ({ request, locals, url }) => {
+	'create-budget': async ({ request, locals }) => {
 		const userId = locals.user!.id;
 		const form = await request.formData();
 		const categoryId = parseInt(String(form.get('category_id') ?? ''), 10);
@@ -164,6 +164,13 @@ export const actions = {
 			return { error: 'This category already has a budget.' };
 		}
 		saveBudget(userId, null, { categoryId, period, limitCents });
-		redirect(303, url.pathname + url.search);
+		const params = new URLSearchParams();
+		params.set('category', String(categoryId));
+		params.set('period', period);
+		const nextFrom = String(form.get('next_from') ?? '');
+		const nextTo = String(form.get('next_to') ?? '');
+		if (isDate(nextFrom)) params.set('from', nextFrom);
+		if (isDate(nextTo)) params.set('to', nextTo);
+		redirect(303, `/trends?${params.toString()}`);
 	}
 };

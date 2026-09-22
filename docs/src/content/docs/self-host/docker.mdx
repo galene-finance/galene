@@ -8,7 +8,7 @@ Galene ships as two images built from one `Dockerfile` (base `oven/bun:1.4.0`, D
 | Image | What it is |
 | --- | --- |
 | `galene:app` | The web app — Bun.serve on port 3000, SQLite database in `/app/data` |
-| `galene:mcp` | The MCP stdio server — a self-contained bundle that talks to a running instance over the REST API |
+| `galene:mcp` | The MCP server. Stdio by default. Set `GALENE_MCP_PORT` and it listens for HTTP on `/mcp` |
 
 Both images contain only the build output and the Bun runtime — no `node_modules`, no source. The app is a **single replica**: it runs in-process schedulers (bank auto-sync, backups, notifications) and one SQLite file, so run one instance and put your TLS-terminating proxy in front if you want HTTPS ([Reverse proxy](/self-host/reverse-proxy/)).
 

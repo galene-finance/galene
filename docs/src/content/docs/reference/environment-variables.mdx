@@ -24,6 +24,8 @@ description: Every environment variable the app and MCP images read.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `GALENE_API_URL` | `http://localhost:3000` | Base URL of the Galene instance the MCP server calls. |
-| `GALENE_API_TOKEN` | — (**required**) | An API token from Settings → API. The process exits if it is missing. |
+| `GALENE_API_TOKEN` | — | API token from Settings → API. Required for stdio. Ignored when `GALENE_MCP_PORT` is set. Do not set it on the long-running process. |
+| `GALENE_MCP_PORT` | unset | Port for the long-running HTTP endpoint. Unset keeps stdio. |
+| `GALENE_MCP_HOST` | `0.0.0.0` | Bind address when `GALENE_MCP_PORT` is set. |
 
 When to set `GALENE_COOKIE_SECURE` and the adapter proxy headers (`PROTOCOL_HEADER`, `HOST_HEADER`, …): [Reverse proxy](/self-host/reverse-proxy/). Outside the container the default `GALENE_DATA_DIR` is `./data` — see [From source](/self-host/from-source/).

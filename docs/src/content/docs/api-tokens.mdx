@@ -33,7 +33,7 @@ The full endpoint list is on the [API & MCP](/features/api-mcp/) page.
 
 ## Using a token with the MCP server
 
-The bundled MCP server reads the token from the environment:
+Stdio reads the token from the environment:
 
 ```json
 {
@@ -50,7 +50,9 @@ The bundled MCP server reads the token from the environment:
 }
 ```
 
-`GALENE_API_URL` defaults to `http://localhost:3000`; `GALENE_API_TOKEN` is required.
+`GALENE_API_URL` defaults to `http://localhost:3000`. `GALENE_API_TOKEN` is required for stdio.
+
+A long-running HTTP endpoint does not use that variable. Set `GALENE_MCP_PORT` and send the token on each request. See [API & MCP](/features/api-mcp/).
 
 ## Notes
 

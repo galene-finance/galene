@@ -3,8 +3,11 @@
 	import Title from '$lib/components/Title.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import DatePicker from '$lib/components/ui/DatePicker.svelte';
+	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
+	import { budgetLinePoints, budgetPolyline, inclusiveEnd, type TrendPoint } from '$lib/trendsChart';
 	import { formatMoney, monthLabel } from '$lib/utils';
+	import type { TrendDrillRow } from '$lib/trendDrill';
 	import type { Category } from '$lib/types';
 
 	let { data }: {
@@ -14,8 +17,12 @@
 			period: 'week' | 'month' | 'year';
 			from: string;
 			to: string;
-			points: { key: string; label: string; spentCents: number; budgetCents: number | null }[];
+			points: TrendPoint[];
 			categories: Category[];
+			drillTransactions: TrendDrillRow[];
+			hasBudget: boolean;
+			avgSpentCents: number;
+			categoryType: 'expense' | 'income' | 'transfer' | null;
 		};
 	} = $props();
 
@@ -104,40 +111,114 @@
 	const avgSpent = $derived(n > 0 ? Math.round(totalSpent / n) : 0);
 	const anySpend = $derived(data.points.some((p) => p.spentCents > 0));
 
-	// The budget can differ per point when a budget of one period is scaled
-	// to the view period (e.g. a weekly budget viewed by month: 28-day vs
-	// 31-day months). Equal values draw one straight line; varying values a
-	// stepped one.
 	const anyBudget = $derived(data.points.some((p) => p.budgetCents !== null));
-	const budgetValues = $derived(
-		data.points.map((p) => p.budgetCents).filter((v): v is number => v !== null)
+	const lineVerts = $derived(
+		budgetLinePoints(
+			data.points,
+			(i) => PAD_L + slotW * i + slotW / 2,
+			yOf
+		)
 	);
-	const budgetUniform = $derived(
-		budgetValues.length > 0 && budgetValues.every((v) => v === budgetValues[0])
-	);
-	const lastBudget = $derived(data.points.length ? data.points[data.points.length - 1].budgetCents ?? null : null);
-	const uniformBudgetY = $derived(
-		budgetValues.length > 0 && budgetUniform ? yOf(budgetValues[0]) : 0
-	);
-	const budgetLabel = $derived(
-		budgetValues.length === 0
-			? null
-			: budgetUniform
-				? `Budget ${compactMoney(budgetValues[0])}`
-				: (() => {
-						const lo = compactMoney(Math.min(...budgetValues));
-						const hi = compactMoney(Math.max(...budgetValues));
-						return lo === hi ? `Budget ${lo}` : `Budget ${lo}–${hi}`;
-					})()
-	);
-	const budgetLabelY = $derived(
-		budgetValues.length === 0
-			? null
-			: budgetUniform
-				? yOf(budgetValues[0]) - 5
-				: lastBudget === null
-					? null
-					: yOf(lastBudget) - 5
+
+	let bar = $state<TrendPoint | null>(null);
+	let barOpen = $state(false);
+
+	function openBar(p: TrendPoint) {
+		bar = p;
+		barOpen = true;
+	}
+
+	// Mouse hover shows the amount. Touch toggles it. Keyboard focus shows it
+	// without a hover. Nothing here locks page scroll.
+	let tip = $state<{ key: string; text: string; left: number; top: number } | null>(null);
+
+	function placeTip(el: Element, p: TrendPoint) {
+		if (p.budgetCents === null) return;
+		const rect = el.getBoundingClientRect();
+		const width = 148;
+		let left = rect.right + 8;
+		if (left + width > window.innerWidth - 8) left = Math.max(8, rect.left - width - 8);
+		tip = {
+			key: p.key,
+			text: `${p.label} · ${formatMoney(p.budgetCents)}`,
+			left,
+			top: rect.top + rect.height / 2
+		};
+	}
+
+	function onDotEnter(e: PointerEvent, p: TrendPoint) {
+		if (e.pointerType !== 'mouse') return;
+		if (e.currentTarget instanceof Element) placeTip(e.currentTarget, p);
+	}
+
+	function onDotLeave(e: PointerEvent) {
+		if (e.pointerType === 'mouse') tip = null;
+	}
+
+	function onDotPointerDown(e: PointerEvent, p: TrendPoint) {
+		if (e.pointerType === 'mouse') return;
+		e.preventDefault();
+		e.stopPropagation();
+		if (tip?.key === p.key) {
+			tip = null;
+			return;
+		}
+		if (e.currentTarget instanceof Element) placeTip(e.currentTarget, p);
+	}
+
+	function onDotFocus(e: FocusEvent, p: TrendPoint) {
+		if (!(e.currentTarget instanceof Element) || !e.currentTarget.matches(':focus-visible')) return;
+		placeTip(e.currentTarget, p);
+	}
+
+	function onDotKeydown(e: KeyboardEvent, p: TrendPoint) {
+		if (e.key !== 'Enter' && e.key !== ' ') return;
+		e.preventDefault();
+		if (e.currentTarget instanceof Element) placeTip(e.currentTarget, p);
+	}
+
+	$effect(() => {
+		if (!tip || typeof window === 'undefined') return;
+		const close = (e: Event) => {
+			const target = e.target;
+			if (target instanceof Element && target.closest('[data-budget-dot]')) return;
+			tip = null;
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') tip = null;
+		};
+		const onScroll = () => {
+			tip = null;
+		};
+		window.addEventListener('pointerdown', close);
+		window.addEventListener('keydown', onKey);
+		window.addEventListener('scroll', onScroll, true);
+		return () => {
+			window.removeEventListener('pointerdown', close);
+			window.removeEventListener('keydown', onKey);
+			window.removeEventListener('scroll', onScroll, true);
+		};
+	});
+
+	const barRows = $derived.by(() => {
+		const p = bar;
+		if (!p) return [];
+		return data.drillTransactions
+			.filter((r) => r.date >= p.from && r.date < p.to && r.amountCents < 0)
+			.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+	});
+
+	function barTransactionsHref(p: TrendPoint): string {
+		const params = new URLSearchParams();
+		if (data.categoryId != null) params.set('category', String(data.categoryId));
+		params.set('date_from', p.from);
+		params.set('date_to', inclusiveEnd(p.to));
+		const q = params.toString();
+		return q ? `/transactions?${q}` : '/transactions';
+	}
+
+	const canCreateBudget = $derived(
+		data.categoryId != null && data.categoryType !== 'transfer' && !data.hasBudget && data.avgSpentCents > 0
 	);
 
 	// Skip x-axis labels when slots are too narrow to fit them.
@@ -247,9 +328,8 @@
 							height={Math.max(hUnder, 2)}
 							rx={over > 0 ? 0 : 2}
 							fill="var(--color-success)"
-						>
-							<title>{tip}</title>
-						</rect>
+							class="pointer-events-none"
+						/>
 					{/if}
 					{#if hOver > 0}
 						<rect
@@ -259,9 +339,8 @@
 							height={Math.max(hOver, 2)}
 							rx="2"
 							fill="var(--color-destructive)"
-						>
-							<title>{tip}</title>
-						</rect>
+							class="pointer-events-none"
+						/>
 					{/if}
 					{#if p.spentCents > 0}
 						<text
@@ -270,10 +349,31 @@
 							text-anchor="middle"
 							font-size="10"
 							fill="var(--color-muted-foreground)"
+							class="pointer-events-none"
 						>
 							{compactMoney(p.spentCents)}
 						</text>
 					{/if}
+					<rect
+						x={x}
+						y={PAD_T}
+						width={barW}
+						height={plotH}
+						fill="transparent"
+						class="cursor-pointer"
+						role="button"
+						tabindex="0"
+						aria-label={tip}
+						onclick={() => openBar(p)}
+						onkeydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								openBar(p);
+							}
+						}}
+					>
+						<title>{tip}</title>
+					</rect>
 					{#if i % labelSkip === 0}
 						<text
 							x={PAD_L + slotW * i + slotW / 2}
@@ -287,51 +387,60 @@
 					{/if}
 				{/each}
 
-				{#if anyBudget}
-					{#if budgetUniform}
-						<line
-							x1={PAD_L}
-							x2={W - PAD_R}
-							y1={uniformBudgetY}
-							y2={uniformBudgetY}
-							stroke="var(--color-foreground)"
-							stroke-width="1.5"
-							stroke-dasharray="6 4"
-							opacity="0.7"
-						/>
-					{:else}
-						{#each data.points as p, i (p.key)}
-							{#if p.budgetCents !== null}
-								<line
-									x1={PAD_L + slotW * i}
-									x2={PAD_L + slotW * (i + 1)}
-									y1={yOf(p.budgetCents)}
-									y2={yOf(p.budgetCents)}
-									stroke="var(--color-foreground)"
-									stroke-width="1.5"
-									stroke-dasharray="6 4"
-									opacity="0.7"
-								/>
-							{/if}
-						{/each}
-					{/if}
-					{#if budgetLabel !== null && budgetLabelY !== null}
-						<text
-							x={W - PAD_R}
-							y={budgetLabelY}
-							text-anchor="end"
-							font-size="10"
-							fill="var(--color-foreground)"
-							fill-opacity="0.7"
-							stroke="var(--color-surface)"
-							stroke-width="3"
-							paint-order="stroke"
-						>
-							{budgetLabel}
-						</text>
-					{/if}
+				{#if anyBudget && lineVerts.length > 0}
+					<polyline
+						points={budgetPolyline(lineVerts)}
+						fill="none"
+						stroke="var(--color-foreground)"
+						stroke-width="1"
+						stroke-linejoin="round"
+						stroke-linecap="round"
+						opacity="0.85"
+					/>
+					{#each data.points as p, i (p.key)}
+						{#if p.budgetCents !== null}
+							{@const cx = PAD_L + slotW * i + slotW / 2}
+							{@const cy = yOf(p.budgetCents)}
+							<circle
+								cx={cx}
+								cy={cy}
+								r="10"
+								fill="transparent"
+								class="cursor-pointer"
+								data-budget-dot
+								role="button"
+								tabindex="0"
+								aria-label="{p.label} budget {formatMoney(p.budgetCents)}"
+								onpointerenter={(e) => onDotEnter(e, p)}
+								onpointerleave={onDotLeave}
+								onpointerdown={(e) => onDotPointerDown(e, p)}
+								onfocus={(e) => onDotFocus(e, p)}
+								onblur={() => (tip = null)}
+								onkeydown={(e) => onDotKeydown(e, p)}
+								onclick={(e) => e.stopPropagation()}
+							/>
+							<circle
+								cx={cx}
+								cy={cy}
+								r="2.5"
+								fill="var(--color-foreground)"
+								opacity="0.9"
+								class="pointer-events-none"
+							/>
+						{/if}
+					{/each}
 				{/if}
 			</svg>
+		{#if tip}
+			<div
+				class="pointer-events-none fixed z-40 max-w-[9rem] -translate-y-1/2 rounded-md border border-border bg-surface px-2 py-1 text-xs text-foreground shadow-md"
+				style:left="{tip.left}px"
+				style:top="{tip.top}px"
+				role="tooltip"
+			>
+				{tip.text}
+			</div>
+		{/if}
 
 			<div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
 				<span class="flex items-center gap-1.5">
@@ -342,7 +451,7 @@
 				</span>
 				{#if anyBudget}
 					<span class="flex items-center gap-1.5">
-						<span class="h-0 w-4 border-t-2 border-dashed border-foreground/70"></span>
+						<span class="h-0 w-4 border-t-2 border-foreground/70"></span>
 						{periodWord} budget
 					</span>
 				{/if}
@@ -354,4 +463,52 @@
 			</p>
 		</div>
 	{/if}
+	{#if canCreateBudget}
+		<form method="POST" action="?/create-budget" class="flex flex-wrap items-center gap-3">
+			<input type="hidden" name="category_id" value={data.categoryId} />
+			<input type="hidden" name="period" value={data.period} />
+			<input type="hidden" name="limit_cents" value={data.avgSpentCents} />
+			<Button type="submit" variant="secondary">
+				Create {periodWord} budget at {formatMoney(data.avgSpentCents)}
+			</Button>
+			<p class="text-xs text-muted-foreground">Average spent per {data.period} in this range.</p>
+		</form>
+	{/if}
 </div>
+
+<Dialog
+	bind:open={barOpen}
+	size="md"
+	title={bar ? `${bar.label} · ${formatMoney(bar.spentCents)}` : 'Transactions'}
+	description="Transactions that make up this bar."
+>
+	{#if bar}
+		<div class="flex flex-col gap-4">
+			{#if barRows.length === 0}
+				<p class="text-sm text-muted-foreground">No transactions in this period.</p>
+			{:else}
+				<ul class="divide-y divide-border rounded-md border border-border">
+					{#each barRows as row (row.id)}
+						<li class="flex items-center gap-3 px-3 py-2 text-sm">
+							<span class="w-20 shrink-0 text-muted-foreground">
+								{new Date(row.date + 'T12:00:00').toLocaleDateString('en-US', {
+									month: 'short',
+									day: 'numeric'
+								})}
+							</span>
+							<span class="min-w-0 flex-1 truncate">{row.label}</span>
+							<span class="shrink-0 font-medium">{formatMoney(row.amountCents)}</span>
+						</li>
+					{/each}
+					<li class="flex items-center justify-between px-3 py-2 text-sm font-medium">
+						<span>Total</span>
+						<span>{formatMoney(bar.spentCents)}</span>
+					</li>
+				</ul>
+			{/if}
+			<a class="text-sm text-primary hover:underline" href={barTransactionsHref(bar)}>
+				View on Transactions
+			</a>
+		</div>
+	{/if}
+</Dialog>

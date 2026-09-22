@@ -3,7 +3,7 @@ title: API & MCP
 description: The read-only REST API and the bundled MCP server.
 ---
 
-Galene exposes its data two ways: a read-only JSON REST API, and an MCP (Model Context Protocol) stdio server that wraps it for AI assistants.
+Galene exposes its data two ways: a read-only JSON REST API, and an MCP (Model Context Protocol) server that wraps it for AI assistants. The MCP server talks stdio when a client launches it, or HTTP when you leave it running.
 
 ## REST API
 
@@ -39,3 +39,37 @@ Add it to your MCP client's config, substituting one of your tokens:
   }
 }
 ```
+
+## Long-running endpoint
+
+Set `GALENE_MCP_PORT` on the same MCP image and leave the process running. Do not set `GALENE_API_TOKEN` on that process. Each client sends its own Settings → API token.
+
+The listen URL is `http://<host>:<port>/mcp`. Use plain HTTP on localhost or a private LAN only. Do not expose that port as plain HTTP on a public interface. Terminate TLS at the reverse proxy and forward to the MCP port.
+
+```yaml
+mcp:
+  image: ghcr.io/galene-finance/galene:mcp-latest
+  restart: unless-stopped
+  environment:
+    GALENE_API_URL: http://app:3000
+    GALENE_MCP_PORT: "3001"
+  ports:
+    - "3001:3001"
+```
+
+Point the client at the URL. The token is a request header, not a `docker run` environment variable.
+
+```json
+{
+  "mcpServers": {
+    "galene": {
+      "url": "https://galene.example/mcp",
+      "headers": {
+        "Authorization": "Bearer galene_…"
+      }
+    }
+  }
+}
+```
+
+A missing or unknown token is rejected. Delete the token in Settings → API and the next request from that client fails. Stdio clients keep using the environment variable above. The tools stay read-only.

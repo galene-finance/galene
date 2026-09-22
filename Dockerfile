@@ -100,10 +100,11 @@ LABEL org.opencontainers.image.version="${APP_VERSION}" \
 
 WORKDIR /app
 
-# stdio server: the MCP client launches it and it calls the Galene API.
-# GALENE_API_TOKEN is required at runtime (the server exits without it).
+# stdio unless GALENE_MCP_PORT is set. HTTP reads the API token from
+# each request. Do not put the token in the environment for that mode.
 ENV GALENE_API_URL=http://localhost:3000
 
 COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-bundle.js ./mcp-bundle.js
 
+EXPOSE 3001
 CMD ["bun", "mcp-bundle.js"]

@@ -345,6 +345,10 @@ export interface ProviderTransaction {
 	amount_cents: number;
 	merchant: string | null;
 	notes?: string | null;
+	/** True when the provider still marks the charge pending. */
+	pending?: boolean;
+	/** Posted transaction: the pending external id it replaces, if the provider sent one. */
+	pending_transaction_id?: string | null;
 }
 
 /** Per-call context the sync engine passes to a provider. */

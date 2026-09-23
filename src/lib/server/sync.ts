@@ -223,9 +223,11 @@ export async function syncNow(userId: number, providerId: string): Promise<SyncS
 		// sweep below folds it into its replacement instead of leaving a
 		// duplicate behind.
 		const liveIds = new Set(providerTransactions.map((t) => t.external_id));
+		const postedPendingIds = pendingIdsReplacedInResponse(providerTransactions);
 		let created = 0;
 		let updated = 0;
 		for (const pt of providerTransactions) {
+			if (isPendingAlreadyPosted(pt, postedPendingIds)) continue;
 			const accountId = accountMap.get(pt.account_external_id);
 			if (accountId == null) continue;
 			const existing = db()
@@ -250,8 +252,11 @@ export async function syncNow(userId: number, providerId: string): Promise<SyncS
 				created++;
 				// Imported transactions start uncategorized; let the user's rules fill them in.
 				applyCategorizationRules(userId, Number(result.lastInsertRowid));
-			}
-		}
+				}
+				if (!pt.pending && pt.pending_transaction_id) {
+				foldPendingIntoPosted(userId, providerId, accountId, pt.pending_transaction_id, pt.external_id);
+				}
+				}
 
 		// The upsert above imported every copy the provider reports now; fold
 		// the stale copies it no longer reports into their replacements.
@@ -294,6 +299,88 @@ interface ReplacementRow {
 	split_count: number;
 	amount_cents: number;
 	merchant: string | null;
+}
+
+export function pendingIdsReplacedInResponse(
+	transactions: { pending?: boolean; pending_transaction_id?: string | null }[]
+): Set<string> {
+	return new Set(
+		transactions
+			.map((t) => (t.pending ? null : t.pending_transaction_id))
+			.filter((id): id is string => !!id)
+	);
+}
+
+export function isPendingAlreadyPosted(
+	pt: { pending?: boolean; external_id: string },
+	postedPendingIds: Set<string>
+): boolean {
+	return pt.pending === true && !!pt.external_id && postedPendingIds.has(pt.external_id);
+}
+
+/**
+ * The posted row keeps its amount, date, and external id. User fields on the
+ * pending row move only where the posted row has none. Then the pending row
+ * is deleted. No-op when that id is not stored on this account.
+ */
+export function foldPendingIntoPosted(
+	userId: number,
+	providerId: string,
+	accountId: number,
+	pendingExternalId: string,
+	postedExternalId: string,
+	database = db()
+) {
+	if (!pendingExternalId || pendingExternalId === postedExternalId) return;
+	const pending = database
+		.query(
+			`SELECT id, category_id, color, notes,
+				(SELECT COUNT(*) FROM transaction_splits s WHERE s.transaction_id = t.id) AS split_count
+			 FROM transactions t
+			 WHERE user_id = ? AND provider = ? AND account_id = ? AND external_id = ?`
+		)
+		.get(userId, providerId, accountId, pendingExternalId) as
+		| { id: number; category_id: number | null; color: string | null; notes: string | null; split_count: number }
+		| undefined;
+	const posted = database
+		.query(
+			`SELECT id, category_id,
+				(SELECT COUNT(*) FROM transaction_splits s WHERE s.transaction_id = t.id) AS split_count
+			 FROM transactions t
+			 WHERE user_id = ? AND provider = ? AND account_id = ? AND external_id = ?`
+		)
+		.get(userId, providerId, accountId, postedExternalId) as
+		| { id: number; category_id: number | null; split_count: number }
+		| undefined;
+	if (!pending || !posted || pending.id === posted.id) return;
+	if (pending.split_count > 0 && posted.split_count > 0) return;
+	database.run('BEGIN');
+	try {
+		database
+			.query(
+				`UPDATE transactions
+				 SET category_id = COALESCE(category_id, ?),
+				     color = COALESCE(color, ?),
+				     notes = COALESCE(notes, ?),
+				     updated_at = datetime('now')
+				 WHERE id = ? AND user_id = ?`
+			)
+			.run(pending.category_id, pending.color, pending.notes, posted.id, userId);
+		database
+			.query(
+				`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
+				 SELECT ?, tag_id FROM transaction_tags WHERE transaction_id = ?`
+			)
+			.run(posted.id, pending.id);
+		if (pending.split_count > 0 && posted.split_count === 0) {
+			database.query('UPDATE transaction_splits SET transaction_id = ? WHERE transaction_id = ?').run(posted.id, pending.id);
+		}
+		database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(pending.id, userId);
+		database.run('COMMIT');
+	} catch (error) {
+		database.run('ROLLBACK');
+		throw error;
+	}
 }
 
 /** Compare payee text the way a pending→posted pair should: case and surrounding space do not matter. */

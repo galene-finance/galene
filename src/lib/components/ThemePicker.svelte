@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import DropdownMenu from '$lib/components/ui/DropdownMenu.svelte';
 	import { applyThemeNow, themeValue } from '$lib/themes';
@@ -17,13 +18,13 @@
 	} = $props();
 
 	// Start from the prop, else from whatever app.html already applied.
-	let current = $state(
+	// First paint snapshot. The effect follows `selected` after a later save.
+	let current = $state(untrack(() =>
 		selected ||
 			(typeof document !== 'undefined' &&
 				themes.find((t) => t.slug === document.documentElement.dataset.theme)?.slug) ||
 			themes[0].slug
-	);
-	// Stay in sync when the prop changes (e.g. after saving a theme elsewhere).
+	));
 	$effect(() => {
 		if (selected) current = themes.find((t) => themeValue(t) === selected)?.slug ?? current;
 	});

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, onMount, tick } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import { deserialize, enhance } from '$app/forms';
 	import { toast } from '$lib/toasts';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -117,16 +117,27 @@
 	// and a save action persists them before the Link widget is opened. The
 	// secret is never pre-filled — it is not sent to the browser, so the
 	// field starts empty and an empty save keeps the stored secret.
-	let plaidClientId = $state(data.plaid.clientId);
+	// First paint snapshot. A later server value copies in only if the field was not edited.
+	let plaidClientId = $state(untrack(() => data.plaid.clientId));
 	let plaidClientSecret = $state('');
-	let plaidEnv = $state(data.plaid.env);
-	let plaidSandbox = $state(data.plaid.sandboxInstance);
+	let plaidEnv = $state(untrack(() => data.plaid.env));
+	let plaidSandbox = $state(untrack(() => data.plaid.sandboxInstance));
+	let plaidFrom = untrack(() => ({ clientId: data.plaid.clientId, env: data.plaid.env, sandbox: data.plaid.sandboxInstance }));
+	$effect(() => {
+		const nextId = data.plaid.clientId;
+		const nextEnv = data.plaid.env;
+		const nextSandbox = data.plaid.sandboxInstance;
+		if (plaidClientId === plaidFrom.clientId) plaidClientId = nextId;
+		if (plaidEnv === plaidFrom.env) plaidEnv = nextEnv;
+		if (plaidSandbox === plaidFrom.sandbox) plaidSandbox = nextSandbox;
+		plaidFrom = { clientId: nextId, env: nextEnv, sandbox: nextSandbox };
+	});
 	let plaidSecretRevealed = $state(false);
 
 	// Toast the latest action result (replaces the old top-of-page status block).
 	// The identity guard makes the effect react only to *new* results. A sync
 	// success carries no message, so its summary sentence is composed here.
-	let lastForm = form;
+	let lastForm = untrack(() => form);
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;

@@ -32,9 +32,9 @@
 		onSave: (filters: DashboardFilters) => void;
 	} = $props();
 
-	const entry = WIDGET_CATALOG[widget.type];
-	const f = entry.filters;
-	const isTrends = widget.type === 'trends';
+	const entry = $derived(WIDGET_CATALOG[widget.type]);
+	const f = $derived(entry.filters);
+	const isTrends = $derived(widget.type === 'trends');
 
 	const KINDS: { value: NotificationKind; label: string }[] = [
 		{ value: 'sync_failed', label: 'Sync failed' },

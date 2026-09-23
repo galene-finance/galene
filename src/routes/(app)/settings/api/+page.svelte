@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Field from '$lib/components/ui/Field.svelte';
@@ -40,7 +41,7 @@
 		setTimeout(() => (copied = false), 2000);
 	}
 
-	const mcpConfig = JSON.stringify(
+	const mcpConfig = $derived(JSON.stringify(
 		{
 			mcpServers: {
 				galene: {
@@ -55,7 +56,7 @@
 		},
 		null,
 		2
-	);
+	));
 
 	const endpoints: [path: string, desc: string][] = [
 		['/api/v1/summary', 'Balance, month income/expense, recent transactions, top categories'],
@@ -70,7 +71,7 @@
 	];
 
 	// Toast the latest action result (replaces the old top-of-page status block).
-	let lastForm = form;
+	let lastForm = untrack(() => form);
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;

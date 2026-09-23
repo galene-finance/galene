@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import DropdownMenu from '$lib/components/ui/DropdownMenu.svelte';
@@ -72,8 +73,9 @@
 
 	// The dropdown keeps its own copy of the list so opening it can refresh
 	// without a page reload; the props resync it after any layout reload.
-	let items = $state(notifications);
-	let unread = $state(notificationsUnread);
+	// First paint snapshot. The effect resyncs these after a layout reload.
+	let items = $state(untrack(() => notifications));
+	let unread = $state(untrack(() => notificationsUnread));
 	let menuOpen = $state(false);
 
 	$effect(() => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { flushSync } from 'svelte';
+	import { flushSync, untrack } from 'svelte';
 	import { deserialize, enhance } from '$app/forms';
 	import { page } from '$app/state';
 	import AddScheduledDialog from '$lib/components/AddScheduledDialog.svelte';
@@ -50,25 +50,26 @@
 	const tagItems = $derived(data.tags.map((t) => ({ value: String(t.id), label: t.name })));
 	const tagsOf = (t: Transaction) => t.tags ?? [];
 
-	let lastForm = form;
+	let lastForm = untrack(() => form);
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;
 		toastFormResult(form);
 	});
 
-	// Filter state (synced from the URL after each navigation)
-	let q = $state(data.filters.q);
-	let filterAccounts = $state<string[]>(data.filters.accountIds.map(String));
-	let filterCategories = $state<string[]>(data.filters.categoryIds.map(String));
-	let filterTags = $state<string[]>(data.filters.tagIds.map(String));
-	let amountOp = $state(data.filters.amountOp);
-	let amountFrom = $state(data.filters.amountFrom !== null ? String(data.filters.amountFrom / 100) : '');
-	let amountTo = $state(data.filters.amountTo !== null ? String(data.filters.amountTo / 100) : '');
-	let dateFrom = $state(data.filters.dateFrom ?? '');
-	let dateTo = $state(data.filters.dateTo ?? '');
+	// Filter state (synced from the URL after each navigation).
+	// untrack is the first paint only. The effect below applies the next URL.
+	let q = $state(untrack(() => data.filters.q));
+	let filterAccounts = $state<string[]>(untrack(() => data.filters.accountIds.map(String)));
+	let filterCategories = $state<string[]>(untrack(() => data.filters.categoryIds.map(String)));
+	let filterTags = $state<string[]>(untrack(() => data.filters.tagIds.map(String)));
+	let amountOp = $state(untrack(() => data.filters.amountOp));
+	let amountFrom = $state(untrack(() => data.filters.amountFrom !== null ? String(data.filters.amountFrom / 100) : ''));
+	let amountTo = $state(untrack(() => data.filters.amountTo !== null ? String(data.filters.amountTo / 100) : ''));
+	let dateFrom = $state(untrack(() => data.filters.dateFrom ?? ''));
+	let dateTo = $state(untrack(() => data.filters.dateTo ?? ''));
 	// Svelte 5 ignores a one-way `value` on <select>; bind instead.
-	let pageSizeSel = $state(String(data.filters.pageSize));
+	let pageSizeSel = $state(untrack(() => String(data.filters.pageSize)));
 
 	// Quick filter: fill the search field with a merchant and submit the
 	// filter form (plain GET submit, like the Filter button).
@@ -86,7 +87,7 @@
 	// actually change (navigation). Without this guard the effect would
 	// clobber an in-progress, not-yet-submitted selection, because it also
 	// re-runs when the local filter state changes.
-	let lastFiltersKey = JSON.stringify(data.filters);
+	let lastFiltersKey = untrack(() => JSON.stringify(data.filters));
 	$effect(() => {
 		const f = data.filters;
 		const key = JSON.stringify(f);

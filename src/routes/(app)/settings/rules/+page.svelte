@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import Button from '$lib/components/ui/Button.svelte';
 	import RuleDialog from '$lib/components/RuleDialog.svelte';
@@ -58,7 +59,7 @@
 	}
 
 	// Toast the latest action result (replaces the old top-of-page status block).
-	let lastForm = form;
+	let lastForm = untrack(() => form);
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;

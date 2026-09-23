@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import AddScheduledDialog from '$lib/components/AddScheduledDialog.svelte';
@@ -37,7 +38,7 @@
 
 	const extraHidden = $derived<Record<string, string>>(dismissKey ? { dismiss_key: dismissKey } : {});
 
-	let lastForm = form;
+	let lastForm = untrack(() => form);
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;

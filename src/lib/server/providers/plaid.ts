@@ -27,6 +27,8 @@ interface PlaidTx {
 	name?: string;
 	account?: { id?: string };
 	account_id?: string;
+	pending?: boolean;
+	pending_transaction_id?: string | null;
 }
 
 interface PlaidTxResponse {
@@ -399,6 +401,8 @@ async function fetchItemTransactions(cfg: PlaidConfig, accessToken: string, star
 		account_external_id: t.account_id ?? t.account?.id ?? '',
 		date: t.date,
 		amount_cents: -Math.round(Number(t.amount) * 100),
-		merchant: t.name ?? null
+		merchant: t.name ?? null,
+		pending: t.pending === true,
+		pending_transaction_id: t.pending_transaction_id || null
 	}));
 }

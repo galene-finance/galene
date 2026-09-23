@@ -25,10 +25,19 @@ interface PlaidTx {
 	date: string;
 	amount: number;
 	name?: string;
+	original_description?: string | null;
 	account?: { id?: string };
 	account_id?: string;
 	pending?: boolean;
 	pending_transaction_id?: string | null;
+}
+
+/** Statement line when Plaid sent one. Otherwise the cleaned name. Blank is absent. */
+export function plaidMerchant(tx: { name?: string | null; original_description?: string | null }): string | null {
+	const statement = tx.original_description?.trim() ?? '';
+	if (statement) return statement;
+	const name = tx.name?.trim() ?? '';
+	return name || null;
 }
 
 interface PlaidTxResponse {
@@ -401,7 +410,7 @@ async function fetchItemTransactions(cfg: PlaidConfig, accessToken: string, star
 		account_external_id: t.account_id ?? t.account?.id ?? '',
 		date: t.date,
 		amount_cents: -Math.round(Number(t.amount) * 100),
-		merchant: t.name ?? null,
+		merchant: plaidMerchant(t),
 		pending: t.pending === true,
 		pending_transaction_id: t.pending_transaction_id || null
 	}));

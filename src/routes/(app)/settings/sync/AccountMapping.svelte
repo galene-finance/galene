@@ -17,8 +17,9 @@
 
 	// The target the source account maps to: the current account's id, another
 	// account's id, or 'new' (rename in place to the typed name).
-	let target = $state(String(account.id));
-	let newName = $state(account.source_name ?? account.name);
+	// First paint snapshot. The effect resets these when the account reloads.
+	let target = $state(untrack(() => String(account.id)));
+	let newName = $state(untrack(() => account.source_name ?? account.name));
 
 	// When the account reloads (after a save or a sync), reset the editor to
 	// reflect it. Depends only on the account, not on target/newName, so the

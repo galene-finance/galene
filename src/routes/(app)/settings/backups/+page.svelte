@@ -45,7 +45,15 @@
 		};
 	} = $props();
 
-	let dir = $state(data.settings.destDir);
+	// First paint snapshot. The effect copies a new server path only if the field was not edited.
+	let dir = $state(untrack(() => data.settings.destDir));
+	let dirFromServer = untrack(() => data.settings.destDir);
+	$effect(() => {
+		const next = data.settings.destDir;
+		if (dir === dirFromServer) dir = next;
+		dirFromServer = next;
+	});
+
 
 	// The selects submit on change, like the sync page's auto-sync control.
 	let scheduleForm = $state<HTMLFormElement | null>(null);
@@ -67,7 +75,7 @@
 	}
 
 	// Toast the latest action result (replaces the old top-of-page status block).
-	let lastForm = form;
+	let lastForm = untrack(() => form);
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;

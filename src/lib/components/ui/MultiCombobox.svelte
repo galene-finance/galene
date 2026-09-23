@@ -39,7 +39,7 @@
 	let lastCreated = $state('');
 	const pills = $derived(selectedPills(value, items, lastCreated));
 
-	let container: HTMLDivElement | undefined;
+	let container = $state<HTMLDivElement | undefined>(undefined);
 	let fieldWidth = $state(0);
 	let open = $state(false);
 	function inputEl() {
@@ -137,10 +137,20 @@
 	}}
 >
 	<div
+		role="button"
+		tabindex="0"
+		aria-label="Selected values"
 		class="flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border border-input bg-surface px-2 py-1 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30 {className}"
 		bind:this={container}
 		onclick={(e) => {
 			if ((e.target as HTMLElement).closest('button')) return;
+			inputEl()?.focus();
+			open = true;
+		}}
+		onkeydown={(e) => {
+			if (e.key !== 'Enter' && e.key !== ' ') return;
+			if (e.target !== e.currentTarget) return;
+			e.preventDefault();
 			inputEl()?.focus();
 			open = true;
 		}}

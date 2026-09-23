@@ -46,6 +46,8 @@
 
 <div
 	bind:this={gridEl}
+	role="region"
+	aria-label="Dashboard widgets"
 	class="db-grid {draggingId ? 'is-dragging' : ''}"
 	ondragover={(e) => {
 		if (!editMode || !draggingId) return;

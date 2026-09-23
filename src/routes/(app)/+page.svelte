@@ -39,7 +39,7 @@
 		};
 	} = $props();
 
-	let layout = $state<DashboardWidget[]>(data.layout);
+	let layout = $state<DashboardWidget[]>(untrack(() => data.layout));
 	let editMode = $state(false);
 	// A transient layout shown while a pointer-resize is in flight; null when idle.
 	let preview = $state<DashboardWidget[] | null>(null);
@@ -50,7 +50,7 @@
 	let addOpen = $state(false);
 	let filtersOpen = $state(false);
 	let filtersWidget = $state<DashboardWidget | null>(null);
-	let lastSaved = $state<DashboardWidget[]>(data.layout);
+	let lastSaved = $state<DashboardWidget[]>(untrack(() => data.layout));
 
 	// Adopt a new server layout (after a reload or another client saved) without
 	// clobbering a newer local edit: only overwrite when there's no in-flight

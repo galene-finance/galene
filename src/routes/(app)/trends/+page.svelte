@@ -29,10 +29,11 @@
 	// --- Filter form (URL-driven) ---
 	// Full-page navigation on submit, so the initial value is always the URL's.
 	let filterForm = $state<HTMLFormElement | null>(null);
-	let selCategory = $state(String(data.categoryId ?? ''));
-	let selPeriod = $state(data.period);
-	let selFrom = $state(data.from);
-	let selTo = $state(data.to);
+	// untrack is the first paint only. The effect below applies the next URL.
+	let selCategory = $state(untrack(() => String(data.categoryId ?? '')));
+	let selPeriod = $state(untrack(() => data.period));
+	let selFrom = $state(untrack(() => data.from));
+	let selTo = $state(untrack(() => data.to));
 
 	// GET form submits are client-side navigations that reuse this component,
 	// so re-sync the pickers with the applied (possibly capped) values after each one.

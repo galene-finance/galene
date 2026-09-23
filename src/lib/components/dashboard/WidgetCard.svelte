@@ -48,7 +48,7 @@
 	let cardEl: HTMLDivElement | undefined;
 	let sizeMenuOpen = $state(false);
 
-	const entry = WIDGET_CATALOG[widget.type];
+	const entry = $derived(WIDGET_CATALOG[widget.type]);
 
 	function handleDragStart(e: DragEvent) {
 		if (!editMode) return;
@@ -84,6 +84,8 @@
 
 <div
 	bind:this={cardEl}
+	role="group"
+	aria-label={entry?.label ?? 'Widget'}
 	class="group relative flex min-w-0 max-w-full flex-col overflow-hidden rounded-lg border bg-surface {editMode
 		? 'border-dashed'
 		: ''} {dragging ? 'opacity-40' : ''}"

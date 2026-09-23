@@ -40,20 +40,19 @@
 		}))
 	);
 
-	let q = $state(data.filters.q);
-	let filterAccounts = $state<string[]>(data.filters.accountIds.map(String));
-	let filterCategories = $state<string[]>(data.filters.categoryIds.map(String));
-	let filterTags = $state<string[]>(data.filters.tagIds.map(String));
-	let amountOp = $state(data.filters.amountOp);
-	let amountFrom = $state(data.filters.amountFrom !== null ? String(data.filters.amountFrom / 100) : '');
-	let amountTo = $state(data.filters.amountTo !== null ? String(data.filters.amountTo / 100) : '');
-	let dateFrom = $state(data.filters.dateFrom ?? '');
-	let dateTo = $state(data.filters.dateTo ?? '');
-	let selectedColumns = $state<CsvExportColumn[]>(
-		data.columns.length > 0 ? [...data.columns] : [...CSV_EXPORT_COLUMNS]
-	);
+	// untrack is the first paint only. The effect below applies the next URL.
+	let q = $state(untrack(() => data.filters.q));
+	let filterAccounts = $state<string[]>(untrack(() => data.filters.accountIds.map(String)));
+	let filterCategories = $state<string[]>(untrack(() => data.filters.categoryIds.map(String)));
+	let filterTags = $state<string[]>(untrack(() => data.filters.tagIds.map(String)));
+	let amountOp = $state(untrack(() => data.filters.amountOp));
+	let amountFrom = $state(untrack(() => data.filters.amountFrom !== null ? String(data.filters.amountFrom / 100) : ''));
+	let amountTo = $state(untrack(() => data.filters.amountTo !== null ? String(data.filters.amountTo / 100) : ''));
+	let dateFrom = $state(untrack(() => data.filters.dateFrom ?? ''));
+	let dateTo = $state(untrack(() => data.filters.dateTo ?? ''));
+	let selectedColumns = $state<CsvExportColumn[]>(untrack(() => data.columns.length > 0 ? [...data.columns] : [...CSV_EXPORT_COLUMNS]));
 
-	let lastKey = JSON.stringify({ f: data.filters, c: data.columns });
+	let lastKey = untrack(() => JSON.stringify({ f: data.filters, c: data.columns }));
 	$effect(() => {
 		const key = JSON.stringify({ f: data.filters, c: data.columns });
 		if (key === lastKey) return;

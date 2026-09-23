@@ -43,8 +43,9 @@
 
 	// --- Filter form (URL-driven) ---
 	let filterForm = $state<HTMLFormElement | null>(null);
-	let selFrom = $state(data.from);
-	let selTo = $state(data.to);
+	// untrack is the first paint only. The effect below applies the next URL.
+	let selFrom = $state(untrack(() => data.from));
+	let selTo = $state(untrack(() => data.to));
 
 	// Keep the pickers in sync with the applied range (covers client-side navigation).
 	$effect(() => {

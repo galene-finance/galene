@@ -32,7 +32,7 @@
 	);
 
 	// --- Theme selection (from the grid) ---
-	let selectedNow = $state(data.selected);
+	let selectedNow = $state(untrack(() => data.selected));
 	$effect(() => {
 		selectedNow = data.selected;
 	});
@@ -117,9 +117,10 @@
 	});
 
 	// --- Branding ---
-	let appName = $state(data.appName);
-	let icon = $state(normalizeBrandingIcon(data.icon));
-	let favicon = $state(normalizeBrandingIcon(data.favicon));
+	// First paint snapshot. The effect below applies the next saved branding.
+	let appName = $state(untrack(() => data.appName));
+	let icon = $state(untrack(() => normalizeBrandingIcon(data.icon)));
+	let favicon = $state(untrack(() => normalizeBrandingIcon(data.favicon)));
 	$effect(() => {
 		appName = data.appName;
 		icon = normalizeBrandingIcon(data.icon);
@@ -128,13 +129,13 @@
 	const faviconIcon = $derived(getIcon(favicon));
 
 	// --- Calendar ---
-	let weekStartsOn = $state(data.weekStartsOn);
+	let weekStartsOn = $state(untrack(() => data.weekStartsOn));
 	$effect(() => {
 		weekStartsOn = data.weekStartsOn;
 	});
 
 	// Toast the latest action result (replaces the old top-of-page status block).
-	let lastForm = form;
+	let lastForm = untrack(() => form);
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;

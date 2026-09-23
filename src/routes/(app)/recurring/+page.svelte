@@ -37,7 +37,7 @@
 
 	const extraHidden = $derived<Record<string, string>>(dismissKey ? { dismiss_key: dismissKey } : {});
 
-	let lastForm = form;
+	let lastForm = untrack(() => form);
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;

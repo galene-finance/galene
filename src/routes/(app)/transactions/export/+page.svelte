@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import DatePicker from '$lib/components/ui/DatePicker.svelte';
 	import Input from '$lib/components/ui/Input.svelte';

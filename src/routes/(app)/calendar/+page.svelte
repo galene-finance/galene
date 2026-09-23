@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import AddScheduledDialog from '$lib/components/AddScheduledDialog.svelte';
 	import AddTransactionDialog from '$lib/components/AddTransactionDialog.svelte';
 	import Title from '$lib/components/Title.svelte';

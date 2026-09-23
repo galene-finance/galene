@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import DropdownMenu from '$lib/components/ui/DropdownMenu.svelte';
 	import { applyThemeNow, themeValue } from '$lib/themes';

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import Title from '$lib/components/Title.svelte';
 	import Button from '$lib/components/ui/Button.svelte';

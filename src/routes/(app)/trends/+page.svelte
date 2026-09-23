@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { flushSync } from 'svelte';
+	import { flushSync, untrack } from 'svelte';
 	import Title from '$lib/components/Title.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import DatePicker from '$lib/components/ui/DatePicker.svelte';

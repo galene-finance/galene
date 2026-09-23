@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { flushSync } from 'svelte';
+	import { flushSync, untrack } from 'svelte';
 	import { deserialize, enhance } from '$app/forms';
 	import { page } from '$app/state';
 	import AddScheduledDialog from '$lib/components/AddScheduledDialog.svelte';

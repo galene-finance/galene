@@ -31,6 +31,7 @@
 				accountIds: number[];
 				categoryIds: number[];
 				tagIds: number[];
+				emptyFields: string[];
 				amountOp: string;
 				amountFrom: number | null;
 				amountTo: number | null;
@@ -63,6 +64,7 @@
 	let filterAccounts = $state<string[]>(untrack(() => data.filters.accountIds.map(String)));
 	let filterCategories = $state<string[]>(untrack(() => data.filters.categoryIds.map(String)));
 	let filterTags = $state<string[]>(untrack(() => data.filters.tagIds.map(String)));
+	let filterEmpty = $state<string[]>(untrack(() => [...data.filters.emptyFields]));
 	let amountOp = $state(untrack(() => data.filters.amountOp));
 	let amountFrom = $state(untrack(() => data.filters.amountFrom !== null ? String(data.filters.amountFrom / 100) : ''));
 	let amountTo = $state(untrack(() => data.filters.amountTo !== null ? String(data.filters.amountTo / 100) : ''));
@@ -74,6 +76,16 @@
 	// Quick filter: fill the search field with a merchant and submit the
 	// filter form (plain GET submit, like the Filter button).
 	let filterFormEl: HTMLFormElement | undefined = undefined;
+
+	// Empty filter: changing pills updates the list without pressing Filter (#68).
+	let lastEmptyKey = untrack(() => filterEmpty.join(','));
+	$effect(() => {
+		const key = filterEmpty.join(',');
+		if (key === lastEmptyKey) return;
+		lastEmptyKey = key;
+		flushSync();
+		filterFormEl?.requestSubmit();
+	});
 	function quickFilterByMerchant(merchant: string | null) {
 		if (!merchant) return;
 		q = merchant;
@@ -103,6 +115,9 @@
 		if (filterTags.join(',') !== f.tagIds.map(String).join(',')) {
 			filterTags = f.tagIds.map(String);
 		}
+		if (filterEmpty.join(',') !== f.emptyFields.join(',')) {
+			filterEmpty = [...f.emptyFields];
+		}
 		if (amountOp !== f.amountOp) amountOp = f.amountOp;
 		const from = f.amountFrom !== null ? String(f.amountFrom / 100) : '';
 		if (amountFrom !== from) amountFrom = from;
@@ -123,6 +138,12 @@
 		selectedItems.length > 0 && selectedItems.every((t) => t.amount_cents > 0) ? 'income' : 'expense'
 	);
 	const categoryItems = $derived(categoryPickerItems(data.categories));
+	const emptyFilterItems = [
+		{ value: 'account', label: 'Account' },
+		{ value: 'category', label: 'Category' },
+		{ value: 'merchant', label: 'Merchant' },
+		{ value: 'tag', label: 'Tag' }
+	];
 	const filterCategoryItems = $derived(
 		data.categories.map((c) => ({
 			value: String(c.id),
@@ -282,6 +303,7 @@
 		for (const id of f.accountIds) params.append('account', String(id));
 		for (const id of f.categoryIds) params.append('category', String(id));
 		for (const id of f.tagIds) params.append('tag', String(id));
+		for (const field of f.emptyFields) params.append('empty', field);
 		if (f.amountOp) params.set('amount_op', f.amountOp);
 		if (f.amountFrom !== null) params.set('amount_from', String(f.amountFrom / 100));
 		if (f.amountTo !== null) params.set('amount_to', String(f.amountTo / 100));
@@ -297,6 +319,7 @@
 			data.filters.accountIds.length > 0 ||
 			data.filters.categoryIds.length > 0 ||
 			data.filters.tagIds.length > 0 ||
+			data.filters.emptyFields.length > 0 ||
 			data.filters.amountOp !== '' ||
 			amountFrom !== '' ||
 			amountTo !== '' ||
@@ -322,6 +345,7 @@
 			(filterAccounts.length > 0 ? 1 : 0) +
 			(filterCategories.length > 0 ? 1 : 0) +
 			(filterTags.length > 0 ? 1 : 0) +
+			(filterEmpty.length > 0 ? 1 : 0) +
 			(amountOp !== '' || amountFrom !== '' || amountTo !== '' ? 1 : 0) +
 			(dateFrom !== '' ? 1 : 0) +
 			(dateTo !== '' ? 1 : 0)
@@ -429,6 +453,17 @@
 				<MultiCombobox bind:value={filterTags} items={tagItems} placeholder="All tags" />
 				{#each filterTags as v (v)}
 					<input type="hidden" name="tag" value={v} />
+				{/each}
+			</div>
+			<div class="flex flex-col gap-1.5 md:w-44">
+				<span class="text-xs font-medium text-muted-foreground">Empty</span>
+				<MultiCombobox
+					bind:value={filterEmpty}
+					items={emptyFilterItems}
+					placeholder="Any field"
+				/>
+				{#each filterEmpty as v (v)}
+					<input type="hidden" name="empty" value={v} />
 				{/each}
 			</div>
 			<div class="flex flex-col gap-1.5">

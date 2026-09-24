@@ -1,5 +1,6 @@
 import { apiUser, idList, json, unauthorized } from '$lib/server/api';
 import { getTransactions } from '$lib/server/finance';
+import { parseEmptyFields } from '$lib/server/transactionFilters';
 import { parseAmountToCents } from '$lib/utils';
 
 const isDate = (s: string | null) => s != null && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s);
@@ -26,6 +27,7 @@ export function GET(event) {
 		accountIds: idList(p.get('account')),
 		categoryIds: idList(p.get('category')),
 		tagIds: idList(p.get('tag')),
+		emptyFields: parseEmptyFields(p.getAll('empty')),
 		amountOp,
 		amountFrom,
 		amountTo,

@@ -5,6 +5,7 @@ export type ExportQueryState = {
 	accountIds: readonly string[];
 	categoryIds: readonly string[];
 	tagIds: readonly string[];
+	emptyFields: readonly string[];
 	amountOp: string;
 	amountFrom: string;
 	amountTo: string;
@@ -23,6 +24,7 @@ export function buildExportSearchParams(
 	for (const id of state.accountIds) params.append('account', id);
 	for (const id of state.categoryIds) params.append('category', id);
 	for (const id of state.tagIds) params.append('tag', id);
+	for (const field of state.emptyFields) params.append('empty', field);
 	if (state.amountOp) {
 		params.set('amount_op', state.amountOp);
 		if (state.amountFrom) params.set('amount_from', state.amountFrom);

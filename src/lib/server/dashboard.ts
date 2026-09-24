@@ -109,6 +109,7 @@ function recentData(userId: number, f: DashboardFilters): DashboardWidgetData {
 		accountIds: f.accountIds ?? [],
 		categoryIds: f.categoryIds ?? [],
 		tagIds: f.tagIds ?? [],
+		emptyFields: [],
 		amountOp: '',
 		amountFrom: null,
 		amountTo: null,

@@ -20,7 +20,7 @@ Nothing is written until you confirm.
 
 1. On **Transactions**, use the **Export CSV** icon (arrow out of a tray). That opens `/transactions/export` with the **current list filters** in the query string (not a direct file download). Pagination (`page`, `page_size`) is dropped.
 2. On **Settings → Data**, the same icon on the Transactions row opens `/transactions/export` with **no filters** (the full set).
-3. On the export page, change filters (they apply as you go; there is no Filter button). Selected accounts, categories, and tags are pills with ×. Check the columns to include (all seven on by default; at least one required), then **Export CSV**. The file matches the matching-count on the page.
+3. On the export page, change filters (they apply as you go; there is no Filter button). Selected accounts, categories, tags, and empty fields (account, category, merchant, or tag) are pills with ×. Check the columns to include (all seven on by default; at least one required), then **Export CSV**. The file matches the matching-count on the page.
 
 The download is UTF-8 CSV named like `galene-transactions-YYYY-MM-DD.csv`. One row per transaction. Split parts are not extra columns; the primary category name is used when `category` is checked. There is no `id`, splits, or provider column.
 

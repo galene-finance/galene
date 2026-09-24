@@ -42,4 +42,12 @@ describe('parseTransactionFilters', () => {
 		expect(f.page).toBe(3);
 		expect(f.pageSize).toBe(50);
 	});
+
+	test('keeps known empty fields and ignores anything else', () => {
+		const f = parseTransactionFilters(
+			new URL('https://example.test/transactions?empty=account&empty=nope&empty=merchant&empty=account'),
+			25
+		);
+		expect(f.emptyFields).toEqual(['account', 'merchant']);
+	});
 });

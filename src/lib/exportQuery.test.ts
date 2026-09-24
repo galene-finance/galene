@@ -7,6 +7,7 @@ const base = {
 	accountIds: [] as string[],
 	categoryIds: [] as string[],
 	tagIds: [] as string[],
+	emptyFields: [] as string[],
 	amountOp: '',
 	amountFrom: '',
 	amountTo: '',
@@ -47,5 +48,11 @@ describe('buildExportSearchParams', () => {
 		expect(csv).toContain('fields=amount');
 		expect(csv).not.toContain('fields=merchant');
 		expect(csv.startsWith('/transactions/export.csv?')).toBe(true);
+	});
+
+	test('empty fields are repeated empty params', () => {
+		const csv = exportCsvHref({ ...base, emptyFields: ['account', 'merchant'] });
+		expect(csv).toContain('empty=account');
+		expect(csv).toContain('empty=merchant');
 	});
 });

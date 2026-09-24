@@ -1,5 +1,21 @@
 import { parseAmountToCents } from '$lib/utils';
-import type { TransactionFilters } from '$lib/server/finance';
+import type { EmptyFilterField, TransactionFilters } from '$lib/server/finance';
+
+const EMPTY_FIELDS = new Set<EmptyFilterField>(['account', 'category', 'merchant', 'tag']);
+
+export function parseEmptyFields(values: string[]): EmptyFilterField[] {
+	const out: EmptyFilterField[] = [];
+	const seen = new Set<EmptyFilterField>();
+	for (const raw of values) {
+		const v = raw.trim().toLowerCase();
+		if (!EMPTY_FIELDS.has(v as EmptyFilterField)) continue;
+		const field = v as EmptyFilterField;
+		if (seen.has(field)) continue;
+		seen.add(field);
+		out.push(field);
+	}
+	return out;
+}
 
 const PAGE_SIZES = [25, 50, 75, 100];
 
@@ -15,6 +31,7 @@ export function parseTransactionFilters(url: URL, defaultPageSize: number): Tran
 		accountIds: url.searchParams.getAll('account').map(num).filter((n): n is number => n !== null),
 		categoryIds: url.searchParams.getAll('category').map(num).filter((n): n is number => n !== null),
 		tagIds: url.searchParams.getAll('tag').map(num).filter((n): n is number => n !== null),
+		emptyFields: parseEmptyFields(url.searchParams.getAll('empty')),
 		amountOp: (['eq', 'between', 'gt', 'lt'].includes(op) ? op : '') as TransactionFilters['amountOp'],
 		amountFrom: parseAmountToCents(url.searchParams.get('amount_from') ?? ''),
 		amountTo: parseAmountToCents(url.searchParams.get('amount_to') ?? ''),

@@ -507,10 +507,14 @@ export function getOrCreateAccount(userId: number, name: string, type: AccountTy
 // Transactions
 // ---------------------------------------------------------------------------
 
+export type EmptyFilterField = 'account' | 'category' | 'merchant' | 'tag';
+
 export interface TransactionFilters {
 	accountIds: number[];
 	categoryIds: number[];
 	tagIds: number[];
+	/** OR: include row if any listed field is empty (#68). */
+	emptyFields: EmptyFilterField[];
 	amountOp: '' | 'eq' | 'between' | 'gt' | 'lt';
 	amountFrom: number | null; // cents, absolute value
 	amountTo: number | null; // cents, absolute value
@@ -546,6 +550,29 @@ export function getTransactions(userId: number, f: TransactionFilters): Transact
 				.join(',')}))`
 		);
 		params.push(...f.tagIds);
+	}
+	if (f.emptyFields.length > 0) {
+		const parts: string[] = [];
+		for (const field of f.emptyFields) {
+			if (field === 'account') {
+				parts.push('t.account_id IS NULL');
+			} else if (field === 'category') {
+				// Parent uncategorized, and no split part carries a category (#68).
+				parts.push(
+					`(t.category_id IS NULL AND NOT EXISTS (
+						SELECT 1 FROM transaction_splits s
+						WHERE s.transaction_id = t.id AND s.category_id IS NOT NULL
+					))`
+				);
+			} else if (field === 'merchant') {
+				parts.push("(t.merchant IS NULL OR trim(t.merchant) = '')");
+			} else if (field === 'tag') {
+				parts.push(
+					'NOT EXISTS (SELECT 1 FROM transaction_tags tt WHERE tt.transaction_id = t.id)'
+				);
+			}
+		}
+		if (parts.length > 0) where.push(`(${parts.join(' OR ')})`);
 	}
 	if (f.q.trim() !== '') {
 		// lower() so ASCII search is case-insensitive (SQLite LIKE can be case-sensitive
@@ -593,14 +620,14 @@ export function getTransactions(userId: number, f: TransactionFilters): Transact
 			        a.name AS account_name, c.name AS category_name, c.color AS category_color,
 			        CASE WHEN c.id IS NULL THEN NULL WHEN c.is_transfer = 1 THEN 'transfer' ELSE c.type END AS category_type
 			 FROM transactions t
-			 JOIN accounts a ON a.id = t.account_id
+			 LEFT JOIN accounts a ON a.id = t.account_id
 			 LEFT JOIN categories c ON c.id = t.category_id
 			 WHERE ${whereSql}
 			 ORDER BY t.date DESC, t.id DESC
 			 LIMIT ? OFFSET ?`
 		)
 		.all(...params, f.pageSize, (f.page - 1) * f.pageSize) as (Transaction & {
-		account_name: string;
+		account_name: string | null;
 		category_name: string | null;
 		category_color: string | null;
 		category_type: CategoryType | null;
@@ -788,7 +815,7 @@ export function getTransactionsInPeriod(userId: number, from: string, to: string
 			        a.name AS account_name, c.name AS category_name, c.color AS category_color,
 			        CASE WHEN c.id IS NULL THEN NULL WHEN c.is_transfer = 1 THEN 'transfer' ELSE c.type END AS category_type
 			 FROM transactions t
-			 JOIN accounts a ON a.id = t.account_id
+			 LEFT JOIN accounts a ON a.id = t.account_id
 			 LEFT JOIN categories c ON c.id = t.category_id
 			 WHERE t.user_id = ? AND t.date >= ? AND t.date < ?
 			 ORDER BY t.date, t.id`
@@ -851,7 +878,7 @@ export function getHomeSummary(userId: number): HomeSummary {
 			        a.name AS account_name, c.name AS category_name, c.color AS category_color,
 			        CASE WHEN c.id IS NULL THEN NULL WHEN c.is_transfer = 1 THEN 'transfer' ELSE c.type END AS category_type
 			 FROM transactions t
-			 JOIN accounts a ON a.id = t.account_id
+			 LEFT JOIN accounts a ON a.id = t.account_id
 			 LEFT JOIN categories c ON c.id = t.category_id
 			 WHERE t.user_id = ?
 			 ORDER BY t.date DESC, t.id DESC

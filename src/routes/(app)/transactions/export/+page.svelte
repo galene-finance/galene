@@ -17,6 +17,7 @@
 				accountIds: number[];
 				categoryIds: number[];
 				tagIds: number[];
+				emptyFields: string[];
 				amountOp: string;
 				amountFrom: number | null;
 				amountTo: number | null;
@@ -34,6 +35,12 @@
 
 	const accountItems = $derived(data.accounts.map((a) => ({ value: String(a.id), label: a.name })));
 	const tagItems = $derived(data.tags.map((t) => ({ value: String(t.id), label: t.name })));
+	const emptyFilterItems = [
+		{ value: 'account', label: 'Account' },
+		{ value: 'category', label: 'Category' },
+		{ value: 'merchant', label: 'Merchant' },
+		{ value: 'tag', label: 'Tag' }
+	];
 	const filterCategoryItems = $derived(
 		data.categories.map((c) => ({
 			value: String(c.id),
@@ -46,6 +53,7 @@
 	let filterAccounts = $state<string[]>(untrack(() => data.filters.accountIds.map(String)));
 	let filterCategories = $state<string[]>(untrack(() => data.filters.categoryIds.map(String)));
 	let filterTags = $state<string[]>(untrack(() => data.filters.tagIds.map(String)));
+	let filterEmpty = $state<string[]>(untrack(() => [...data.filters.emptyFields]));
 	let amountOp = $state(untrack(() => data.filters.amountOp));
 	let amountFrom = $state(untrack(() => data.filters.amountFrom !== null ? String(data.filters.amountFrom / 100) : ''));
 	let amountTo = $state(untrack(() => data.filters.amountTo !== null ? String(data.filters.amountTo / 100) : ''));
@@ -63,6 +71,7 @@
 		filterAccounts = f.accountIds.map(String);
 		filterCategories = f.categoryIds.map(String);
 		filterTags = f.tagIds.map(String);
+		filterEmpty = [...f.emptyFields];
 		amountOp = f.amountOp;
 		amountFrom = f.amountFrom !== null ? String(f.amountFrom / 100) : '';
 		amountTo = f.amountTo !== null ? String(f.amountTo / 100) : '';
@@ -77,6 +86,7 @@
 			accountIds: filterAccounts,
 			categoryIds: filterCategories,
 			tagIds: filterTags,
+			emptyFields: filterEmpty,
 			amountOp,
 			amountFrom,
 			amountTo,
@@ -93,6 +103,7 @@
 			accountIds: f.accountIds.map(String),
 			categoryIds: f.categoryIds.map(String),
 			tagIds: f.tagIds.map(String),
+			emptyFields: [...f.emptyFields],
 			amountOp: f.amountOp,
 			amountFrom: f.amountFrom !== null ? String(f.amountFrom / 100) : '',
 			amountTo: f.amountTo !== null ? String(f.amountTo / 100) : '',
@@ -112,6 +123,7 @@
 		filterAccounts;
 		filterCategories;
 		filterTags;
+		filterEmpty;
 		amountOp;
 		dateFrom;
 		dateTo;
@@ -204,6 +216,14 @@
 			<div class="flex flex-col gap-1.5 md:w-40">
 				<span class="text-xs font-medium text-muted-foreground">Tags</span>
 				<MultiCombobox bind:value={filterTags} items={tagItems} placeholder="All tags" />
+			</div>
+			<div class="flex flex-col gap-1.5 md:w-44">
+				<span class="text-xs font-medium text-muted-foreground">Empty</span>
+				<MultiCombobox
+					bind:value={filterEmpty}
+					items={emptyFilterItems}
+					placeholder="Any field"
+				/>
 			</div>
 			<div class="flex flex-col gap-1.5">
 				<span class="text-xs font-medium text-muted-foreground">From</span>

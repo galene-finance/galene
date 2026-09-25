@@ -7,11 +7,13 @@
 	let {
 		transaction,
 		categories,
-		action = '?/set-category'
+		action = '?/set-category',
+		readonly = false
 	}: {
 		transaction: Transaction;
 		categories: Category[];
 		action?: string;
+		readonly?: boolean;
 	} = $props();
 
 	let value = $state('');
@@ -45,6 +47,11 @@
 </script>
 
 <div class="inline-flex items-center gap-1">
+	{#if readonly}
+		<span class="inline-block max-w-44 truncate text-sm {transaction.category_name ? '' : 'text-muted-foreground'}">
+			{transaction.category_name ?? 'No category'}
+		</span>
+	{:else}
 	<form
 		id="cat-form-{transaction.id}"
 		method="POST"
@@ -70,6 +77,7 @@
 			class="h-8 w-full cursor-pointer"
 		/>
 	</form>
+	{/if}
 	{#if isTransfer}
 		<span
 			class="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground"

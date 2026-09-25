@@ -37,8 +37,10 @@
 			accounts: Account[];
 			categories: Category[];
 			tags: Tag[];
+			viewer?: boolean;
 		};
 	} = $props();
+	const viewer = $derived(!!data.viewer);
 
 	let layout = $state<DashboardWidget[]>(untrack(() => data.layout));
 	let editMode = $state(false);
@@ -276,6 +278,7 @@
 				Your dashboard. Turn on edit mode to add, move, resize, or filter widgets.
 			</p>
 		</div>
+		{#if !viewer}
 		<div class="flex items-center gap-2">
 			{#if editMode}
 				<Button variant="secondary" onclick={() => (editMode = false)}>Done</Button>
@@ -284,12 +287,15 @@
 				<Button variant="secondary" onclick={() => (editMode = true)}>Edit layout</Button>
 			{/if}
 		</div>
+		{/if}
 	</div>
 
 	{#if shown.length === 0}
 		<div class="rounded-lg border border-dashed border-border bg-surface p-10 text-center">
 			<p class="text-sm text-muted-foreground">Your home page is empty.</p>
-			{#if editMode}
+			{#if viewer}
+				<p class="mt-2 text-sm text-muted-foreground">Nothing on the home page yet.</p>
+			{:else if editMode}
 				<Button class="mt-4" onclick={() => (addOpen = true)}>+ Add widget</Button>
 			{:else}
 				<p class="mt-2 text-sm text-muted-foreground">

@@ -8,7 +8,7 @@ function clientIp(request: Request): string {
 }
 
 /**
- * Expiring pack link. The token is the secret. An optional password is sent as
+ * Expiring pack link. The token is the secret. The link password is sent as
  * `?password=` or `x-galene-pack-password`. Bytes are the zip frozen at generation.
  */
 export function GET({ params, url, request }) {

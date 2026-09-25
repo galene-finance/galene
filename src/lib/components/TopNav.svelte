@@ -165,6 +165,7 @@
 		</nav>
 
 		<div class="ml-auto flex min-w-0 shrink items-center gap-0.5 sm:gap-1.5">
+			{#if !viewer}
 			<DropdownMenu
 				bind:open={menuOpen}
 				ariaLabel="Notifications"
@@ -241,11 +242,25 @@
 					</div>
 				{/if}
 			</DropdownMenu>
+			{/if}
 			<div class="min-w-0 max-w-[5.5rem] sm:max-w-none">
 				{#if !viewer}
 				<ThemePicker {themes} selected={selectedTheme} action={themeAction} />
 				{/if}
 			</div>
+			{#if viewer}
+				<p class="min-w-0 max-w-[42vw] truncate text-xs text-muted-foreground sm:max-w-56" title="Viewing data for {user.name} ({user.email})">
+					Viewing data for {user.name} ({user.email})
+				</p>
+				<form method="POST" action="/login?/logout">
+					<button
+						type="submit"
+						class="rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
+					>
+						Sign out
+					</button>
+				</form>
+			{:else}
 			<DropdownMenu ariaLabel="Account" class="shrink-0">
 				{#snippet trigger()}
 					<span
@@ -288,6 +303,7 @@
 					</button>
 				</form>
 			</DropdownMenu>
+			{/if}
 		</div>
 	</div>
 </header>
@@ -314,9 +330,32 @@
 		</div>
 
 		<div class="shrink-0 border-t border-border p-3">
-			{#if !viewer}
+			{#if viewer}
+				<p class="text-sm font-medium">Viewing data for {user.name}</p>
+				<p class="truncate text-xs text-muted-foreground">{user.email}</p>
+				<form method="POST" action="/login?/logout" class="mt-3">
+					<button
+						type="submit"
+						class="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-sm hover:bg-surface-hover"
+					>
+						<svg
+							class="size-4"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+							<path d="m16 17 5-5-5-5" />
+							<path d="M21 12H9" />
+						</svg>
+						Sign out
+					</button>
+				</form>
+			{:else}
 			<ThemePicker {themes} selected={selectedTheme} action={themeAction} />
-			{/if}
 			<div class="mt-3 flex items-center justify-between gap-2">
 				<div class="min-w-0">
 					<p class="flex items-center gap-1.5 text-sm font-medium">
@@ -351,6 +390,7 @@
 					</button>
 				</form>
 			</div>
+			{/if}
 		</div>
 	</nav>
 {/if}

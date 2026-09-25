@@ -1,10 +1,12 @@
 import {
+	accountBalanceAsOfExpr,
 	deleteAccount,
 	getAccountBalances,
 	getAccountTxnAnchors,
 	getAccounts,
 	saveAccount
 } from '$lib/server/finance';
+import { db } from '$lib/server/db';
 import type { AccountType } from '$lib/types';
 import { parseAmountToCents } from '$lib/utils';
 
@@ -12,9 +14,12 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function load({ locals }) {
 	const userId = locals.user!.id;
-	const balances = getAccountBalances(userId);
+	const scope = locals.viewer?.scope ?? null;
+	const balances = scope ? balancesAsOf(userId, scope.dateTo, scope.accountIds) : getAccountBalances(userId);
 	const anchors = getAccountTxnAnchors(userId);
-	const accounts = getAccounts(userId).map((a) => {
+	const accounts = getAccounts(userId)
+		.filter((a) => !scope || scope.accountIds.length === 0 || scope.accountIds.includes(a.id))
+		.map((a) => {
 		const anchor = anchors.get(a.id);
 		return {
 			...a,
@@ -23,7 +28,21 @@ export function load({ locals }) {
 			txn_sum_cents: anchor?.sumAllCents ?? 0
 		};
 	});
-	return { accounts };
+	return { accounts, viewer: locals.user?.role === 'viewer' };
+}
+
+function balancesAsOf(userId: number, asOf: string, accountIds: number[]): Map<number, number> {
+	const clause = accountIds.length > 0 ? ` AND a.id IN (${accountIds.map(() => '?').join(',')})` : '';
+	const rows = db()
+		.query(
+			`SELECT a.id AS id, ${accountBalanceAsOfExpr()} AS balance_cents
+			 FROM accounts a
+			 LEFT JOIN transactions t ON t.account_id = a.id AND t.user_id = a.user_id
+			 WHERE a.user_id = ?${clause}
+			 GROUP BY a.id`
+		)
+		.all(asOf, userId, ...accountIds) as { id: number; balance_cents: number }[];
+	return new Map(rows.map((r) => [r.id, Math.round(r.balance_cents)]));
 }
 
 export const actions = {

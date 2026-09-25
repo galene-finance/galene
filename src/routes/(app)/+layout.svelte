@@ -16,6 +16,7 @@
 		theme: { value: string; slug: string; css: string; base: string } | null;
 		notifications: AppNotification[];
 		notificationsUnread: number;
+		viewer?: boolean;
 	};
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -48,6 +49,7 @@
 		themeAction="/settings/appearance?/select-theme"
 		notifications={data.notifications}
 		notificationsUnread={data.notificationsUnread}
+		viewer={data.viewer}
 		bind:open={mobileNavOpen}
 	/>
 

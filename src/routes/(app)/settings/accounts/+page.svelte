@@ -31,7 +31,7 @@
 		form:
 			| { error?: string | null; ok?: boolean; message?: string | null; source?: string }
 			| undefined;
-		data: { accounts: AccountRow[] };
+		data: { accounts: AccountRow[]; viewer?: boolean };
 	} = $props();
 
 	function formatBankAsOf(s: string | null | undefined): string {
@@ -219,12 +219,16 @@
 <Title title="Accounts" />
 
 <div class="mx-auto flex max-w-3xl flex-col gap-4 2xl:max-w-5xl">
+	{#if !data.viewer}
 	<a href="/settings" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
 		>← Back to Settings</a
 	>
+	{/if}
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<h1 class="text-2xl font-semibold tracking-tight">Accounts</h1>
-		<Button type="button" onclick={openCreate}>Add account</Button>
+		{#if !data.viewer}
+			<Button type="button" onclick={openCreate}>Add account</Button>
+		{/if}
 	</div>
 
 	<section class="rounded-lg border border-border bg-surface">
@@ -280,6 +284,7 @@
 									</span>
 								{/if}
 							</div>
+							{#if !data.viewer}
 							<button
 								type="button"
 								class="text-sm text-primary hover:underline"
@@ -294,6 +299,7 @@
 							>
 								Delete
 							</button>
+							{/if}
 						</li>
 					{/each}
 				</ul>

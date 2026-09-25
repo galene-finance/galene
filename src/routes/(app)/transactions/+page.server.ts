@@ -24,18 +24,21 @@ import {
 } from '$lib/server/finance';
 import { parseAmountToCents } from '$lib/utils';
 import { parseTransactionFilters } from '$lib/server/transactionFilters';
+import { scopedAccounts, scopedCategories, scopedTransactions, viewerScope } from '$lib/server/scopeQuery';
 
 const PAGE_SIZES = [25, 50, 75, 100];
 
 export function load({ locals, url }) {
 	const userId = locals.user!.id;
+	const scope = viewerScope({ locals });
 	const filters = parseTransactionFilters(url, parseInt(getSetting(userId, 'tx_page_size') ?? '25', 10));
 	return {
-		data: getTransactions(userId, filters),
+		data: scopedTransactions(userId, filters, scope),
 		filters,
-		accounts: getAccounts(userId),
-		categories: getCategories(userId),
-		tags: getTags(userId)
+		viewer: locals.user?.role === 'viewer',
+		accounts: scopedAccounts(userId, scope),
+		categories: scopedCategories(userId, scope),
+		tags: scope ? [] : getTags(userId)
 	};
 }
 

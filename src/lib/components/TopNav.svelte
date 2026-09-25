@@ -15,6 +15,7 @@
 		themeAction = null as string | null,
 		notifications = [] as AppNotification[],
 		notificationsUnread = 0,
+		viewer = false,
 		open = $bindable(false)
 	}: {
 		user: User;
@@ -24,18 +25,29 @@
 		themeAction?: string | null;
 		notifications?: AppNotification[];
 		notificationsUnread?: number;
+		viewer?: boolean;
 		open?: boolean;
 	} = $props();
 
-	const nav = [
-		{ href: '/', label: 'Home' },
-		{ href: '/transactions', label: 'Transactions' },
-		{ href: '/budget', label: 'Budget' },
-		{ href: '/calendar', label: 'Calendar' },
-		{ href: '/cashflow', label: 'Cashflow' },
-		{ href: '/trends', label: 'Trends' },
-		{ href: '/settings', label: 'Settings' }
-	];
+	const nav = $derived(
+		viewer
+			? [
+					{ href: '/transactions', label: 'Transactions' },
+					{ href: '/trends', label: 'Trends' },
+					{ href: '/settings/accounts', label: 'Accounts' },
+					{ href: '/settings/categories', label: 'Categories' },
+					{ href: '/advisor/export', label: 'Export' }
+				]
+			: [
+					{ href: '/', label: 'Home' },
+					{ href: '/transactions', label: 'Transactions' },
+					{ href: '/budget', label: 'Budget' },
+					{ href: '/calendar', label: 'Calendar' },
+					{ href: '/cashflow', label: 'Cashflow' },
+					{ href: '/trends', label: 'Trends' },
+					{ href: '/settings', label: 'Settings' }
+				]
+	);
 
 	function isActive(href: string) {
 		const path = page.url.pathname;
@@ -230,7 +242,9 @@
 				{/if}
 			</DropdownMenu>
 			<div class="min-w-0 max-w-[5.5rem] sm:max-w-none">
+				{#if !viewer}
 				<ThemePicker {themes} selected={selectedTheme} action={themeAction} />
+				{/if}
 			</div>
 			<DropdownMenu ariaLabel="Account" class="shrink-0">
 				{#snippet trigger()}
@@ -300,7 +314,9 @@
 		</div>
 
 		<div class="shrink-0 border-t border-border p-3">
+			{#if !viewer}
 			<ThemePicker {themes} selected={selectedTheme} action={themeAction} />
+			{/if}
 			<div class="mt-3 flex items-center justify-between gap-2">
 				<div class="min-w-0">
 					<p class="flex items-center gap-1.5 text-sm font-medium">

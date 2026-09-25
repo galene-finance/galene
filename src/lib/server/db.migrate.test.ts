@@ -4,16 +4,15 @@
  */
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { migrate, migrationCount } from './db';
+import { categoryUniquenessMigrationIndex, migrate, migrationCount } from './db';
 
 function seedPreCategoryUniqueness(db: Database) {
 	// Build schema as of just before the #17 category-uniqueness migration:
 	// run all migrations, then rewind user_version and restore UNIQUE(user_id,name,type)
 	// by rebuilding categories with the old constraint while FKs are off.
 	migrate(db);
-	const target = migrationCount();
-	// Rewind to re-run the last migration (#17) after we plant twins + links.
-	db.run(`PRAGMA user_version = ${target - 1}`);
+	// Rewind to re-run the #17 category uniqueness migration after we plant twins + links.
+	db.run(`PRAGMA user_version = ${categoryUniquenessMigrationIndex()}`);
 
 	db.exec('PRAGMA foreign_keys = OFF');
 	db.exec(`

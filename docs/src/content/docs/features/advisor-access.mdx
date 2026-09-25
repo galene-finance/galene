@@ -7,8 +7,10 @@ description: Accountant packs and read-only viewer invites.
 
 Two kinds of grant share the same expiry and revoke controls:
 
-- **Accountant pack** — a zip frozen at generation time. Later edits to the books do not change the bytes an existing link serves.
-- **Read-only viewer** — a magic link that signs the advisor into a session that can read in-scope data and export, and cannot change anything.
+Choose the kind when you create the grant. Neither kind is selected until you pick one.
+
+- **Accountant pack** — a download link for a zip frozen at generation time. Later edits to the books do not change the bytes an existing link serves.
+- **Read-only viewer** — an invite link that signs the advisor into a session that can read in-scope data and export, and cannot change anything.
 
 Each grant has a label, a date range (a calendar year, or explicit from/to dates), an optional account filter, a link lifetime of 1–30 days, and a required link password. Year, From, and To filter what the advisor link and pack download include. Revoke ends the link and any viewer session immediately. Grants created before passwords were required can still open without one.
 
@@ -21,7 +23,7 @@ The zip contains:
 - `summary.html` — category rollup
 - `manifest.json` — `generated_at`, range, app version, and commit
 
-The owner can download the zip from the grants list. The share link is shown once. Opening it returns the same frozen zip. A wrong password, expiry, or revoke does not return the file.
+The owner can download the zip from the grants list. The share link is a download link, shown once. Opening it in a browser asks for the link password, then downloads the frozen zip. Scripts can still pass the password as `?password=` or the `x-galene-pack-password` header. A wrong password stays on the form and does not return the file. An expired or revoked link says so and does not return the file.
 
 The pack does not include bank tokens, provider ids, or password material.
 

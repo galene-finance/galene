@@ -14,7 +14,11 @@
 	let lastForm: typeof form | null = null;
 
 	const shareLabel = $derived(
-		form && 'downloadId' in form && form.downloadId ? 'Download Link (shown once)' : 'Link (shown once)'
+		form && 'kind' in form && form.kind === 'pack'
+			? 'Download link (shown once)'
+			: form && 'kind' in form && form.kind === 'viewer'
+				? 'Viewer invite (shown once)'
+				: 'Link (shown once)'
 	);
 
 	async function copyShareUrl() {
@@ -66,16 +70,19 @@
 		<Field label="Label">
 			<Input name="label" required maxlength={80} placeholder="2025 tax pack" />
 		</Field>
-		<div class="flex flex-wrap gap-4 text-sm">
-			<label class="flex items-center gap-2">
-				<input type="radio" name="kind" value="pack" checked class="size-4 accent-primary" />
-				Accountant pack
-			</label>
-			<label class="flex items-center gap-2">
-				<input type="radio" name="kind" value="viewer" class="size-4 accent-primary" />
-				Read-only viewer
-			</label>
-		</div>
+		<fieldset class="text-sm">
+			<legend class="mb-1 font-medium">Kind</legend>
+			<div class="flex flex-wrap gap-4">
+				<label class="flex items-center gap-2">
+					<input type="radio" name="kind" value="pack" class="size-4 accent-primary" />
+					Accountant pack (download link)
+				</label>
+				<label class="flex items-center gap-2">
+					<input type="radio" name="kind" value="viewer" class="size-4 accent-primary" />
+					Read-only viewer (invite)
+				</label>
+			</div>
+		</fieldset>
 		<div class="grid gap-3 sm:grid-cols-3">
 			<Field label="Year">
 				<Input name="year" type="number" min="1970" max="2100" value={data.year} />

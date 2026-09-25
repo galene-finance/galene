@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { closeDbForTests, db, migrate } from './db';
 
+import { hashToken } from './tokenHash';
 import { buildPackFiles, buildPackZip, loadPack, savePack, zipStore } from './pack';
 import { forbidViewerMutation } from './viewerGuard';
 import {
@@ -88,7 +89,8 @@ describe('accountant pack', () => {
 			dateFrom: '2025-01-01',
 			dateTo: '2025-12-31',
 			accountIds: [1],
-			ttlDays: 14
+			ttlDays: 14,
+			password: 'pack-secret'
 		});
 		if ('error' in created) throw new Error(created.error);
 		const scope: GrantScope = {
@@ -121,10 +123,10 @@ describe('accountant pack', () => {
 		expect(Buffer.compare(loadPack(1, created.grant.id)!, zip)).toBe(0);
 		expect(buildPackZip(scope, '2026-01-02T00:00:00.000Z').readUInt32LE(0)).toBe(0x04034b50);
 
-		const open = resolveShareToken(created.token, null);
+		const open = resolveShareToken(created.token, 'pack-secret');
 		expect(open.ok).toBe(true);
 		revokeGrant(1, created.grant.id);
-		const closed = resolveShareToken(created.token, null);
+		const closed = resolveShareToken(created.token, 'pack-secret');
 		expect(closed.ok).toBe(false);
 		if (!closed.ok) expect(closed.status).toBe(410);
 	});
@@ -133,6 +135,37 @@ describe('accountant pack', () => {
 		const z = zipStore([{ name: 'manifest.json', data: Buffer.from('{"ok":true}\n') }]);
 		expect(z.readUInt32LE(0)).toBe(0x04034b50);
 		expect(z.includes(Buffer.from('manifest.json'))).toBe(true);
+	});
+});
+
+describe('create grant password', () => {
+	test('rejects a blank password and accepts one that is set', () => {
+		const missing = createGrant(1, {
+			label: '2025',
+			kind: 'pack',
+			dateFrom: '2025-01-01',
+			dateTo: '2025-12-31',
+			accountIds: [],
+			ttlDays: 14,
+			password: '   '
+		});
+		expect('error' in missing).toBe(true);
+		if ('error' in missing) expect(missing.error).toBe('A link password is required.');
+
+		const created = createGrant(1, {
+			label: '2025',
+			kind: 'viewer',
+			dateFrom: '2025-01-01',
+			dateTo: '2025-12-31',
+			accountIds: [],
+			ttlDays: 14,
+			password: 'share-secret'
+		});
+		expect('error' in created).toBe(false);
+		if (!('error' in created)) {
+			expect(created.grant.has_password).toBe(true);
+			expect(inviteLanding(created.token).needsPassword).toBe(true);
+		}
 	});
 });
 
@@ -185,17 +218,18 @@ describe('viewer session', () => {
 		expect(right.ok).toBe(true);
 		if (right.ok) expect(getViewerByToken(right.session)?.role).toBe('viewer');
 
-		const open = createGrant(1, {
-			label: 'Bookkeeper',
-			kind: 'viewer',
-			dateFrom: '2025-01-01',
-			dateTo: '2025-12-31',
-			accountIds: [],
-			ttlDays: 7
-		});
-		if ('error' in open) throw new Error(open.error);
-		expect(inviteLanding(open.token)).toEqual({ expired: false, needsPassword: false, label: '' });
-		const openSession = acceptViewerInvite(open.token, '');
+		// Existing grants created before passwords were required still open.
+		const legacyToken = 'legacy-open-invite-token';
+		const legacy = hashToken(legacyToken);
+		db()
+			.query(
+				`INSERT INTO advisor_grants
+				 (user_id, label, kind, date_from, date_to, expires_at, token_hint, salt, token_hash, password_hash)
+				 VALUES (1, 'Bookkeeper', 'viewer', '2025-01-01', '2025-12-31', datetime('now', '+7 days'), ?, ?, ?, NULL)`
+			)
+			.run(legacy.hint, legacy.salt, legacy.hash);
+		expect(inviteLanding(legacyToken)).toEqual({ expired: false, needsPassword: false, label: '' });
+		const openSession = acceptViewerInvite(legacyToken, '');
 		expect(openSession.ok).toBe(true);
 
 		expect(inviteLanding('not-a-token').expired).toBe(true);

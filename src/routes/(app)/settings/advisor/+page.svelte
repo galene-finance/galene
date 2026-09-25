@@ -4,18 +4,41 @@
 	import Field from '$lib/components/ui/Field.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import Title from '$lib/components/Title.svelte';
-	import { toastFormResult } from '$lib/toasts';
+	import { copyText } from '$lib/clipboard';
+	import { toast, toastFormResult } from '$lib/toasts';
 
 	let { data, form } = $props();
 
 	let shareUrl = $state('');
+	let copied = $state(false);
 	let lastForm: typeof form | null = null;
+
+	const shareLabel = $derived(
+		form && 'downloadId' in form && form.downloadId ? 'Download Link (shown once)' : 'Link (shown once)'
+	);
+
+	async function copyShareUrl() {
+		if (!shareUrl) return;
+		const ok = await copyText(shareUrl);
+		if (!ok) {
+			toast('Could not copy the link.', 'error');
+			return;
+		}
+		copied = true;
+		toast('Copied');
+		setTimeout(() => {
+			copied = false;
+		}, 2000);
+	}
 
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;
 		toastFormResult(form ?? undefined);
-		if (form && 'shareUrl' in form && form.shareUrl) shareUrl = String(form.shareUrl);
+		if (form && 'shareUrl' in form && form.shareUrl) {
+			shareUrl = String(form.shareUrl);
+			copied = false;
+		}
 	});
 </script>
 
@@ -44,8 +67,14 @@
 			<Input name="label" required maxlength={80} placeholder="2025 tax pack" />
 		</Field>
 		<div class="flex flex-wrap gap-4 text-sm">
-			<label class="flex items-center gap-2"><input type="radio" name="kind" value="pack" checked /> Accountant pack</label>
-			<label class="flex items-center gap-2"><input type="radio" name="kind" value="viewer" /> Read-only viewer</label>
+			<label class="flex items-center gap-2">
+				<input type="radio" name="kind" value="pack" checked class="size-4 accent-primary" />
+				Accountant pack
+			</label>
+			<label class="flex items-center gap-2">
+				<input type="radio" name="kind" value="viewer" class="size-4 accent-primary" />
+				Read-only viewer
+			</label>
 		</div>
 		<div class="grid gap-3 sm:grid-cols-3">
 			<Field label="Year">
@@ -58,11 +87,14 @@
 				<Input name="date_to" type="date" />
 			</Field>
 		</div>
+		<p class="text-xs text-muted-foreground">
+			Year, From, and To filter what the advisor link and pack download include.
+		</p>
 		<Field label="Link lifetime (days, 1–30)">
 			<Input name="ttl_days" type="number" min="1" max="30" value="14" />
 		</Field>
-		<Field label="Optional link password">
-			<Input name="password" type="password" autocomplete="new-password" />
+		<Field label="Password">
+			<Input name="password" type="password" required autocomplete="new-password" />
 		</Field>
 		{#if data.accounts.length > 0}
 			<fieldset class="text-sm">
@@ -70,7 +102,7 @@
 				<div class="flex flex-col gap-1">
 					{#each data.accounts as account (account.id)}
 						<label class="flex items-center gap-2">
-							<input type="checkbox" name="account_ids" value={account.id} />
+							<input type="checkbox" name="account_ids" value={account.id} class="size-4 accent-primary" />
 							{account.name}
 						</label>
 					{/each}
@@ -82,8 +114,13 @@
 
 	{#if shareUrl}
 		<div class="rounded-lg border border-border bg-surface p-4 text-sm">
-			<p class="font-medium">Link (shown once)</p>
-			<p class="mt-1 break-all font-mono text-xs">{shareUrl}</p>
+			<p class="font-medium">{shareLabel}</p>
+			<div class="mt-1 flex items-start gap-2">
+				<p class="min-w-0 flex-1 break-all font-mono text-xs">{shareUrl}</p>
+				<Button type="button" variant="secondary" size="sm" onclick={copyShareUrl}>
+					{copied ? 'Copied' : 'Copy'}
+				</Button>
+			</div>
 			{#if form && 'downloadId' in form && form.downloadId}
 				<a class="mt-2 inline-block text-primary underline" href="/settings/advisor/pack/{form.downloadId}">Download zip</a>
 			{/if}

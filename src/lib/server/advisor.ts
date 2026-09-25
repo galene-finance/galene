@@ -160,7 +160,9 @@ export function createGrant(
 	const expiresAt = new Date(Date.now() + ttl * 24 * 3600 * 1000).toISOString();
 	const token = randomBytes(32).toString('hex');
 	const { hint, salt, hash } = hashToken(token);
-	const password = input.password?.trim() ? hashSharePassword(input.password.trim()) : null;
+	const passwordPlain = input.password?.trim() ?? '';
+	if (!passwordPlain) return { error: 'A link password is required.' };
+	const password = hashSharePassword(passwordPlain);
 	const ids = [...new Set(input.accountIds.filter((n) => Number.isInteger(n) && n > 0))];
 	const result = db()
 		.query(

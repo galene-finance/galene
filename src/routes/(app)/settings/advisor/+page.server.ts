@@ -50,6 +50,8 @@ export const actions = {
 		const range = rangeFromForm(form);
 		if ('error' in range) return fail(400, { error: range.error });
 		const ttl = parseInt(String(form.get('ttl_days') ?? '14'), 10);
+		const password = String(form.get('password') ?? '');
+		if (!password.trim()) return fail(400, { error: 'A link password is required.' });
 		const created = createGrant(userId, {
 			label: String(form.get('label') ?? ''),
 			kind,
@@ -57,7 +59,7 @@ export const actions = {
 			dateTo: range.dateTo,
 			accountIds: parseIds(form),
 			ttlDays: ttl,
-			password: String(form.get('password') ?? '')
+			password
 		});
 		if ('error' in created) return fail(400, { error: created.error });
 		const sharePath =

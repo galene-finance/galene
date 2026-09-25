@@ -665,7 +665,7 @@
 							{/if}
 						</td>
 						<td class="px-3 py-2">
-							<CategoryCell transaction={tx} categories={data.categories} />
+							<CategoryCell transaction={tx} categories={data.categories} readonly={viewer} />
 						</td>
 						<td class="whitespace-nowrap px-3 py-2">{tx.account_name}</td>
 						<td class="px-3 py-2">
@@ -679,9 +679,7 @@
 							{formatMoney(tx.amount_cents)}
 						</td>
 						<td class="px-3 py-2">
-							{#if viewer}
-								<span class="text-xs text-muted-foreground">View</span>
-							{:else}
+							{#if !viewer}
 							<form id="delete-form-{tx.id}" method="POST" action="?/delete" class="hidden">
 								<input type="hidden" name="id" value={tx.id} />
 							</form>
@@ -779,7 +777,7 @@
 						</div>
 						<div class="flex items-center gap-2">
 							<span class="cat-pill inline-flex max-w-44 items-center rounded-full border border-border bg-muted">
-								<CategoryCell transaction={tx} categories={data.categories} />
+								<CategoryCell transaction={tx} categories={data.categories} readonly={viewer} />
 							</span>
 							<div class="flex min-w-0 flex-1 gap-1 overflow-hidden">
 								{#each tagsOf(tx) as tag (tag)}

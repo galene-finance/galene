@@ -12,7 +12,7 @@
 	import Combobox from '$lib/components/ui/Combobox.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import DatePicker from '$lib/components/ui/DatePicker.svelte';
-	import MultiCombobox from '$lib/components/ui/MultiCombobox.svelte';
+	import MultiCombobox, { comboboxFieldTouchRecent } from '$lib/components/ui/MultiCombobox.svelte';
 	import DropdownMenu from '$lib/components/ui/DropdownMenu.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import MenuItem from '$lib/components/ui/MenuItem.svelte';
@@ -391,7 +391,12 @@
 				variant="secondary"
 				type="button"
 				aria-expanded={filtersOpen}
-				onclick={() => (filtersOpen = !filtersOpen)}
+				onclick={() => {
+					// A touch that started in a filter combobox can be delivered
+					// here after focus scrolls this button under the finger.
+					if (comboboxFieldTouchRecent()) return;
+					filtersOpen = !filtersOpen;
+				}}
 			>
 				Filters
 				{#if activeFilterCount > 0}

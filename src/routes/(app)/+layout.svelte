@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
 	import TopNav from '$lib/components/TopNav.svelte';
-	import { DEFAULT_THEMES, applyThemeNow, themeValue } from '$lib/themes';
+	import { DEFAULT_THEMES, applyThemeNow, rememberThemePreference, themeValue } from '$lib/themes';
 	import type { Account, AppNotification, Branding, Category, Tag, Theme, User } from '$lib/types';
 
 	type LayoutData = {
@@ -13,7 +13,7 @@
 		themes: Theme[];
 		themeValue: string;
 		branding: Branding;
-		theme: { value: string; slug: string; hash: string } | null;
+		theme: { value: string; slug: string; css: string; base: string } | null;
 		notifications: AppNotification[];
 		notificationsUnread: number;
 	};
@@ -29,6 +29,9 @@
 	// in sync for the login page and pre-paint on hard loads.
 	$effect(() => {
 		if (!data.theme) return;
+		// SPA navigations do not re-run the head script, so remember the
+		// server theme here too (including the built-in fallback slug).
+		rememberThemePreference(data.theme.value, data.theme.base);
 		const t = [...DEFAULT_THEMES, ...data.themes].find(
 			(x) => themeValue(x) === data.themeValue
 		);

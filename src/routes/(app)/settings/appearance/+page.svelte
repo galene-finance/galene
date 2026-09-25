@@ -157,7 +157,7 @@
 		<div class="border-b border-border px-4 py-3">
 			<h2 class="font-medium">Theme</h2>
 			<p class="text-sm text-muted-foreground">
-				Pick a theme for your account. Your choice is saved and applies every time you sign in.
+				Pick a theme for your account. It is saved on this browser as well, so the same theme shows on the sign-in page after you log out.
 			</p>
 		</div>
 		<div class="p-4">

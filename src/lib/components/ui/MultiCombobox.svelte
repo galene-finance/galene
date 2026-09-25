@@ -1,3 +1,13 @@
+<script lang="ts" module>
+	/** Last time a touch pointerdown started inside any MultiCombobox field. */
+	let lastFieldTouchAt = 0;
+
+	/** A touch that began in a combobox field is still in its click window. */
+	export function comboboxFieldTouchRecent(windowMs = 700) {
+		return Date.now() - lastFieldTouchAt < windowMs;
+	}
+</script>
+
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { Combobox as BitsCombobox } from 'bits-ui';
@@ -7,7 +17,9 @@
 		removeLastPill,
 		removeValue,
 		selectedPills,
-		shouldRemoveLastOnBackspace
+		optionsPanelBox,
+		shouldRemoveLastOnBackspace,
+		type OptionsPanelBox
 	} from '$lib/multiCombobox';
 
 	let {
@@ -40,20 +52,61 @@
 	const pills = $derived(selectedPills(value, items, lastCreated));
 
 	let container = $state<HTMLDivElement | undefined>(undefined);
-	let fieldWidth = $state(0);
+	let panel = $state<OptionsPanelBox | null>(null);
 	let open = $state(false);
+	// bits-ui's caret focuses the input, then toggles `open`. If this focus
+	// handler also forces `open`, the toggle flips the menu straight back shut
+	// and a real click on the caret appears to do nothing.
+	let focusFromTrigger = false;
+	// Touch: pointerdown toggles the menu, then the browser's compatibility
+	// click (and bits-ui's delayed outside-dismiss) lands on the same field
+	// and closes it again. Swallow that follow-up so a phone tap stays open.
+	// Also published on the module so a control outside this component (the
+	// Transactions "Filters" toggle) can ignore a click retargeted onto it
+	// when focus scrolled the page under a finger that started here.
+	let touchToggleAt = 0;
 	function inputEl() {
 		return container?.querySelector('input') as HTMLInputElement | null;
 	}
 
 	function measureField() {
-		fieldWidth = container?.offsetWidth ?? 0;
+		const el = container;
+		if (!el) return;
+		const rect = el.getBoundingClientRect();
+		const vv = window.visualViewport;
+		panel = optionsPanelBox(
+			{ top: rect.top, bottom: rect.bottom, left: rect.left, width: rect.width },
+			{
+				height: vv?.height ?? window.innerHeight,
+				offsetTop: vv?.offsetTop ?? 0,
+				offsetLeft: vv?.offsetLeft ?? 0,
+				width: vv?.width ?? window.innerWidth
+			}
+		);
 	}
 
+	const panelStyle = $derived(
+		panel
+			? `position:fixed;top:${panel.top}px;left:${panel.left}px;width:${panel.width}px;min-width:0;max-width:${panel.width}px;max-height:${panel.maxHeight}px;height:auto;transform:none;overflow:auto;`
+			: 'position:fixed;max-height:18rem;overflow:auto;'
+	);
+
+	// iOS moves visualViewport when the keyboard opens. Window resize does not.
 	$effect(() => {
-		value;
-		pills;
+		if (!open) return;
 		measureField();
+		const vv = window.visualViewport;
+		const onChange = () => measureField();
+		window.addEventListener('resize', onChange);
+		window.addEventListener('scroll', onChange, true);
+		vv?.addEventListener('resize', onChange);
+		vv?.addEventListener('scroll', onChange);
+		return () => {
+			window.removeEventListener('resize', onChange);
+			window.removeEventListener('scroll', onChange, true);
+			vv?.removeEventListener('resize', onChange);
+			vv?.removeEventListener('scroll', onChange);
+		};
 	});
 
 	function clearSearchInput() {
@@ -137,20 +190,45 @@
 	}}
 >
 	<div
-		role="button"
-		tabindex="0"
-		aria-label="Selected values"
 		class="flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border border-input bg-surface px-2 py-1 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30 {className}"
 		bind:this={container}
-		onclick={(e) => {
-			if ((e.target as HTMLElement).closest('button')) return;
-			inputEl()?.focus();
-			open = true;
+		onpointerdowncapture={(e) => {
+			const fromTrigger = !!(e.target as HTMLElement).closest('[data-combobox-trigger]');
+			focusFromTrigger = fromTrigger;
+			if (e.pointerType !== 'touch') return;
+			// Any touch that starts in the field. Focusing the input can scroll
+			// the page while the finger is still down, and the compatibility
+			// click is then delivered to whatever is under the finger — on
+			// Transactions, the mobile Filters button.
+			lastFieldTouchAt = Date.now();
+			// Only the caret toggles on pointerdown. A touch on the field body
+			// still needs the click/focus handlers to open the menu.
+			if (fromTrigger) touchToggleAt = lastFieldTouchAt;
 		}}
-		onkeydown={(e) => {
+		onpointerup={() => {
+			// focus() from the trigger is synchronous. If it was a no-op, drop the
+			// flag so the next real focus of the input still opens the list.
+			queueMicrotask(() => {
+				focusFromTrigger = false;
+			});
+		}}
+		onkeydowncapture={(e) => {
 			if (e.key !== 'Enter' && e.key !== ' ') return;
-			if (e.target !== e.currentTarget) return;
-			e.preventDefault();
+			focusFromTrigger = !!(e.target as HTMLElement).closest('[data-combobox-trigger]');
+			// Same window as pointerup: bits focuses (sync) inside keydown, then
+			// this clear runs so a later keypress can still toggle the menu shut.
+			queueMicrotask(() => {
+				focusFromTrigger = false;
+			});
+		}}
+		onclick={(e) => {
+			// The chevron is its own button. bits-ui toggles the menu on
+			// pointerdown, then focuses the input. A click that bubbles here
+			// must not force the menu back open after that toggle.
+			e.stopPropagation();
+			if ((e.target as HTMLElement).closest('button')) return;
+			if (Date.now() - touchToggleAt < 700) return;
+			focusFromTrigger = false;
 			inputEl()?.focus();
 			open = true;
 		}}
@@ -179,49 +257,75 @@
 			placeholder={pills.length === 0 ? placeholder : ''}
 			oninput={(e) => (search = e.currentTarget.value)}
 			onfocus={() => {
+				if (focusFromTrigger || Date.now() - touchToggleAt < 700) {
+					focusFromTrigger = false;
+					return;
+				}
 				open = true;
 			}}
 			onkeydown={onInputKeydown}
 			class="min-w-16 flex-1 border-0 bg-transparent px-0.5 py-0.5 text-sm outline-none placeholder:text-muted-foreground"
 		/>
-		<BitsCombobox.Trigger class="ms-auto shrink-0">
-			<svg class="size-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+		<BitsCombobox.Trigger
+			type="button"
+			aria-label="Toggle options"
+			class="relative z-10 -me-1 ms-auto flex size-8 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+		>
+			<svg class="pointer-events-none size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
 				<path d="m6 9 6 6 6-6" />
 			</svg>
 		</BitsCombobox.Trigger>
 	</div>
 	<BitsCombobox.Portal>
 		<BitsCombobox.Content
-			class="z-50 max-h-72 min-w-0 overflow-auto rounded-md border border-border bg-surface p-1 shadow-md"
-			style="width: {fieldWidth}px"
-			customAnchor={container ?? null}
+			side="bottom"
+			align="start"
 			sideOffset={4}
+			avoidCollisions={false}
+			sticky="always"
+			onInteractOutside={(e) => {
+				// The caret's touch pointerdown is "outside" the portaled list.
+				// bits-ui waits for the compatibility click, then closes.
+				if (Date.now() - touchToggleAt < 700) e.preventDefault();
+			}}
 		>
-			{#if filtered.length === 0 && !canCreate}
-				<span class="block px-3 py-2 text-sm text-muted-foreground">No results</span>
-			{:else}
-				{#each filtered as item (item.value)}
-					<BitsCombobox.Item
-						{...item}
-						class="data-[highlighted]:bg-muted flex cursor-pointer items-center rounded-sm px-3 py-2 text-sm"
-					>
-						<span class="truncate">{item.label}</span>
-					</BitsCombobox.Item>
-				{/each}
-				{#if canCreate}
-					<BitsCombobox.Item
-						value={CREATE_VALUE}
-						label={search.trim()}
-						onpointerup={(e) => {
-							e.preventDefault();
-							selectCreate();
-						}}
-						class="data-[highlighted]:bg-muted flex cursor-pointer items-center rounded-sm px-3 py-2 text-sm text-primary"
-					>
-						+ {createLabel} “{search.trim()}”
-					</BitsCombobox.Item>
-				{/if}
-			{/if}
+			{#snippet child({ props, wrapperProps })}
+				<!-- The wrapper is the positioned element. Its default min-width
+				     and floating transform are what collapse the list on iOS. -->
+				<div
+					{...wrapperProps}
+					class="z-50 min-w-0 overflow-auto rounded-md border border-border bg-surface p-1 shadow-md"
+					style={panelStyle}
+				>
+					<div {...props}>
+						{#if filtered.length === 0 && !canCreate}
+							<span class="block px-3 py-2 text-sm text-muted-foreground">No results</span>
+						{:else}
+							{#each filtered as item (item.value)}
+								<BitsCombobox.Item
+									{...item}
+									class="data-[highlighted]:bg-muted flex cursor-pointer items-center rounded-sm px-3 py-2 text-sm"
+								>
+									<span class="truncate">{item.label}</span>
+								</BitsCombobox.Item>
+							{/each}
+							{#if canCreate}
+								<BitsCombobox.Item
+									value={CREATE_VALUE}
+									label={search.trim()}
+									onpointerup={(e) => {
+										e.preventDefault();
+										selectCreate();
+									}}
+									class="data-[highlighted]:bg-muted flex cursor-pointer items-center rounded-sm px-3 py-2 text-sm text-primary"
+								>
+									+ {createLabel} “{search.trim()}”
+								</BitsCombobox.Item>
+							{/if}
+						{/if}
+					</div>
+				</div>
+			{/snippet}
 		</BitsCombobox.Content>
 	</BitsCombobox.Portal>
 </BitsCombobox.Root>

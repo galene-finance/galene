@@ -163,6 +163,143 @@ export function themeCssHash(theme: Theme): string {
 	return Math.abs(h).toString(36);
 }
 
+/** localStorage key for the last chosen theme (slug or user-theme id). */
+export const THEME_STORAGE_KEY = 'galene-theme';
+
+/**
+ * localStorage key for the last built-in slug. Survives logout when the
+ * active choice is a user theme the login page cannot load.
+ */
+export const THEME_SLUG_STORAGE_KEY = 'galene-theme-slug';
+
+const BUILTIN_SLUGS = new Set(DEFAULT_THEMES.map((t) => t.slug));
+
+/** True for a built-in theme slug (`dark`, `forest`, …). */
+export function isBuiltinThemeSlug(value: string): boolean {
+	return BUILTIN_SLUGS.has(value);
+}
+
+/**
+ * Last usable built-in slug from storage. `stored` is `galene-theme`;
+ * `storedSlug` is `galene-theme-slug`. A numeric user-theme id is ignored
+ * here so sign-out does not leave `data-theme` pointing at CSS the
+ * anonymous page cannot fetch.
+ */
+export function resolveStoredThemeSlug(stored: string | null, storedSlug: string | null): string | null {
+	const direct = (stored ?? '').trim();
+	if (isBuiltinThemeSlug(direct)) return direct;
+	const fallback = (storedSlug ?? '').trim();
+	if (isBuiltinThemeSlug(fallback)) return fallback;
+	return null;
+}
+
+/**
+ * Blocking bootstrap for app.html. Sets `data-theme` and inlines the
+ * built-in theme's variables before first paint. User-theme ids (digits)
+ * also request `/theme.css` when a session can serve them; the inlined
+ * slug still covers the gap if that request 404s after sign-out.
+ */
+export function themeBootstrapScript(): string {
+	const css: Record<string, string> = {};
+	for (const theme of DEFAULT_THEMES) css[theme.slug] = themeToCss(theme);
+	return (
+		'(function(){' +
+		'var css=' +
+		JSON.stringify(css) +
+		';' +
+		'try{' +
+		'var t=localStorage.getItem(' +
+		JSON.stringify(THEME_STORAGE_KEY) +
+		');' +
+		'var s=localStorage.getItem(' +
+		JSON.stringify(THEME_SLUG_STORAGE_KEY) +
+		');' +
+		'var slug=(t&&css[t])?t:((s&&css[s])?s:null);' +
+		'if(!slug)return;' +
+		'document.documentElement.dataset.theme=slug;' +
+		'var st=document.createElement("style");' +
+		'st.id="theme-critical";' +
+		'st.textContent=css[slug];' +
+		'document.head.appendChild(st);' +
+		'if(t&&!css[t]&&/^\\d+$/.test(t)){' +
+		'var link=document.createElement("link");' +
+		'link.id="theme-css";' +
+		'link.rel="stylesheet";' +
+		'link.href="/theme.css?theme="+encodeURIComponent(t);' +
+		'document.head.appendChild(link);' +
+		'}' +
+		'}catch(e){}' +
+		'})();'
+	);
+}
+
+/**
+ * Built-in slug to keep for sign-out. A user theme keeps the browser's
+ * last built-in choice; `base` (from the server) is only the fallback
+ * when that choice is missing. `base` is `dark` or `light` from the
+ * theme's background, so a dark custom theme does not fall back to white.
+ */
+export function themeBaseSlug(theme: Theme): string {
+	if (theme.id === null && isBuiltinThemeSlug(theme.slug)) return theme.slug;
+	return isDarkHex(theme.colors.background) ? 'dark' : 'light';
+}
+
+function isDarkHex(hex: string): boolean {
+	const n = parseInt(hex.slice(1), 16);
+	if (!Number.isFinite(n)) return true;
+	const r = (n >> 16) & 255;
+	const g = (n >> 8) & 255;
+	const b = n & 255;
+	return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
+}
+
+/**
+ * Head snippet for a signed-in page. Inlines the resolved theme (built-in
+ * or custom) and remembers the setting plus a built-in slug.
+ */
+export function themeHeadScript(theme: { value: string; slug: string; css: string; base: string }): string {
+	const builtins = DEFAULT_THEMES.map((t) => t.slug);
+	return (
+		'<script>\n' +
+		'(function(){\n' +
+		'var slug=' +
+		JSON.stringify(theme.slug) +
+		';\n' +
+		'var value=' +
+		JSON.stringify(theme.value) +
+		';\n' +
+		'var base=' +
+		JSON.stringify(isBuiltinThemeSlug(theme.base) ? theme.base : 'dark') +
+		';\n' +
+		'var known=' +
+		JSON.stringify(builtins) +
+		';\n' +
+		'document.documentElement.dataset.theme=slug;\n' +
+		'try{\n' +
+		'var prev=localStorage.getItem(' +
+		JSON.stringify(THEME_SLUG_STORAGE_KEY) +
+		');\n' +
+		'var keep=known.indexOf(value)>=0?value:(known.indexOf(prev)>=0?prev:base);\n' +
+		'localStorage.setItem(' +
+		JSON.stringify(THEME_STORAGE_KEY) +
+		',value);\n' +
+		'localStorage.setItem(' +
+		JSON.stringify(THEME_SLUG_STORAGE_KEY) +
+		',keep);\n' +
+		'}catch(e){}\n' +
+		'var st=document.getElementById("theme-critical");\n' +
+		'if(!st){st=document.createElement("style");st.id="theme-critical";document.head.appendChild(st);}\n' +
+		'st.textContent=' +
+		JSON.stringify(theme.css) +
+		';\n' +
+		'var link=document.getElementById("theme-css");\n' +
+		'if(link)link.remove();\n' +
+		'})();\n' +
+		'</' +
+		'script>'
+	);
+}
+
 export const HEX_RE = /^#[0-9a-f]{6}$/i;
 
 export function isHexColor(v: string): boolean {
@@ -176,22 +313,43 @@ export function themeValue(theme: Theme): string {
 	return theme.id === null ? theme.slug : String(theme.id);
 }
 
+/** Remember the active setting and a built-in slug the login page can paint. */
+export function rememberThemePreference(value: string, base: string) {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		const prev = localStorage.getItem(THEME_SLUG_STORAGE_KEY);
+		const keep = isBuiltinThemeSlug(value)
+			? value
+			: prev && isBuiltinThemeSlug(prev)
+				? prev
+				: isBuiltinThemeSlug(base)
+					? base
+					: 'dark';
+		localStorage.setItem(THEME_STORAGE_KEY, value);
+		localStorage.setItem(THEME_SLUG_STORAGE_KEY, keep);
+	} catch {
+		/* private mode */
+	}
+}
+
 /**
- * Apply a theme to the current page immediately: sets the data-theme
- * attribute, the localStorage copy (survives logout), and the stylesheet.
- * Safe to call from the server (no-op).
+ * Paint theme variables now. Colors are inlined so a refresh does not wait
+ * on `/theme.css`. Safe to call from the server (no-op).
  */
 export function applyThemeNow(theme: Theme) {
 	if (typeof document === 'undefined') return;
 	const value = themeValue(theme);
 	document.documentElement.dataset.theme = theme.slug;
-	localStorage.setItem('galene-theme', value);
-	let link = document.getElementById('theme-css') as HTMLLinkElement | null;
-	if (!link) {
-		link = document.createElement('link');
-		link.id = 'theme-css';
-		link.rel = 'stylesheet';
-		document.head.appendChild(link);
+	const prev =
+		typeof localStorage !== 'undefined' ? localStorage.getItem(THEME_SLUG_STORAGE_KEY) : null;
+	rememberThemePreference(value, prev && isBuiltinThemeSlug(prev) ? prev : themeBaseSlug(theme));
+	let style = document.getElementById('theme-critical');
+	if (!style) {
+		style = document.createElement('style');
+		style.id = 'theme-critical';
+		document.head.appendChild(style);
 	}
-	link.href = `/theme.css?theme=${encodeURIComponent(value)}&v=${themeCssHash(theme)}`;
+	style.textContent = themeToCss(theme);
+	const link = document.getElementById('theme-css');
+	if (link) link.remove();
 }

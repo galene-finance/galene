@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import type { Snippet } from 'svelte';
+	import { themeHeadScript } from '$lib/themes';
 	import type { Branding } from '$lib/types';
 
 	let {
@@ -9,7 +10,7 @@
 	}: {
 		data: {
 			branding: Branding;
-			theme: { value: string; slug: string; hash: string } | null;
+			theme: { value: string; slug: string; css: string; base: string } | null;
 		};
 		children: Snippet;
 	} = $props();
@@ -17,33 +18,8 @@
 	// The server knows this user's theme; it wins over the localStorage
 	// copy applied by app.html. Emitted as a string (a literal <script>
 	// inside <svelte:head> is raw text — its {} are never compiled) and
-	// runs in <head>, so the attribute and stylesheet are in place
-	// before first paint.
-	const headScript = $derived.by(() => {
-		if (!data.theme) return '';
-		const t = data.theme;
-		return (
-			'<script>\n' +
-			'(function () {\n' +
-			'var slug = ' + JSON.stringify(t.slug) + ';\n' +
-			"var href = '/theme.css?theme=' + encodeURIComponent(" +
-			JSON.stringify(t.value) +
-			") + '&v=' + " +
-			JSON.stringify(t.hash) +
-			';\n' +
-			'document.documentElement.dataset.theme = slug;\n' +
-			"var link = document.getElementById('theme-css');\n" +
-			'if (!link) {\n' +
-			"link = document.createElement('link');\n" +
-			"link.id = 'theme-css';\n" +
-			"link.rel = 'stylesheet';\n" +
-			'document.head.appendChild(link);\n' +
-			'}\n' +
-			'link.href = href;\n' +
-			'})();\n' +
-			'</' + 'script>'
-		);
-	});
+	// runs in <head>, inlining the theme CSS before first paint.
+	const headScript = $derived(data.theme ? themeHeadScript(data.theme) : '');
 </script>
 
 <svelte:head>

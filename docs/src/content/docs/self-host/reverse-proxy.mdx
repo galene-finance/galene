@@ -126,6 +126,15 @@ With the `letsencrypt` entrypoint configured, `tls=true` provisions the certific
 4. Recreate the app container so the env vars take effect.
 5. Log in over `https://galene.example.com` — the session should persist; view-source of the login HTML should show `https://…` asset URLs, not `http://…`.
 
+## Install the app
+
+On an HTTPS host (or `localhost` while developing), Galene is an installable web app. The install prompt uses `/manifest.webmanifest` and a small service worker that caches the app shell only — pages, the API, and transaction data still load from the server.
+
+- **Chromium (desktop or Android):** open the site, then use the address-bar install icon or the browser menu → **Install app** / **Add to Home screen**.
+- **iOS Safari:** Share → **Add to Home Screen**.
+
+After install, open Galene from the home screen and confirm sign-in, Home, Transactions, and Budgets load in the standalone window. Installing does not enable offline finance sync.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |

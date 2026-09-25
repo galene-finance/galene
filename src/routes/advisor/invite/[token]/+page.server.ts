@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { audit, createViewerSession, resolveShareToken } from '$lib/server/advisor';
+import { acceptViewerInvite, inviteLanding } from '$lib/server/advisor';
 import { setSessionCookie } from '$lib/server/auth';
 import { assertAllowed, clearOnSuccess, recordFailure } from '$lib/server/loginThrottle';
 
@@ -8,19 +8,8 @@ function clientIp(request: Request): string {
 }
 
 export function load({ params }) {
-	const resolved = resolveShareToken(params.token ?? '', null);
-	// A passworded invite still renders the form; the token itself is the secret.
-	if (!resolved.ok && resolved.status === 410) {
-		return { expired: true, needsPassword: false, label: '' };
-	}
-	if (!resolved.ok || resolved.row.kind !== 'viewer') {
-		return { expired: true, needsPassword: false, label: '' };
-	}
-	return {
-		expired: false,
-		needsPassword: !!resolved.row.password_hash,
-		label: ''
-	};
+	// Peek the grant without the password so a protected invite can still show the form.
+	return inviteLanding(params.token ?? '');
 }
 
 export const actions = {
@@ -34,17 +23,13 @@ export const actions = {
 		}
 		const form = await request.formData();
 		const password = String(form.get('password') ?? '');
-		const resolved = resolveShareToken(params.token ?? '', password);
-		if (!resolved.ok || resolved.row.kind !== 'viewer') {
+		const accepted = acceptViewerInvite(params.token ?? '', password);
+		if (!accepted.ok) {
 			recordFailure(ip, bucket);
-			if (resolved.ok) return fail(404, { error: 'This link is not an advisor invite.' });
-			if (resolved.status === 410) return fail(410, { error: 'This invite has expired or was revoked.' });
-			return fail(401, { error: 'That link or password is not valid.' });
+			return fail(accepted.status, { error: accepted.error });
 		}
 		clearOnSuccess(ip, bucket);
-		const session = createViewerSession(resolved.row.id, resolved.row.user_id, resolved.row.expires_at);
-		setSessionCookie(cookies, session);
-		audit(resolved.scope.userId, resolved.scope.grantId, 'viewer_login');
+		setSessionCookie(cookies, accepted.session);
 		redirect(303, '/transactions');
 	}
 };

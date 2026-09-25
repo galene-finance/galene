@@ -42,6 +42,10 @@
 	let container = $state<HTMLDivElement | undefined>(undefined);
 	let fieldWidth = $state(0);
 	let open = $state(false);
+	// bits-ui's caret focuses the input, then toggles `open`. If this focus
+	// handler also forces `open`, the toggle flips the menu straight back shut
+	// and a real click on the caret appears to do nothing.
+	let focusFromTrigger = false;
 	function inputEl() {
 		return container?.querySelector('input') as HTMLInputElement | null;
 	}
@@ -137,20 +141,33 @@
 	}}
 >
 	<div
-		role="button"
-		tabindex="0"
-		aria-label="Selected values"
 		class="flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border border-input bg-surface px-2 py-1 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30 {className}"
 		bind:this={container}
-		onclick={(e) => {
-			if ((e.target as HTMLElement).closest('button')) return;
-			inputEl()?.focus();
-			open = true;
+		onpointerdowncapture={(e) => {
+			focusFromTrigger = !!(e.target as HTMLElement).closest('[data-combobox-trigger]');
 		}}
-		onkeydown={(e) => {
+		onpointerup={() => {
+			// focus() from the trigger is synchronous. If it was a no-op, drop the
+			// flag so the next real focus of the input still opens the list.
+			queueMicrotask(() => {
+				focusFromTrigger = false;
+			});
+		}}
+		onkeydowncapture={(e) => {
 			if (e.key !== 'Enter' && e.key !== ' ') return;
-			if (e.target !== e.currentTarget) return;
-			e.preventDefault();
+			focusFromTrigger = !!(e.target as HTMLElement).closest('[data-combobox-trigger]');
+			// Same window as pointerup: bits focuses (sync) inside keydown, then
+			// this clear runs so a later keypress can still toggle the menu shut.
+			queueMicrotask(() => {
+				focusFromTrigger = false;
+			});
+		}}
+		onclick={(e) => {
+			// The chevron is its own button. bits-ui toggles the menu on
+			// pointerdown, then focuses the input. A click that bubbles here
+			// must not force the menu back open after that toggle.
+			if ((e.target as HTMLElement).closest('button')) return;
+			focusFromTrigger = false;
 			inputEl()?.focus();
 			open = true;
 		}}
@@ -179,13 +196,21 @@
 			placeholder={pills.length === 0 ? placeholder : ''}
 			oninput={(e) => (search = e.currentTarget.value)}
 			onfocus={() => {
+				if (focusFromTrigger) {
+					focusFromTrigger = false;
+					return;
+				}
 				open = true;
 			}}
 			onkeydown={onInputKeydown}
 			class="min-w-16 flex-1 border-0 bg-transparent px-0.5 py-0.5 text-sm outline-none placeholder:text-muted-foreground"
 		/>
-		<BitsCombobox.Trigger class="ms-auto shrink-0">
-			<svg class="size-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+		<BitsCombobox.Trigger
+			type="button"
+			aria-label="Toggle options"
+			class="relative z-10 -me-1 ms-auto flex size-8 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+		>
+			<svg class="pointer-events-none size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
 				<path d="m6 9 6 6 6-6" />
 			</svg>
 		</BitsCombobox.Trigger>

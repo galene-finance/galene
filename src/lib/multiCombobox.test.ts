@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	CREATE_VALUE,
 	availableItems,
+	optionsPanelBox,
 	pillLabel,
 	removeLastPill,
 	removeValue,
@@ -48,6 +49,41 @@ describe('removeLastPill', () => {
 		expect(shouldRemoveLastOnBackspace('cof', ['1'])).toBe(false);
 		expect(shouldRemoveLastOnBackspace('', [])).toBe(false);
 		expect(removeLastPill([])).toEqual([]);
+	});
+});
+
+describe('optionsPanelBox', () => {
+	const keyboard = { height: 360, offsetTop: 80, offsetLeft: 0, width: 390 };
+
+	test('opens below the field with a real row height when the keyboard leaves room', () => {
+		const box = optionsPanelBox(
+			{ top: 120, bottom: 160, left: 16, width: 358 },
+			keyboard
+		);
+		expect(box.top).toBe(160 + 4 - 80);
+		expect(box.maxHeight).toBeGreaterThanOrEqual(48);
+		expect(box.maxHeight).toBeLessThanOrEqual(288);
+		expect(box.width).toBe(358);
+		expect(box.left).toBe(16);
+	});
+
+	test('flips above the field when the keyboard covers the space below', () => {
+		const box = optionsPanelBox(
+			{ top: 400, bottom: 440, left: 16, width: 358 },
+			keyboard
+		);
+		// Layout field top 400, visual offset 80, 4px gap → panel ends at 316.
+		expect(box.maxHeight).toBeGreaterThanOrEqual(48);
+		expect(box.top + box.maxHeight).toBe(400 - 4 - 80);
+		expect(box.top).toBeGreaterThanOrEqual(0);
+	});
+
+	test('does not invent a tall list when both sides are shorter than one row', () => {
+		const box = optionsPanelBox(
+			{ top: 90, bottom: 110, left: 0, width: 200 },
+			{ height: 40, offsetTop: 80, offsetLeft: 0, width: 390 }
+		);
+		expect(box.maxHeight).toBeLessThanOrEqual(40);
 	});
 });
 

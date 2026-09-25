@@ -165,21 +165,12 @@
 			})();
 		</script>
 		<script>
-			// Apply the last-used theme before first paint. The stored value is
-			// a default theme slug or a user theme id; the matching stylesheet
-			// is loaded here so the theme is visible before hydration. Unknown
-			// values (e.g. a user theme id after signing out) simply have no
-			// CSS and fall back to the :root defaults.
-			(function () {
-				var t = localStorage.getItem('galene-theme');
-				if (!t) return;
-				document.documentElement.dataset.theme = t;
-				var link = document.createElement('link');
-				link.id = 'theme-css';
-				link.rel = 'stylesheet';
-				link.href = '/theme.css?theme=' + encodeURIComponent(t);
-				document.head.appendChild(link);
-			})();
+			/* Apply the last usable built-in theme before first paint. Colors are
+			   inlined (same values as DEFAULT_THEMES) so the page does not wait
+			   on /theme.css. galene-theme-slug covers a user-theme id after
+			   sign-out, when that id's stylesheet would 404. Keep this script
+			   in sync with themeBootstrapScript() in src/lib/themes.ts. */
+			(function(){var css={"light":"html[data-theme='light'] {\n\t--background: #f8fafc;\n\t--surface: #ffffff;\n\t--surface-hover: #f1f5f9;\n\t--muted: #f1f5f9;\n\t--border: #e2e8f0;\n\t--input: #cbd5e1;\n\t--foreground: #1e293b;\n\t--muted-foreground: #64748b;\n\t--primary: #0d9488;\n\t--primary-foreground: #ffffff;\n\t--success: #16a34a;\n\t--destructive: #dc2626;\n\t--destructive-foreground: #ffffff;\n\t--warning: #f59e0b;\n\t--ring: #0d9488;\n\t--radius: 0.5rem;\n}","dark":"html[data-theme='dark'] {\n\t--background: #0f172a;\n\t--surface: #1e293b;\n\t--surface-hover: #263349;\n\t--muted: #263349;\n\t--border: #334155;\n\t--input: #475569;\n\t--foreground: #e2e8f0;\n\t--muted-foreground: #94a3b8;\n\t--primary: #2dd4bf;\n\t--primary-foreground: #0f172a;\n\t--success: #4ade80;\n\t--destructive: #f87171;\n\t--destructive-foreground: #ffffff;\n\t--warning: #fbbf24;\n\t--ring: #2dd4bf;\n\t--radius: 0.5rem;\n}","forest":"html[data-theme='forest'] {\n\t--background: #0a120e;\n\t--surface: #101a14;\n\t--surface-hover: #18261d;\n\t--muted: #18261d;\n\t--border: #1e2f24;\n\t--input: #24382c;\n\t--foreground: #e8f2ec;\n\t--muted-foreground: #8fa89a;\n\t--primary: #22ff88;\n\t--primary-foreground: #06130c;\n\t--success: #4ade80;\n\t--destructive: #f87171;\n\t--destructive-foreground: #ffffff;\n\t--warning: #fbbf24;\n\t--ring: #22ff88;\n\t--radius: 0.5rem;\n}","ocean":"html[data-theme='ocean'] {\n\t--background: #0a1220;\n\t--surface: #101a2c;\n\t--surface-hover: #18243a;\n\t--muted: #18243a;\n\t--border: #1e2a40;\n\t--input: #243350;\n\t--foreground: #e2e8f0;\n\t--muted-foreground: #8494ab;\n\t--primary: #3b82f6;\n\t--primary-foreground: #ffffff;\n\t--success: #34d399;\n\t--destructive: #f87171;\n\t--destructive-foreground: #ffffff;\n\t--warning: #fbbf24;\n\t--ring: #3b82f6;\n\t--radius: 0.5rem;\n}","rose":"html[data-theme='rose'] {\n\t--background: #fdf2f6;\n\t--surface: #ffffff;\n\t--surface-hover: #fce7ef;\n\t--muted: #fce7ef;\n\t--border: #f3d3de;\n\t--input: #e8b4c6;\n\t--foreground: #3f1d2b;\n\t--muted-foreground: #9d6b80;\n\t--primary: #db2777;\n\t--primary-foreground: #ffffff;\n\t--success: #16a34a;\n\t--destructive: #dc2626;\n\t--destructive-foreground: #ffffff;\n\t--warning: #f59e0b;\n\t--ring: #db2777;\n\t--radius: 0.5rem;\n}","graphite":"html[data-theme='graphite'] {\n\t--background: #111315;\n\t--surface: #1a1d20;\n\t--surface-hover: #23272b;\n\t--muted: #23272b;\n\t--border: #2c3136;\n\t--input: #3a4046;\n\t--foreground: #e5e7ea;\n\t--muted-foreground: #9aa1a9;\n\t--primary: #f59e0b;\n\t--primary-foreground: #1a1205;\n\t--success: #4ade80;\n\t--destructive: #f87171;\n\t--destructive-foreground: #ffffff;\n\t--warning: #fbbf24;\n\t--ring: #f59e0b;\n\t--radius: 0.5rem;\n}"};try{var t=localStorage.getItem("galene-theme");var s=localStorage.getItem("galene-theme-slug");var slug=(t&&css[t])?t:((s&&css[s])?s:null);if(!slug)return;document.documentElement.dataset.theme=slug;var st=document.createElement("style");st.id="theme-critical";st.textContent=css[slug];document.head.appendChild(st);if(t&&!css[t]&&/^\d+$/.test(t)){var link=document.createElement("link");link.id="theme-css";link.rel="stylesheet";link.href="/theme.css?theme="+encodeURIComponent(t);document.head.appendChild(link);}}catch(e){}})();
 		</script>
 		%sveltekit.head%
 	</head>

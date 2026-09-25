@@ -1,6 +1,6 @@
 import { getSetting } from '$lib/server/finance';
 import { getThemeSetting, resolveTheme } from '$lib/server/themes';
-import { themeCssHash } from '$lib/themes';
+import { themeBaseSlug, themeToCss } from '$lib/themes';
 import { EMBLEM_ICON_KEY, normalizeBrandingIcon } from '$lib/icons';
 
 const DEFAULT_BRANDING = { name: 'Galene', icon: EMBLEM_ICON_KEY };
@@ -23,7 +23,10 @@ export function load({ locals, depends }) {
 			value: getThemeSetting(userId),
 			// slug: what goes in the data-theme attribute
 			slug: theme.slug,
-			hash: themeCssHash(theme)
+			// base: built-in slug used when this browser has no earlier choice
+			base: themeBaseSlug(theme),
+			// css: inlined in <head> so first paint does not wait on /theme.css
+			css: themeToCss(theme)
 		}
 	};
 }

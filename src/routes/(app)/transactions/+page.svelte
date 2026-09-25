@@ -44,8 +44,10 @@
 			accounts: Account[];
 			categories: Category[];
 			tags: Tag[];
+			viewer?: boolean;
 		};
 	} = $props();
+	const viewer = $derived(!!data.viewer);
 
 	const accountItems = $derived(data.accounts.map((a) => ({ value: String(a.id), label: a.name })));
 	const tagItems = $derived(data.tags.map((t) => ({ value: String(t.id), label: t.name })));
@@ -378,8 +380,10 @@
 		<h1 class="text-2xl font-semibold tracking-tight">Transactions</h1>
 		<div class="flex flex-wrap items-center gap-2">
 			<CsvIoIcons {exportHref} />
+			{#if !viewer}
 			<Button variant="secondary" type="button" onclick={() => (scheduledOpen = true)}>+ New scheduled</Button>
 			<Button type="button" onclick={openAdd}>+ Add transaction</Button>
+			{/if}
 		</div>
 	</div>
 
@@ -526,7 +530,7 @@
 	</form>
 
 	<!-- Bulk actions -->
-	{#if selectedItems.length > 0}
+	{#if selectedItems.length > 0 && !viewer}
 		<div
 			bind:this={bulkBarEl}
 			class="sticky top-[57px] z-20 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2.5 transition-shadow {barStuck ? 'shadow-lg' : ''}"
@@ -661,7 +665,7 @@
 							{/if}
 						</td>
 						<td class="px-3 py-2">
-							<CategoryCell transaction={tx} categories={data.categories} />
+							<CategoryCell transaction={tx} categories={data.categories} readonly={viewer} />
 						</td>
 						<td class="whitespace-nowrap px-3 py-2">{tx.account_name}</td>
 						<td class="px-3 py-2">
@@ -675,6 +679,7 @@
 							{formatMoney(tx.amount_cents)}
 						</td>
 						<td class="px-3 py-2">
+							{#if !viewer}
 							<form id="delete-form-{tx.id}" method="POST" action="?/delete" class="hidden">
 								<input type="hidden" name="id" value={tx.id} />
 							</form>
@@ -697,6 +702,7 @@
 									<MenuItem onclick={() => openRule(tx)}>Customize categorization rule…</MenuItem>
 								<MenuItem variant="destructive" onclick={() => deleteTx(tx)}>Delete</MenuItem>
 							</DropdownMenu>
+							{/if}
 						</td>
 					</tr>
 				{:else}
@@ -771,7 +777,7 @@
 						</div>
 						<div class="flex items-center gap-2">
 							<span class="cat-pill inline-flex max-w-44 items-center rounded-full border border-border bg-muted">
-								<CategoryCell transaction={tx} categories={data.categories} />
+								<CategoryCell transaction={tx} categories={data.categories} readonly={viewer} />
 							</span>
 							<div class="flex min-w-0 flex-1 gap-1 overflow-hidden">
 								{#each tagsOf(tx) as tag (tag)}
@@ -780,6 +786,7 @@
 									</span>
 								{/each}
 							</div>
+							{#if !viewer}
 							<form id="delete-form-{tx.id}" method="POST" action="?/delete" class="hidden">
 								<input type="hidden" name="id" value={tx.id} />
 							</form>
@@ -802,6 +809,7 @@
 									<MenuItem onclick={() => openRule(tx)}>Customize categorization rule…</MenuItem>
 								<MenuItem variant="destructive" onclick={() => deleteTx(tx)}>Delete</MenuItem>
 							</DropdownMenu>
+							{/if}
 						</div>
 					</div>
 				</div>

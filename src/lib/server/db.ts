@@ -3,8 +3,13 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { hashToken } from './tokenHash';
 
-const DATA_DIR = process.env.GALENE_DATA_DIR ?? resolve(process.cwd(), 'data');
-const DB_PATH = process.env.GALENE_DB_PATH ?? resolve(DATA_DIR, 'galene.db');
+function dataDir(): string {
+	return process.env.GALENE_DATA_DIR ?? resolve(process.cwd(), 'data');
+}
+
+function dbPath(): string {
+	return process.env.GALENE_DB_PATH ?? resolve(dataDir(), 'galene.db');
+}
 
 let _db: Database | undefined;
 
@@ -22,18 +27,18 @@ export function assertDataDirOnVolume(): void {
 	} catch {
 		return; // non-Linux (dev on macOS/Windows): no /proc/mounts, nothing to check
 	}
-	const dataDir = resolve(dirname(DB_PATH));
+	const dir = resolve(dirname(dbPath()));
 	let best = '';
 	for (const line of mounts.split('\n')) {
 		const fields = line.trim().split(/\s+/);
 		if (fields.length < 2) continue;
 		const mp = unescapeMountpoint(fields[1]);
-		const contains = mp === '/' ? true : dataDir === mp || dataDir.startsWith(mp + '/');
+		const contains = mp === '/' ? true : dir === mp || dir.startsWith(mp + '/');
 		if (contains && mp.length > best.length) best = mp;
 	}
 	if (best === '/') {
 		throw new Error(
-			`Galene will not start: the data directory ${dataDir} is on the container's ephemeral filesystem, not a mounted volume. The database would be lost when the container is removed. Mount a volume at ${dataDir} (e.g. \`docker run -v galene_data:${dataDir}\` or add a volumes entry to your compose file). Set GALENE_ALLOW_EPHEMERAL_DATA=1 to override.`
+			`Galene will not start: the data directory ${dir} is on the container's ephemeral filesystem, not a mounted volume. The database would be lost when the container is removed. Mount a volume at ${dir} (e.g. \`docker run -v galene_data:${dir}\` or add a volumes entry to your compose file). Set GALENE_ALLOW_EPHEMERAL_DATA=1 to override.`
 		);
 	}
 }
@@ -43,12 +48,22 @@ function unescapeMountpoint(mp: string): string {
 	return mp.replace(/\\040/g, ' ').replace(/\\012/g, '\n').replace(/\\013/g, '\t');
 }
 
+/** Test hook: drop the singleton so a new GALENE_DB_PATH is opened. */
+export function closeDbForTests(): void {
+	try {
+		_db?.close();
+	} catch {
+		/* ignore */
+	}
+	_db = undefined;
+}
+
 /** Singleton SQLite connection (bun:sqlite). Runs under bun in both dev and production. */
 export function db(): Database {
 	if (!_db) {
 		assertDataDirOnVolume();
-		mkdirSync(dirname(DB_PATH), { recursive: true });
-		const database = new Database(DB_PATH, { create: true });
+		mkdirSync(dirname(dbPath()), { recursive: true });
+		const database = new Database(dbPath(), { create: true });
 		try {
 			database.exec('PRAGMA journal_mode = WAL;');
 			database.exec('PRAGMA foreign_keys = ON;');
@@ -87,6 +102,7 @@ type Migration =
 			/** Runs after the main migrate transaction commits, with foreign_keys OFF (#20). */
 			afterFkOff?: (database: Database) => void;
 			vacuum?: boolean;
+			categoryUniqueness?: boolean;
 	  };
 
 const MIGRATIONS: Migration[] = [
@@ -646,6 +662,8 @@ ALTER TABLE accounts ADD COLUMN provider_balance_as_of TEXT;
 		}
 
 	},
+	/** Fixture rewind target: category uniqueness rebuild (#17 / #20). */
+	categoryUniqueness: true,
 	afterFkOff(database) {
 		// Must run with foreign_keys OFF *outside* a parent transaction — SQLite
 		// ignores PRAGMA foreign_keys changes while a txn is open (#20).
@@ -671,8 +689,71 @@ CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
 		)?.m;
 		database.query('UPDATE sqlite_sequence SET seq = ? WHERE name = ?').run(maxId ?? 0, 'categories');
 	}
-}
+},
+`
+-- Phase: advisor grants, audit, and frozen accountant packs (issue #81).
+-- Additive only. Grants are scoped read access (date range + optional accounts).
+-- Packs store zip bytes at generation so later book edits do not change a link.
+CREATE TABLE IF NOT EXISTS advisor_grants (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	label TEXT NOT NULL,
+	kind TEXT NOT NULL CHECK (kind IN ('pack','viewer')),
+	date_from TEXT NOT NULL,
+	date_to TEXT NOT NULL,
+	account_ids TEXT,
+	expires_at TEXT NOT NULL,
+	revoked_at TEXT,
+	token_hint TEXT,
+	salt TEXT,
+	token_hash TEXT,
+	password_hash TEXT,
+	created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_advisor_grants_user ON advisor_grants(user_id);
+CREATE INDEX IF NOT EXISTS idx_advisor_grants_hint ON advisor_grants(token_hint);
+
+CREATE TABLE IF NOT EXISTS advisor_audit (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	grant_id INTEGER,
+	event TEXT NOT NULL,
+	detail TEXT,
+	created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_advisor_audit_user ON advisor_audit(user_id, id);
+
+CREATE TABLE IF NOT EXISTS advisor_packs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	grant_id INTEGER NOT NULL UNIQUE REFERENCES advisor_grants(id) ON DELETE CASCADE,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	zip BLOB NOT NULL,
+	created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS viewer_sessions (
+	token_hint TEXT NOT NULL PRIMARY KEY,
+	grant_id INTEGER NOT NULL REFERENCES advisor_grants(id) ON DELETE CASCADE,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	salt TEXT NOT NULL,
+	token_hash TEXT NOT NULL,
+	expires_at TEXT NOT NULL
+);
+`
 ];
+
+/**
+ * user_version just before the category uniqueness rebuild (#17).
+ * The migrate fixture rewinds to this index so later additive migrations
+ * do not skip the merge it is asserting.
+ */
+export function categoryUniquenessMigrationIndex(): number {
+	const index = MIGRATIONS.findIndex(
+		(m) => typeof m !== 'string' && m.categoryUniqueness === true
+	);
+	if (index < 0) throw new Error('category uniqueness migration marker missing');
+	return index;
+}
 
 /** Target PRAGMA user_version after all migrations. */
 export function migrationCount(): number {

@@ -9,6 +9,8 @@ export interface User {
 	email: string;
 	/** 1 when the account can manage other users (Settings → Users). */
 	is_admin: number;
+	/** Present on a magic-link advisor session. Owner sessions omit this. */
+	role?: 'owner' | 'viewer';
 }
 
 export interface Account {

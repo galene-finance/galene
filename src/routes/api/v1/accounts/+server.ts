@@ -1,5 +1,5 @@
 import { apiUser, json, unauthorized } from '$lib/server/api';
-import { ACCOUNT_BALANCE_EXPR } from '$lib/server/finance';
+import { ACCOUNT_BALANCE_EXPR, accountBalanceAsOfExpr } from '$lib/server/finance';
 import { db } from '$lib/server/db';
 import type { AccountType } from '$lib/types';
 
@@ -27,19 +27,29 @@ interface AccountWithBalance {
 export function GET(event) {
 	const user = apiUser(event);
 	if (!user) return unauthorized();
+	const scope = event.locals.viewer?.scope ?? null;
+	const accountClause =
+		scope && scope.accountIds.length > 0 ? ` AND a.id IN (${scope.accountIds.map(() => '?').join(',')})` : '';
+	// A viewer sees the ledger through the grant end date, matching the pack.
+	// Provider columns stay null so bank identifiers never leave the owner session.
+	const providerCols = scope
+		? 'NULL AS provider, NULL AS provider_balance_cents, NULL AS provider_balance_as_of'
+		: 'a.provider, a.provider_balance_cents, a.provider_balance_as_of';
+	const balanceExpr = scope ? accountBalanceAsOfExpr() : ACCOUNT_BALANCE_EXPR;
+	const params: (number | string)[] = scope ? [scope.dateTo, user.id, ...scope.accountIds] : [user.id];
 	const rows = db()
 		.query(
-			`SELECT a.id, a.name, a.type, a.color, a.provider,
+			`SELECT a.id, a.name, a.type, a.color,
 			        a.opening_balance_cents, a.opening_as_of,
-			        a.provider_balance_cents, a.provider_balance_as_of,
-			        ${ACCOUNT_BALANCE_EXPR} AS balance_cents
+			        ${providerCols},
+			        ${balanceExpr} AS balance_cents
 			 FROM accounts a
 			 LEFT JOIN transactions t ON t.account_id = a.id AND t.user_id = a.user_id
-			 WHERE a.user_id = ?
+			 WHERE a.user_id = ?${accountClause}
 			 GROUP BY a.id
 			 ORDER BY a.name`
 		)
-		.all(user.id) as AccountWithBalance[];
+		.all(...params) as AccountWithBalance[];
 	return json(200, {
 		accounts: rows.map((r) => ({
 			...r,

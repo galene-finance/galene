@@ -1,0 +1,36 @@
+---
+title: Advisor access
+description: Accountant packs and read-only viewer invites.
+---
+
+**Settings → Advisor access** lets the owner share a date range (and, optionally, a subset of accounts) with a tax preparer without creating another Galene user.
+
+Two kinds of grant share the same expiry and revoke controls:
+
+Choose the kind when you create the grant. Neither kind is selected until you pick one.
+
+- **Accountant pack** — a download link for a zip frozen at generation time. Later edits to the books do not change the bytes an existing link serves.
+- **Read-only viewer** — an invite link that signs the advisor into a session that can read in-scope data and export, and cannot change anything.
+
+Each grant has a label, a date range (a calendar year, or explicit from/to dates), an optional account filter, a link lifetime of 1–30 days, and a required link password. Year, From, and To filter what the advisor link and pack download include. Revoke ends the link and any viewer session immediately. Grants created before passwords were required can still open without one.
+
+## Pack contents
+
+The zip contains:
+
+- `transactions.csv` — transactions in the range (and accounts, if filtered)
+- `accounts.csv` — accounts and the **ledger balance through the end of the range** (not the balance at generation time)
+- `summary.html` — category rollup
+- `manifest.json` — `generated_at`, range, app version, and commit
+
+The owner can download the zip from the grants list. The share link is a download link, shown once. Opening it in a browser asks for the link password, then downloads the frozen zip. Scripts can still pass the password as `?password=` or the `x-galene-pack-password` header. A wrong password stays on the form and does not return the file. An expired or revoked link says so and does not return the file.
+
+The pack does not include bank tokens, provider ids, or password material.
+
+## Viewer
+
+The advisor opens the invite link, enters the link password, and lands on Transactions. Navigation is Transactions, Trends, Accounts, Categories, and Export. Export downloads a zip built with the same generators, limited to the grant.
+
+Writes — including API calls — are refused. Out-of-range transactions and accounts outside the filter are not returned.
+
+The grants page lists an audit trail: grant created, invite created, viewer login, pack generated, pack downloaded, viewer export, and revoke.

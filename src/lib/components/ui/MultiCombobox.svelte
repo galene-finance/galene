@@ -17,7 +17,9 @@
 		removeLastPill,
 		removeValue,
 		selectedPills,
-		shouldRemoveLastOnBackspace
+		optionsPanelBox,
+		shouldRemoveLastOnBackspace,
+		type OptionsPanelBox
 	} from '$lib/multiCombobox';
 
 	let {
@@ -50,7 +52,7 @@
 	const pills = $derived(selectedPills(value, items, lastCreated));
 
 	let container = $state<HTMLDivElement | undefined>(undefined);
-	let fieldWidth = $state(0);
+	let panel = $state<OptionsPanelBox | null>(null);
 	let open = $state(false);
 	// bits-ui's caret focuses the input, then toggles `open`. If this focus
 	// handler also forces `open`, the toggle flips the menu straight back shut
@@ -68,13 +70,43 @@
 	}
 
 	function measureField() {
-		fieldWidth = container?.offsetWidth ?? 0;
+		const el = container;
+		if (!el) return;
+		const rect = el.getBoundingClientRect();
+		const vv = window.visualViewport;
+		panel = optionsPanelBox(
+			{ top: rect.top, bottom: rect.bottom, left: rect.left, width: rect.width },
+			{
+				height: vv?.height ?? window.innerHeight,
+				offsetTop: vv?.offsetTop ?? 0,
+				offsetLeft: vv?.offsetLeft ?? 0,
+				width: vv?.width ?? window.innerWidth
+			}
+		);
 	}
 
+	const panelStyle = $derived(
+		panel
+			? `position:fixed;top:${panel.top}px;left:${panel.left}px;width:${panel.width}px;min-width:0;max-width:${panel.width}px;max-height:${panel.maxHeight}px;height:auto;transform:none;overflow:auto;`
+			: 'position:fixed;max-height:18rem;overflow:auto;'
+	);
+
+	// iOS moves visualViewport when the keyboard opens. Window resize does not.
 	$effect(() => {
-		value;
-		pills;
+		if (!open) return;
 		measureField();
+		const vv = window.visualViewport;
+		const onChange = () => measureField();
+		window.addEventListener('resize', onChange);
+		window.addEventListener('scroll', onChange, true);
+		vv?.addEventListener('resize', onChange);
+		vv?.addEventListener('scroll', onChange);
+		return () => {
+			window.removeEventListener('resize', onChange);
+			window.removeEventListener('scroll', onChange, true);
+			vv?.removeEventListener('resize', onChange);
+			vv?.removeEventListener('scroll', onChange);
+		};
 	});
 
 	function clearSearchInput() {
@@ -246,41 +278,54 @@
 	</div>
 	<BitsCombobox.Portal>
 		<BitsCombobox.Content
-			class="z-50 max-h-72 min-w-0 overflow-auto rounded-md border border-border bg-surface p-1 shadow-md"
-			style="width: {fieldWidth}px"
-			customAnchor={container ?? null}
+			side="bottom"
+			align="start"
 			sideOffset={4}
+			avoidCollisions={false}
+			sticky="always"
 			onInteractOutside={(e) => {
 				// The caret's touch pointerdown is "outside" the portaled list.
 				// bits-ui waits for the compatibility click, then closes.
 				if (Date.now() - touchToggleAt < 700) e.preventDefault();
 			}}
 		>
-			{#if filtered.length === 0 && !canCreate}
-				<span class="block px-3 py-2 text-sm text-muted-foreground">No results</span>
-			{:else}
-				{#each filtered as item (item.value)}
-					<BitsCombobox.Item
-						{...item}
-						class="data-[highlighted]:bg-muted flex cursor-pointer items-center rounded-sm px-3 py-2 text-sm"
-					>
-						<span class="truncate">{item.label}</span>
-					</BitsCombobox.Item>
-				{/each}
-				{#if canCreate}
-					<BitsCombobox.Item
-						value={CREATE_VALUE}
-						label={search.trim()}
-						onpointerup={(e) => {
-							e.preventDefault();
-							selectCreate();
-						}}
-						class="data-[highlighted]:bg-muted flex cursor-pointer items-center rounded-sm px-3 py-2 text-sm text-primary"
-					>
-						+ {createLabel} “{search.trim()}”
-					</BitsCombobox.Item>
-				{/if}
-			{/if}
+			{#snippet child({ props, wrapperProps })}
+				<!-- The wrapper is the positioned element. Its default min-width
+				     and floating transform are what collapse the list on iOS. -->
+				<div
+					{...wrapperProps}
+					class="z-50 min-w-0 overflow-auto rounded-md border border-border bg-surface p-1 shadow-md"
+					style={panelStyle}
+				>
+					<div {...props}>
+						{#if filtered.length === 0 && !canCreate}
+							<span class="block px-3 py-2 text-sm text-muted-foreground">No results</span>
+						{:else}
+							{#each filtered as item (item.value)}
+								<BitsCombobox.Item
+									{...item}
+									class="data-[highlighted]:bg-muted flex cursor-pointer items-center rounded-sm px-3 py-2 text-sm"
+								>
+									<span class="truncate">{item.label}</span>
+								</BitsCombobox.Item>
+							{/each}
+							{#if canCreate}
+								<BitsCombobox.Item
+									value={CREATE_VALUE}
+									label={search.trim()}
+									onpointerup={(e) => {
+										e.preventDefault();
+										selectCreate();
+									}}
+									class="data-[highlighted]:bg-muted flex cursor-pointer items-center rounded-sm px-3 py-2 text-sm text-primary"
+								>
+									+ {createLabel} “{search.trim()}”
+								</BitsCombobox.Item>
+							{/if}
+						{/if}
+					</div>
+				</div>
+			{/snippet}
 		</BitsCombobox.Content>
 	</BitsCombobox.Portal>
 </BitsCombobox.Root>

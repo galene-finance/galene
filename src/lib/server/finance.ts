@@ -1,4 +1,6 @@
 import { db } from './db';
+import type { GrantScope } from './advisor';
+import { scopeAccountIds, scopeDateRange } from './advisor';
 import { parseAmountToCents } from '$lib/utils';
 import { normalizeMerchant } from '$lib/merchantNormalize';
 import type {
@@ -57,6 +59,19 @@ export const ACCOUNT_BALANCE_EXPR = `COALESCE(a.opening_balance_cents, 0) + COAL
 		ELSE 0
 	END
 ), 0)`;
+
+/**
+ * Same ledger rule as ACCOUNT_BALANCE_EXPR, but only transactions on or before
+ * `asOf` (YYYY-MM-DD). Used by advisor grants so a viewer does not see later activity.
+ */
+export function accountBalanceAsOfExpr(asOfParam = '?'): string {
+	return `COALESCE(a.opening_balance_cents, 0) + COALESCE(SUM(
+	CASE
+		WHEN t.date <= ${asOfParam} AND (a.opening_as_of IS NULL OR t.date >= a.opening_as_of) THEN t.amount_cents
+		ELSE 0
+	END
+), 0)`;
+}
 
 /** Per-account balances for a user (id → cents). */
 export function getAccountBalances(userId: number): Map<number, number> {
@@ -529,6 +544,22 @@ export interface TransactionQueryResult {
 	items: Transaction[];
 	total: number;
 	pages: number;
+}
+
+/**
+ * Apply an advisor grant in the query, not only in the client.
+ * Account filters shrink to the grant; dates clamp to the grant window.
+ */
+export function applyGrantScope(f: TransactionFilters, scope: GrantScope | null | undefined): TransactionFilters | null {
+	if (!scope) return f;
+	const dates = scopeDateRange(scope, f.dateFrom, f.dateTo);
+	if (!dates) return null;
+	return {
+		...f,
+		accountIds: scopeAccountIds(scope, f.accountIds),
+		dateFrom: dates.dateFrom,
+		dateTo: dates.dateTo
+	};
 }
 
 export function getTransactions(userId: number, f: TransactionFilters): TransactionQueryResult {

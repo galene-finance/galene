@@ -19,7 +19,7 @@
 		form:
 			| { error?: string | null; ok?: boolean; message?: string | null; source?: string }
 			| undefined;
-		data: { categories: Category[] };
+		data: { categories: Category[]; viewer?: boolean };
 	} = $props();
 
 	const typeItems = CATEGORY_TYPES.map((t) => ({
@@ -150,12 +150,16 @@
 <Title title="Categories" />
 
 <div class="mx-auto flex max-w-3xl flex-col gap-4 2xl:max-w-5xl">
+	{#if !data.viewer}
 	<a href="/settings" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
 		>← Back to Settings</a
 	>
+	{/if}
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<h1 class="text-2xl font-semibold tracking-tight">Categories</h1>
-		<Button type="button" onclick={openCreate}>Add category</Button>
+		{#if !data.viewer}
+			<Button type="button" onclick={openCreate}>Add category</Button>
+		{/if}
 	</div>
 
 	<section class="rounded-lg border border-border bg-surface">
@@ -200,6 +204,7 @@
 									transfer
 								</span>
 							{/if}
+							{#if !data.viewer}
 							<button
 								type="button"
 								class="text-sm text-primary hover:underline"
@@ -214,6 +219,7 @@
 							>
 								Delete
 							</button>
+							{/if}
 						</li>
 					{/each}
 				</ul>

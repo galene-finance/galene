@@ -1,8 +1,8 @@
 import { error, redirect, type RequestEvent } from '@sveltejs/kit';
 import { parseExportColumns } from '$lib/csvExportColumns';
 import { transactionsToCsv } from '$lib/server/csvExport';
-import { getTransactions } from '$lib/server/finance';
 import { parseExportFilters } from '$lib/server/transactionFilters';
+import { scopedTransactions, viewerScope } from '$lib/server/scopeQuery';
 import { todayISO } from '$lib/utils';
 
 export function GET({ locals, url }: RequestEvent) {
@@ -12,7 +12,7 @@ export function GET({ locals, url }: RequestEvent) {
 		error(400, 'Select at least one field to export.');
 	}
 	const filters = parseExportFilters(url);
-	const { items } = getTransactions(locals.user.id, filters);
+	const { items } = scopedTransactions(locals.user.id, filters, viewerScope({ locals }));
 	return new Response(transactionsToCsv(items, columns), {
 		headers: {
 			'Content-Type': 'text/csv; charset=utf-8',

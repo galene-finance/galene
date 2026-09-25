@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { budgetsForCategory, getCategories, getTransactionsInPeriod, monthSpendingCents, saveBudget } from '$lib/server/finance';
+import { scopeDateRange } from '$lib/server/advisor';
 import { mondayOnOrBefore, parseISO, toISO, type TrendPeriod, type TrendPoint } from '$lib/trendsChart';
 import { drillRows } from '$lib/trendDrill';
 import type { Budget } from '$lib/types';
@@ -38,6 +39,14 @@ export function load({ locals, url }) {
 	let from = isDate(fromParam) ? parseISO(fromParam!) : defaultFrom;
 	let to = isDate(toParam) ? parseISO(toParam!) : now;
 	if (from > to) [from, to] = [to, from];
+	const scope = locals.viewer?.scope ?? null;
+	if (scope) {
+		const clamped = scopeDateRange(scope, toISO(from), toISO(to));
+		if (clamped) {
+			from = parseISO(clamped.dateFrom);
+			to = parseISO(clamped.dateTo);
+		}
+	}
 
 	const maxFrom =
 		period === 'month'
@@ -126,11 +135,27 @@ export function load({ locals, url }) {
 	const rangeFrom = points[0]?.from ?? toISO(from);
 	const rangeTo = points[points.length - 1]?.to ?? toISO(to);
 	const transferIds = new Set(categories.filter((c) => c.type === 'transfer').map((c) => c.id));
-	const drillTransactions = drillRows(
-		getTransactionsInPeriod(userId, rangeFrom, rangeTo),
-		categoryId,
-		transferIds
-	);
+	let periodRows = getTransactionsInPeriod(userId, rangeFrom, rangeTo);
+	if (scope) {
+		const allowed = scope.accountIds.length > 0 ? new Set(scope.accountIds) : null;
+		periodRows = periodRows.filter(
+			(t) =>
+				t.date >= scope.dateFrom &&
+				t.date <= scope.dateTo &&
+				(!allowed || allowed.has(t.account_id))
+		);
+		for (const point of points) {
+			let spent = 0;
+			for (const t of periodRows) {
+				if (t.date < point.from || t.date >= point.to) continue;
+				if (categoryId != null && t.category_id !== categoryId) continue;
+				if (t.category_id != null && transferIds.has(t.category_id)) continue;
+				if (t.amount_cents < 0) spent += -t.amount_cents;
+			}
+			point.spentCents = spent;
+		}
+	}
+	const drillTransactions = drillRows(periodRows, categoryId, transferIds);
 
 	return {
 		categoryId,

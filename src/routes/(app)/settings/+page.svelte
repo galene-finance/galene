@@ -18,6 +18,11 @@
 					}
 			  ]
 			: []),
+		{
+			href: '/settings/advisor',
+			title: 'Advisor access',
+			desc: 'Accountant packs and read-only viewer invites, with an expiry you can revoke.'
+		},
 		{ href: '/settings/appearance', title: 'Appearance', desc: 'Theme, app name, and icons.' },
 		{
 			href: '/settings/security',

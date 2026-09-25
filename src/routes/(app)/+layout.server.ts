@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
-import { getAccounts, getCategories, getTags } from '$lib/server/finance';
+import { getTags } from '$lib/server/finance';
 import { listNotifications, unreadCount } from '$lib/server/notifications';
+import { scopedAccounts, scopedCategories, viewerScope } from '$lib/server/scopeQuery';
 import { getThemeSetting, getUserThemes } from '$lib/server/themes';
 
 export function load({ locals, depends }) {
@@ -8,14 +9,17 @@ export function load({ locals, depends }) {
 	depends('settings');
 	if (!locals.user) redirect(303, '/login');
 	const userId = locals.user.id;
+	const scope = viewerScope({ locals });
+	const viewer = locals.user.role === 'viewer';
 	return {
 		user: locals.user,
-		accounts: getAccounts(userId),
-		categories: getCategories(userId),
-		tags: getTags(userId),
+		viewer,
+		accounts: scopedAccounts(userId, scope),
+		categories: scopedCategories(userId, scope),
+		tags: viewer ? [] : getTags(userId),
 		themes: getUserThemes(userId),
 		themeValue: getThemeSetting(userId),
-		notifications: listNotifications(userId),
-		notificationsUnread: unreadCount(userId)
+		notifications: viewer ? [] : listNotifications(userId),
+		notificationsUnread: viewer ? 0 : unreadCount(userId)
 	};
 }

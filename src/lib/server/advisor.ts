@@ -295,6 +295,15 @@ export function inviteLanding(token: string): { expired: boolean; needsPassword:
 	return { expired: false, needsPassword: looked.needsPassword, label: '' };
 }
 
+/** Page state for a browser opening `/advisor/pack/<token>`. A missing password is not expiry. */
+export function packLanding(token: string): { expired: boolean; needsPassword: boolean } {
+	const looked = lookupShareToken(token);
+	if (!looked.ok || looked.row.kind !== 'pack') {
+		return { expired: true, needsPassword: false };
+	}
+	return { expired: false, needsPassword: looked.needsPassword };
+}
+
 /** Password check and viewer session for the invite form. Wrong passwords stay 401. */
 export function acceptViewerInvite(
 	token: string,

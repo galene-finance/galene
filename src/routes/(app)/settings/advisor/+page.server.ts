@@ -90,7 +90,11 @@ export const actions = {
 		}
 		return {
 			ok: true,
-			message: kind === 'pack' ? 'Pack generated. Copy the link if you want to share it.' : 'Invite created. Copy the magic link.',
+			kind,
+			message:
+				kind === 'pack'
+					? 'Pack generated. Copy the download link if you want to share it.'
+					: 'Invite created. Copy the viewer invite link.',
 			shareUrl: new URL(sharePath, url.origin).href,
 			downloadId: packReady ? created.grant.id : null,
 			passwordSet: created.grant.has_password

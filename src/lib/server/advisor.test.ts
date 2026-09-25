@@ -14,6 +14,7 @@ import {
 	getViewerByToken,
 	inviteLanding,
 	listAudit,
+	packLanding,
 	resolveShareToken,
 	revokeGrant,
 	scopeAccountIds,
@@ -251,10 +252,13 @@ describe('viewer session', () => {
 		const missing = resolveShareToken(created.token, null);
 		expect(missing.ok).toBe(false);
 		if (!missing.ok) expect(missing.status).toBe(401);
+		expect(packLanding(created.token)).toEqual({ expired: false, needsPassword: true });
 		const authed = resolveShareToken(created.token, 'pack-secret');
 		expect(authed.ok).toBe(true);
 		if (authed.ok) expect(authed.row.kind).toBe('pack');
 		expect(inviteLanding(created.token).expired).toBe(true);
+		revokeGrant(1, created.grant.id);
+		expect(packLanding(created.token)).toEqual({ expired: true, needsPassword: false });
 	});
 
 	test('mutations are rejected for a viewer principal', () => {

@@ -238,19 +238,33 @@ export function grantScopeFromRow(row: {
 	};
 }
 
+export type ShareLookup =
+	| { ok: true; row: SecretRow; scope: GrantScope; needsPassword: boolean }
+	| { ok: false; status: 401 | 410 };
+
+/**
+ * Active grant for a share token, without checking the optional password.
+ * Unknown tokens are 401; revoked or expired grants are 410.
+ */
+export function lookupShareToken(token: string): ShareLookup {
+	const row = loadByToken(token);
+	if (!row) return { ok: false, status: 401 };
+	if (row.revoked_at) return { ok: false, status: 410 };
+	if (Date.parse(row.expires_at) <= Date.now()) return { ok: false, status: 410 };
+	return { ok: true, row, scope: grantScopeFromRow(row), needsPassword: !!row.password_hash };
+}
+
 /** Active grant matching the share token, or a reason it cannot be used. */
 export function resolveShareToken(
 	token: string,
 	password: string | null
 ): { ok: true; row: SecretRow; scope: GrantScope } | { ok: false; status: 401 | 403 | 410 } {
-	const row = loadByToken(token);
-	if (!row) return { ok: false, status: 401 };
-	if (row.revoked_at) return { ok: false, status: 410 };
-	if (Date.parse(row.expires_at) <= Date.now()) return { ok: false, status: 410 };
-	if (row.password_hash && !verifySharePassword(password ?? '', row.password_hash)) {
+	const looked = lookupShareToken(token);
+	if (!looked.ok) return looked;
+	if (looked.needsPassword && !verifySharePassword(password ?? '', looked.row.password_hash)) {
 		return { ok: false, status: 401 };
 	}
-	return { ok: true, row, scope: grantScopeFromRow(row) };
+	return { ok: true, row: looked.row, scope: looked.scope };
 }
 
 const VIEWER_SESSION_DAYS = 7;
@@ -268,6 +282,31 @@ export function createViewerSession(grantId: number, userId: number, grantExpire
 		)
 		.run(hint, grantId, userId, salt, hash, expiresAt);
 	return token;
+}
+
+/** Page state for `/advisor/invite/<token>`. A missing password is not expiry. */
+export function inviteLanding(token: string): { expired: boolean; needsPassword: boolean; label: string } {
+	const looked = lookupShareToken(token);
+	if (!looked.ok || looked.row.kind !== 'viewer') {
+		return { expired: true, needsPassword: false, label: '' };
+	}
+	return { expired: false, needsPassword: looked.needsPassword, label: '' };
+}
+
+/** Password check and viewer session for the invite form. Wrong passwords stay 401. */
+export function acceptViewerInvite(
+	token: string,
+	password: string
+): { ok: true; session: string; scope: GrantScope } | { ok: false; status: 401 | 404 | 410; error: string } {
+	const resolved = resolveShareToken(token, password);
+	if (!resolved.ok || resolved.row.kind !== 'viewer') {
+		if (resolved.ok) return { ok: false, status: 404, error: 'This link is not an advisor invite.' };
+		if (resolved.status === 410) return { ok: false, status: 410, error: 'This invite has expired or was revoked.' };
+		return { ok: false, status: 401, error: 'That link or password is not valid.' };
+	}
+	const session = createViewerSession(resolved.row.id, resolved.row.user_id, resolved.row.expires_at);
+	audit(resolved.scope.userId, resolved.scope.grantId, 'viewer_login');
+	return { ok: true, session, scope: resolved.scope };
 }
 
 export function destroyViewerSession(token: string) {

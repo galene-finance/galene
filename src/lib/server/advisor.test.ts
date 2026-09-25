@@ -7,9 +7,11 @@ import { closeDbForTests, db, migrate } from './db';
 import { buildPackFiles, buildPackZip, loadPack, savePack, zipStore } from './pack';
 import { forbidViewerMutation } from './viewerGuard';
 import {
+	acceptViewerInvite,
 	createGrant,
 	createViewerSession,
 	getViewerByToken,
+	inviteLanding,
 	listAudit,
 	resolveShareToken,
 	revokeGrant,
@@ -157,6 +159,68 @@ describe('viewer session', () => {
 		const events = listAudit(1).map((row) => row.event);
 		expect(events).toContain('invite_created');
 		expect(events).toContain('grant_revoked');
+	});
+
+	test('passworded invite load asks for a password; submit checks it', () => {
+		const created = createGrant(1, {
+			label: 'CPA',
+			kind: 'viewer',
+			dateFrom: '2025-01-01',
+			dateTo: '2025-12-31',
+			accountIds: [],
+			ttlDays: 7,
+			password: 'share-secret'
+		});
+		if ('error' in created) throw new Error(created.error);
+		expect(inviteLanding(created.token)).toEqual({ expired: false, needsPassword: true, label: '' });
+
+		const wrong = acceptViewerInvite(created.token, 'nope');
+		expect(wrong.ok).toBe(false);
+		if (!wrong.ok) {
+			expect(wrong.status).toBe(401);
+			expect(wrong.error).toBe('That link or password is not valid.');
+		}
+
+		const right = acceptViewerInvite(created.token, 'share-secret');
+		expect(right.ok).toBe(true);
+		if (right.ok) expect(getViewerByToken(right.session)?.role).toBe('viewer');
+
+		const open = createGrant(1, {
+			label: 'Bookkeeper',
+			kind: 'viewer',
+			dateFrom: '2025-01-01',
+			dateTo: '2025-12-31',
+			accountIds: [],
+			ttlDays: 7
+		});
+		if ('error' in open) throw new Error(open.error);
+		expect(inviteLanding(open.token)).toEqual({ expired: false, needsPassword: false, label: '' });
+		const openSession = acceptViewerInvite(open.token, '');
+		expect(openSession.ok).toBe(true);
+
+		expect(inviteLanding('not-a-token').expired).toBe(true);
+		revokeGrant(1, created.grant.id);
+		expect(inviteLanding(created.token).expired).toBe(true);
+	});
+
+	test('pack links still reject a missing password and accept the right one', () => {
+		const created = createGrant(1, {
+			label: '2025 pack',
+			kind: 'pack',
+			dateFrom: '2025-01-01',
+			dateTo: '2025-12-31',
+			accountIds: [1],
+			ttlDays: 14,
+			password: 'pack-secret'
+		});
+		if ('error' in created) throw new Error(created.error);
+		const missing = resolveShareToken(created.token, null);
+		expect(missing.ok).toBe(false);
+		if (!missing.ok) expect(missing.status).toBe(401);
+		const authed = resolveShareToken(created.token, 'pack-secret');
+		expect(authed.ok).toBe(true);
+		if (authed.ok) expect(authed.row.kind).toBe('pack');
+		expect(inviteLanding(created.token).expired).toBe(true);
 	});
 
 	test('mutations are rejected for a viewer principal', () => {

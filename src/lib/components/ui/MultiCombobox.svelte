@@ -1,3 +1,13 @@
+<script lang="ts" module>
+	/** Last time a touch pointerdown started inside any MultiCombobox field. */
+	let lastFieldTouchAt = 0;
+
+	/** A touch that began in a combobox field is still in its click window. */
+	export function comboboxFieldTouchRecent(windowMs = 700) {
+		return Date.now() - lastFieldTouchAt < windowMs;
+	}
+</script>
+
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { Combobox as BitsCombobox } from 'bits-ui';
@@ -46,6 +56,13 @@
 	// handler also forces `open`, the toggle flips the menu straight back shut
 	// and a real click on the caret appears to do nothing.
 	let focusFromTrigger = false;
+	// Touch: pointerdown toggles the menu, then the browser's compatibility
+	// click (and bits-ui's delayed outside-dismiss) lands on the same field
+	// and closes it again. Swallow that follow-up so a phone tap stays open.
+	// Also published on the module so a control outside this component (the
+	// Transactions "Filters" toggle) can ignore a click retargeted onto it
+	// when focus scrolled the page under a finger that started here.
+	let touchToggleAt = 0;
 	function inputEl() {
 		return container?.querySelector('input') as HTMLInputElement | null;
 	}
@@ -144,7 +161,17 @@
 		class="flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border border-input bg-surface px-2 py-1 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30 {className}"
 		bind:this={container}
 		onpointerdowncapture={(e) => {
-			focusFromTrigger = !!(e.target as HTMLElement).closest('[data-combobox-trigger]');
+			const fromTrigger = !!(e.target as HTMLElement).closest('[data-combobox-trigger]');
+			focusFromTrigger = fromTrigger;
+			if (e.pointerType !== 'touch') return;
+			// Any touch that starts in the field. Focusing the input can scroll
+			// the page while the finger is still down, and the compatibility
+			// click is then delivered to whatever is under the finger — on
+			// Transactions, the mobile Filters button.
+			lastFieldTouchAt = Date.now();
+			// Only the caret toggles on pointerdown. A touch on the field body
+			// still needs the click/focus handlers to open the menu.
+			if (fromTrigger) touchToggleAt = lastFieldTouchAt;
 		}}
 		onpointerup={() => {
 			// focus() from the trigger is synchronous. If it was a no-op, drop the
@@ -166,7 +193,9 @@
 			// The chevron is its own button. bits-ui toggles the menu on
 			// pointerdown, then focuses the input. A click that bubbles here
 			// must not force the menu back open after that toggle.
+			e.stopPropagation();
 			if ((e.target as HTMLElement).closest('button')) return;
+			if (Date.now() - touchToggleAt < 700) return;
 			focusFromTrigger = false;
 			inputEl()?.focus();
 			open = true;
@@ -196,7 +225,7 @@
 			placeholder={pills.length === 0 ? placeholder : ''}
 			oninput={(e) => (search = e.currentTarget.value)}
 			onfocus={() => {
-				if (focusFromTrigger) {
+				if (focusFromTrigger || Date.now() - touchToggleAt < 700) {
 					focusFromTrigger = false;
 					return;
 				}
@@ -221,6 +250,11 @@
 			style="width: {fieldWidth}px"
 			customAnchor={container ?? null}
 			sideOffset={4}
+			onInteractOutside={(e) => {
+				// The caret's touch pointerdown is "outside" the portaled list.
+				// bits-ui waits for the compatibility click, then closes.
+				if (Date.now() - touchToggleAt < 700) e.preventDefault();
+			}}
 		>
 			{#if filtered.length === 0 && !canCreate}
 				<span class="block px-3 py-2 text-sm text-muted-foreground">No results</span>

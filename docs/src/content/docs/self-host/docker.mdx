@@ -51,7 +51,7 @@ The compose file sets `GALENE_COOKIE_SECURE: "0"` for plain-HTTP self-hosting (L
 
 ## Checking the running version
 
-- **In the app** — Settings → About (version, git commit, build date, check-for-updates link); also on the login page.
+- **In the app** — Settings → About (version, git commit, build date, check-for-updates link); also on the login page. The Account menu (and the mobile nav user block) shows `v{version} ({short commit})` under the email.
 - **HTTP** — `curl -s http://localhost:3000/version` → `{"name":"galene","version":"…","commit":"…","built_at":"…"}` (no authentication).
 - **Image labels** — `docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' <image>`.
 

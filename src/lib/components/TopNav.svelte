@@ -3,6 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import DropdownMenu from '$lib/components/ui/DropdownMenu.svelte';
+	import { profileVersionLabel } from '$lib/version';
 	import BrandMark from './BrandMark.svelte';
 	import ThemePicker from './ThemePicker.svelte';
 	import type { AppNotification, Branding, NotificationKind, Theme, User } from '$lib/types';
@@ -279,6 +280,7 @@
 						{/if}
 					</p>
 					<p class="truncate text-xs text-muted-foreground">{user.email}</p>
+					<p class="truncate text-xs text-muted-foreground">{profileVersionLabel()}</p>
 				</div>
 				<div class="my-1 border-t border-border"></div>
 				<form method="POST" action="/login?/logout">
@@ -367,6 +369,7 @@
 						{/if}
 					</p>
 					<p class="truncate text-xs text-muted-foreground">{user.email}</p>
+					<p class="truncate text-xs text-muted-foreground">{profileVersionLabel()}</p>
 				</div>
 				<form method="POST" action="/login?/logout">
 					<button

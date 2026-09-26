@@ -25,9 +25,20 @@ export function shortCommit(): string {
 	return gitCommit.slice(0, 7);
 }
 
-/** "0.1 (abc1234)" — the compact form shown in the UI. */
+/** "0.1 (abc1234)" — the compact form shown in the UI (login footer). */
 export function versionLabel(): string {
 	return gitCommit ? `${appVersion} (${shortCommit()})` : appVersion;
+}
+
+/** "v0.3 (abc1234)" — Profile menu line. Omits the commit when it is unknown. */
+export function formatProfileVersion(version: string, commit: string): string {
+	const short = commit.slice(0, 7);
+	return short ? `v${version} (${short})` : `v${version}`;
+}
+
+/** Profile / Account menu: leading v plus short commit when the build has one. */
+export function profileVersionLabel(): string {
+	return formatProfileVersion(appVersion, gitCommit);
 }
 
 /** The full payload served by GET /version and the galene_version MCP tool. */

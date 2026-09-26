@@ -1104,7 +1104,8 @@ export function currentPeriodBounds(period: Budget['period'], ref: Date = new Da
 	if (period === 'year') {
 		return { from: toISO(y, 1, 1), to: toISO(y + 1, 1, 1) };
 	}
-	const fromD = new Date(Date.UTC(y, m - 1, 1 - ((ref.getDay() + 6) % 7)));
+	const d = ref.getDate();
+	const fromD = new Date(Date.UTC(y, m - 1, d - ((ref.getDay() + 6) % 7)));
 	const toD = new Date(fromD.getTime() + 7 * 86400000);
 	return {
 		from: toISO(fromD.getUTCFullYear(), fromD.getUTCMonth() + 1, fromD.getUTCDate()),

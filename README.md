@@ -18,11 +18,21 @@
 
 ## What Galene is
 
-Galene is a self-hostable personal finance app. You connect bank accounts (or enter them by hand), categorize and tag transactions, set budgets, and watch cashflow and trends.
+Galene is a self-hostable personal finance app. You connect bank accounts (or enter them by hand), categorize and tag transactions, set budgets, watch cashflow and trends, and share a read-only view with an advisor.
 
 It values **privacy by default** (your SQLite database on your host), **clarity over clutter**, and **features you can verify**: opening balances, transfer categories that stay out of income/expense reports, optional TOTP, backups, and a read-only API/MCP for scripts and assistants.
 
-**Highlights:** multi-account transactions · CSV import and export · budgets & calendar expectations · cashflow & trends · SimpleFIN / Plaid / demo sync · per-user settings and admin tools · Docker/Podman or from-source installs.
+**Highlights:**
+
+- Multi-account transactions, categories, tags, budgets, calendar expectations, cashflow, and trends (budget line and bar drill-down)
+- CSV import and export on the same columns; transaction filters include empty fields and keep their menus
+- Bank sync via SimpleFIN, Plaid, or the demo bank
+- Settings as a searchable card grid; the theme you pick stays across refresh and sign-out
+- Installable on a phone
+- Advisor access: a frozen Accountant Pack, or a read-only Viewer
+- Read-only API, and MCP over stdio or HTTP with an API token
+- Account menu shows the app version and commit
+- Docker, Podman, or from source
 
 ## Getting started
 

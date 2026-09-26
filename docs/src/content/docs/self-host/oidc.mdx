@@ -1,0 +1,70 @@
+---
+title: Single sign-on (OIDC)
+description: Optional app-native OpenID Connect with Authentik or another OIDC provider.
+---
+
+Galene can offer **Continue with SSO** on the sign-in page. The browser goes to your identity provider, then returns to Galene. Galene creates its own session cookie. The identity provider does not sit in front of the app.
+
+This is **app-native OIDC**. Reverse-proxy forward-auth (Authentik outpost, oauth2-proxy, and similar) is a different design and is not the household path.
+
+Examples below use `https://galene.example` for the app and `https://auth.example` for the identity provider.
+
+## What you get
+
+- Password and authenticator-app MFA stay available when mode is **Optional** (the default).
+- **Required** makes SSO the primary button. Local password remains behind **Use local password**.
+- An existing Galene user is matched by email (case-insensitive). An unknown email shows a calm error. Galene does not create a user from the identity provider.
+- **Sign out** clears the Galene session only. It does not sign the browser out of the identity provider.
+
+Take a [backup](/self-host/backups/) before upgrading an image that includes this schema change.
+
+## Authentik
+
+Step-by-step provider setup, the Settings field map, and callback troubleshooting are on [Authentik (OIDC)](/self-host/oidc-authentik/).
+
+Short version: create an OAuth2/OpenID provider, set the redirect URI to `https://galene.example/auth/oidc/callback`, and copy the issuer, client ID, and client secret into Settings → Security.
+
+## Galene fields
+
+An administrator opens **Settings → Security → Single sign-on (OIDC)**:
+
+| Field | Example |
+| --- | --- |
+| Enable | On, when you want **Continue with SSO** |
+| Issuer URL | `https://auth.example/application/o/galene/` |
+| Client ID | value from the provider |
+| Client secret | value from the provider (masked after save; Show / Hide) |
+| Scopes | `openid profile email` |
+| Mode | Optional (default) or Required |
+| User mapping | Match by email. Create-on-first-login is off. |
+| Redirect URI | Read-only. Copy into the provider. |
+
+**Test connection** loads the issuer’s `/.well-known/openid-configuration` and checks the client against the token endpoint. A provider that does not allow the client-credentials grant can still report success when discovery works and the token endpoint recognizes the client.
+
+The same issuer URL works for any generic OIDC provider that publishes discovery and returns an email claim. Authentik is the provider these steps were written for.
+
+## Environment variables
+
+A non-empty `GALENE_OIDC_*` variable overrides the matching Settings field at runtime. The database copy remains, so clearing the variable falls back to what was saved in Settings.
+
+| Variable | Overrides |
+| --- | --- |
+| `GALENE_OIDC_ENABLED` | `1` / `0` (and the usual true/false aliases) |
+| `GALENE_OIDC_MODE` | `optional` or `required` |
+| `GALENE_OIDC_ISSUER` | Issuer URL |
+| `GALENE_OIDC_CLIENT_ID` | Client ID |
+| `GALENE_OIDC_CLIENT_SECRET` | Client secret (not shown back in Settings) |
+| `GALENE_OIDC_SCOPES` | Scope string |
+
+Prefer Settings for a household install. Use the environment when the secret should stay out of the database.
+
+Behind TLS, keep [cookie and proxy settings](/self-host/reverse-proxy/) as you already do (`GALENE_COOKIE_SECURE`, `PROTOCOL_HEADER`). The SSO session cookie uses the same flags as a password session. The public origin Galene builds for the redirect URI comes from those proxy headers.
+
+## Sign-in
+
+1. Create the Galene user first (Settings → Users, or the first-run account) with the same email the identity provider will send.
+2. Enable Optional, save, and test the connection.
+3. Sign out. On the sign-in page, use **Continue with SSO**.
+4. After the identity provider, Galene shows **Welcome back**, then the home page. The account menu says **Signed in via SSO**.
+
+If the email is not a Galene user, the callback explains that and offers **Back to sign in**. No new user row is created.

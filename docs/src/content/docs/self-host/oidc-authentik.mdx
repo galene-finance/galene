@@ -1,0 +1,59 @@
+---
+title: Authentik (OIDC)
+description: Connect Authentik as an app-native OpenID Connect provider for Galene.
+---
+
+Galene redirects the browser to Authentik, then Authentik returns to `https://galene.example/auth/oidc/callback`. Galene creates its own session cookie. Authentik is the identity provider for sign-in. It does not replace the app with reverse-proxy forward-auth.
+
+Examples use `https://galene.example` for the app and `https://auth.example` for Authentik. The same Settings fields work for another OIDC provider that publishes discovery and an email claim — see [Single sign-on (OIDC)](/self-host/oidc/).
+
+Take a [backup](/self-host/backups/) before upgrading an image that includes this schema change.
+
+## Authentik provider
+
+1. Create an **OAuth2/OpenID Provider** and an application. A slug such as `galene` is enough.
+2. Set the redirect URI to exactly:
+
+   `https://galene.example/auth/oidc/callback`
+
+   The live value is also on Galene → Settings → Security (your public origin plus `/auth/oidc/callback`). Behind TLS, the origin comes from the [reverse proxy](/self-host/reverse-proxy/) headers (`PROTOCOL_HEADER`, `HOST_HEADER`).
+3. Include scopes `openid`, `profile`, and `email`. The email claim must match an existing Galene user.
+4. Copy the provider’s **OpenID Configuration Issuer**, client ID, and client secret.
+
+## Galene fields
+
+An administrator opens **Settings → Security → Single sign-on (OIDC)**:
+
+| Field | What to enter |
+| --- | --- |
+| Enable | On, to show **Continue with SSO** |
+| Issuer URL | `https://auth.example/application/o/galene/` |
+| Client ID | From the Authentik provider |
+| Client secret | From the Authentik provider. Masked after save; Show / Hide while editing. Leave blank on a later save to keep the stored secret. |
+| Scopes | `openid profile email` |
+| Mode | **Optional** (default). Password and authenticator-app MFA stay on the sign-in page. **Required** makes SSO primary and leaves local password behind **Use local password**. |
+| User mapping | Match by email. Galene does not create a user on first login. |
+| Redirect URI | Read-only. Copy it into Authentik. |
+
+**Test connection** loads `/.well-known/openid-configuration` and checks the client at the token endpoint. Authentik often has the client-credentials grant turned off. The test still succeeds when discovery works and the token endpoint recognizes the client.
+
+A non-empty `GALENE_OIDC_*` variable overrides the matching field. See [Environment variables](/reference/environment-variables/).
+
+## Sign-in
+
+1. Create the Galene user first (the first-run account, or Settings → Users) with the same email Authentik will send.
+2. Save Optional mode and run **Test connection**.
+3. Sign out. On the sign-in page, choose **Continue with SSO**. The hint reads **via Authentik** when the issuer URL contains `authentik`.
+4. Galene shows **Welcome back**, then home. The account menu says **Signed in via SSO**. **Sign out** clears the Galene session only. It does not sign the browser out of Authentik.
+
+## Troubleshooting
+
+**Access denied.** Authentik did not approve the sign-in (cancelled, or the user is not allowed on the application). Galene shows **Access denied** and **Back to sign in**. No session is created.
+
+**Email doesn’t match an existing account.** Authentik returned an email that is not a Galene user. Ask an admin to create that user, then try again. Galene does not insert a row.
+
+**Not provisioned.** SSO is on and automatic account creation is off (always, in this version), or the provider marked the email unverified. Create the Galene user with the Authentik email.
+
+**Discovery failed.** The Issuer URL should be the OpenID Configuration Issuer, without a trailing `/.well-known/openid-configuration`. Galene must be able to open that URL from the app host.
+
+**Redirect mismatch.** The URI registered in Authentik must match the Redirect URI field, including `https` and the host the browser uses.

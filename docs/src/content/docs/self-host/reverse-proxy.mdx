@@ -15,6 +15,8 @@ There is deliberately no reverse-proxy service in the compose file — the app l
 
 Galene is a standard SvelteKit app (server-rendered pages, a REST API, polling for updates) — no websockets, so no `Upgrade`/`Connection` forwarding is required.
 
+Single sign-on, when enabled, is app-native: Galene redirects to the identity provider and sets its own session cookie. Do not put Authentik forward-auth or oauth2-proxy in front of the app for that flow. See [Single sign-on (OIDC)](/self-host/oidc/). The redirect URI uses the public origin these proxy headers reconstruct.
+
 ### Why adapter proxy env (`PROTOCOL_HEADER` / `HOST_HEADER`)
 
 Behind a TLS-terminating proxy the container only sees plain HTTP. The Bun adapter (`adapters/bun/src/handler.js`) rebuilds the public request origin from headers **only when you name those headers**:

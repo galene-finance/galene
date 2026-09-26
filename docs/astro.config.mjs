@@ -32,6 +32,8 @@ export default defineConfig({
             { label: 'Podman (compose & quadlets)', slug: 'self-host/podman' },
             { label: 'From source', slug: 'self-host/from-source' },
             { label: 'Reverse proxy', slug: 'self-host/reverse-proxy' },
+            { label: 'Single sign-on (OIDC)', slug: 'self-host/oidc' },
+            { label: 'Authentik (OIDC)', slug: 'self-host/oidc-authentik' },
             { label: 'Backups', slug: 'self-host/backups' },
           ],
         },

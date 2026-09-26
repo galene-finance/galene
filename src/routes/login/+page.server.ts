@@ -21,6 +21,7 @@ import {
 } from '$lib/server/mfa/mfa';
 import { seedDemoData } from '$lib/server/demoData';
 import { ensureDefaultTransferCategories } from '$lib/server/finance';
+import { publicOidcLogin } from '$lib/server/oidc';
 import { canPublicSignup } from '$lib/server/users';
 import { versionLabel } from '$lib/version';
 
@@ -30,10 +31,12 @@ export function load({ locals, cookies }) {
 	// page shows the second step instead of the password form.
 	const mfaToken = cookies.get(mfaCookieName());
 	const challenge = mfaToken ? getLoginChallenge(mfaToken) : null;
+	const oidc = publicOidcLogin();
 	return {
 		setup: canPublicSignup(),
 		version: versionLabel(),
-		mfa: challenge ? { email: challenge.email } : null
+		mfa: challenge ? { email: challenge.email } : null,
+		oidc
 	};
 }
 

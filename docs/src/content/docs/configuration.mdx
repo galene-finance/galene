@@ -14,4 +14,6 @@ Galene is configured with environment variables. Everything has a default; behin
 | `PROTOCOL_HEADER` / `HOST_HEADER` | unset | Bun adapter proxy headers — set `PROTOCOL_HEADER=x-forwarded-proto` and usually `HOST_HEADER=host` behind TLS. See [Reverse proxy](/self-host/reverse-proxy/). |
 | `GALENE_ALLOW_EPHEMERAL_DATA` | unset | `1` disables the startup check that the data directory is a mounted volume. Throwaway containers only. |
 
-The full table, including the MCP image's variables, is in [Environment variables](/reference/environment-variables/). How `PORT` and the data directory behave in each deployment: [Docker & Compose](/self-host/docker/), [Podman](/self-host/podman/), [From source](/self-host/from-source/).
+Single sign-on is configured in Settings → Security. Optional `GALENE_OIDC_*` variables override those fields when set — see [Single sign-on (OIDC)](/self-host/oidc/), [Authentik (OIDC)](/self-host/oidc-authentik/), and the full table in [Environment variables](/reference/environment-variables/).
+
+How `PORT` and the data directory behave in each deployment: [Docker & Compose](/self-host/docker/), [Podman](/self-host/podman/), [From source](/self-host/from-source/).

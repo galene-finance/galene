@@ -571,8 +571,21 @@ export function getTransactions(userId: number, f: TransactionFilters): Transact
 		params.push(...f.accountIds);
 	}
 	if (f.categoryIds.length > 0) {
-		where.push(`t.category_id IN (${f.categoryIds.map(() => '?').join(',')})`);
-		params.push(...f.categoryIds);
+		// Parent category, or a split allocation in one of the selected categories.
+		// Unsplit rows use t.category_id; split rows use transaction_splits (same as categoryAmountInPeriod).
+		const placeholders = f.categoryIds.map(() => '?').join(',');
+		where.push(
+			`(
+				(t.category_id IN (${placeholders}) AND NOT EXISTS (
+					SELECT 1 FROM transaction_splits s0 WHERE s0.transaction_id = t.id
+				))
+				OR EXISTS (
+					SELECT 1 FROM transaction_splits s
+					WHERE s.transaction_id = t.id AND s.category_id IN (${placeholders})
+				)
+			)`
+		);
+		params.push(...f.categoryIds, ...f.categoryIds);
 	}
 	if (f.tagIds.length > 0) {
 		where.push(

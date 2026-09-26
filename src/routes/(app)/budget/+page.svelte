@@ -9,6 +9,7 @@
 	import Input from '$lib/components/ui/Input.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
 	import { toastFormResult } from '$lib/toasts';
+	import { inclusiveEnd } from '$lib/trendsChart';
 	import { formatMoney, periodLabel } from '$lib/utils';
 	import type { Budget, Category } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
@@ -103,6 +104,15 @@
 		(document.getElementById(`budget-delete-${b.id}`) as HTMLFormElement | null)?.requestSubmit();
 	}
 
+	/** Transactions list for the same category and half-open period as Spent. date_to is inclusive. */
+	function spentTransactionsHref(b: BudgetRow): string {
+		const params = new URLSearchParams();
+		params.set('category', String(b.category_id));
+		params.set('date_from', b.from);
+		params.set('date_to', inclusiveEnd(b.to));
+		return `/transactions?${params.toString()}`;
+	}
+
 	// Toast the latest action result (replaces the old top-of-page status block).
 	let lastForm = untrack(() => form);
 	$effect(() => {
@@ -160,7 +170,15 @@
 							<td class="whitespace-nowrap px-3 py-2.5 capitalize text-muted-foreground">{b.period}</td>
 							<td class="whitespace-nowrap px-3 py-2.5 text-right">{formatMoney(b.limit_cents)}</td>
 							<td class="whitespace-nowrap px-3 py-2.5 text-right">
-								<span class="font-medium {over ? 'text-destructive' : ''}">{formatMoney(b.spentCents)}</span>
+								<a
+									href={spentTransactionsHref(b)}
+									class="font-medium underline decoration-current/40 underline-offset-2 hover:decoration-current {over
+										? 'text-destructive'
+										: 'text-foreground hover:text-primary'}"
+									aria-label="Spent {formatMoney(b.spentCents)} transactions"
+								>
+									{formatMoney(b.spentCents)}
+								</a>
 								<span class="block text-xs text-muted-foreground">
 									{periodLabel(b.period, b.from, b.to)}
 								</span>

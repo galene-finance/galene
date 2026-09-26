@@ -7,6 +7,8 @@ Release), which commits it and tags `vX.Y`.
 
 ## [Unreleased]
 
+- Docs: README Highlights and the docs introduction name shipped capabilities (advisor access, settings hub, installable app, theme persist, transaction filters, trends drill-down, HTTP MCP, CSV export, account-menu version).
+
 ## [0.1]
 
 Initial public tree under [`galene-finance/galene`](https://github.com/galene-finance/galene).

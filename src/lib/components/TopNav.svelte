@@ -280,6 +280,13 @@
 						{/if}
 					</p>
 					<p class="truncate text-xs text-muted-foreground">{user.email}</p>
+					{#if user.authMethod === 'oidc'}
+						<p class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+							<span>Signed in via SSO</span>
+							<span class="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">{user.idpLabel || 'SSO'}</span>
+						</p>
+						<p class="mt-1 text-[11px] leading-snug text-muted-foreground">Sign out clears your Galene session only.</p>
+					{/if}
 					<p class="truncate text-xs text-muted-foreground">{profileVersionLabel()}</p>
 				</div>
 				<div class="my-1 border-t border-border"></div>
@@ -369,6 +376,12 @@
 						{/if}
 					</p>
 					<p class="truncate text-xs text-muted-foreground">{user.email}</p>
+					{#if user.authMethod === 'oidc'}
+						<p class="mt-1 text-xs text-muted-foreground">
+							Signed in via SSO
+							<span class="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">{user.idpLabel || 'SSO'}</span>
+						</p>
+					{/if}
 					<p class="truncate text-xs text-muted-foreground">{profileVersionLabel()}</p>
 				</div>
 				<form method="POST" action="/login?/logout">

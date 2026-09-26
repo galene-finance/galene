@@ -48,13 +48,22 @@ export function verifyPassword(password: string, stored: string): boolean {
  * Create a session. Only the salted hash and a one-way hint are stored; the
  * raw token is returned for the cookie and never written to the database.
  */
-export function createSession(userId: number): string {
+export interface SessionAuth {
+	method?: 'password' | 'oidc';
+	idpLabel?: string | null;
+}
+
+export function createSession(userId: number, auth: SessionAuth = {}): string {
 	const token = randomBytes(32).toString('hex');
 	const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 3600 * 1000).toISOString();
 	const { hint, salt, hash } = hashToken(token);
+	const method = auth.method ?? 'password';
+	const idpLabel = method === 'oidc' ? (auth.idpLabel ?? null) : null;
 	db()
-		.query('INSERT INTO sessions (token_hint, user_id, salt, token_hash, expires_at) VALUES (?, ?, ?, ?, ?)')
-		.run(hint, userId, salt, hash, expiresAt);
+		.query(
+			'INSERT INTO sessions (token_hint, user_id, salt, token_hash, expires_at, auth_method, idp_label) VALUES (?, ?, ?, ?, ?, ?, ?)'
+		)
+		.run(hint, userId, salt, hash, expiresAt, method, idpLabel);
 	return token;
 }
 
@@ -126,14 +135,31 @@ export function clearMfaCookie(cookies: Cookies) {
 export function getUserByToken(token: string): User | null {
 	const row = db()
 		.query(
-			`SELECT u.id, u.name, u.email, u.is_admin, s.salt, s.token_hash
+			`SELECT u.id, u.name, u.email, u.is_admin, s.salt, s.token_hash, s.auth_method, s.idp_label
 			 FROM sessions s
 			 JOIN users u ON u.id = s.user_id
 			 WHERE s.token_hint = ? AND s.expires_at > datetime('now')`
 		)
 		.get(tokenHint(token)) as
-		| { id: number; name: string; email: string; is_admin: number; salt: string; token_hash: string }
+		| {
+				id: number;
+				name: string;
+				email: string;
+				is_admin: number;
+				salt: string;
+				token_hash: string;
+				auth_method: string | null;
+				idp_label: string | null;
+		  }
 		| undefined;
 	if (!row || !verifyToken(token, row.salt, row.token_hash)) return null;
-	return { id: row.id, name: row.name, email: row.email, is_admin: row.is_admin };
+	const authMethod = row.auth_method === 'oidc' ? 'oidc' : 'password';
+	return {
+		id: row.id,
+		name: row.name,
+		email: row.email,
+		is_admin: row.is_admin,
+		authMethod,
+		idpLabel: authMethod === 'oidc' ? row.idp_label : null
+	};
 }

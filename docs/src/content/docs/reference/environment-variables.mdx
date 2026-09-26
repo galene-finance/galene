@@ -18,6 +18,12 @@ description: Every environment variable the app and MCP images read.
 | `ADDRESS_HEADER` | unset | Optional Bun adapter: client IP header (e.g. `x-forwarded-for`) for logging / rate limits. |
 | `XFF_DEPTH` | `1` | Optional Bun adapter: which hop from the end of `X-Forwarded-For` is the client when `ADDRESS_HEADER=x-forwarded-for`. |
 | `GALENE_ALLOW_EPHEMERAL_DATA` | unset | `1` disables the startup volume check. Only for throwaway/test containers. |
+| `GALENE_OIDC_ENABLED` | unset | `1`/`0` overrides Settings → Security single sign-on on/off. Unset uses the saved toggle (default off). |
+| `GALENE_OIDC_MODE` | unset | `optional` (default) or `required`. Overrides the Settings mode when set. |
+| `GALENE_OIDC_ISSUER` | unset | Issuer URL. Overrides the Settings issuer when non-empty. |
+| `GALENE_OIDC_CLIENT_ID` | unset | OIDC client id. Overrides Settings when non-empty. |
+| `GALENE_OIDC_CLIENT_SECRET` | unset | OIDC client secret. Overrides Settings when non-empty and is not shown back in the form. |
+| `GALENE_OIDC_SCOPES` | unset | Space-separated scopes. Overrides Settings when non-empty. Default in Settings is `openid profile email`. |
 
 ## MCP image
 
@@ -28,4 +34,4 @@ description: Every environment variable the app and MCP images read.
 | `GALENE_MCP_PORT` | unset | Port for the long-running HTTP endpoint. Unset keeps stdio. |
 | `GALENE_MCP_HOST` | `0.0.0.0` | Bind address when `GALENE_MCP_PORT` is set. |
 
-When to set `GALENE_COOKIE_SECURE` and the adapter proxy headers (`PROTOCOL_HEADER`, `HOST_HEADER`, …): [Reverse proxy](/self-host/reverse-proxy/). Outside the container the default `GALENE_DATA_DIR` is `./data` — see [From source](/self-host/from-source/).
+When to set `GALENE_COOKIE_SECURE` and the adapter proxy headers (`PROTOCOL_HEADER`, `HOST_HEADER`, …): [Reverse proxy](/self-host/reverse-proxy/). A non-empty `GALENE_OIDC_*` variable overrides the matching Settings → Security field; see [Single sign-on (OIDC)](/self-host/oidc/). Outside the container the default `GALENE_DATA_DIR` is `./data` — see [From source](/self-host/from-source/).

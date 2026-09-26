@@ -11,6 +11,10 @@ export interface User {
 	is_admin: number;
 	/** Present on a magic-link advisor session. Owner sessions omit this. */
 	role?: 'owner' | 'viewer';
+	/** How this session was opened. Omitted on API bearer and viewer sessions. */
+	authMethod?: 'password' | 'oidc';
+	/** Short IdP label when authMethod is oidc (e.g. Authentik). */
+	idpLabel?: string | null;
 }
 
 export interface Account {

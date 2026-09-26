@@ -739,7 +739,42 @@ CREATE TABLE IF NOT EXISTS viewer_sessions (
 	token_hash TEXT NOT NULL,
 	expires_at TEXT NOT NULL
 );
-`
+`,
+{
+	// Phase: optional app-native OIDC (issue #98). Household config is one row.
+	// Sessions record how they were opened so the account menu can say SSO.
+	// Pending authorize state is short-lived (PKCE + nonce); the verifier stays
+	// server-side. Column adds are guarded because the migrate harness rewinds
+	// user_version and would otherwise re-run ALTER on an already-migrated file.
+	sql: `
+CREATE TABLE IF NOT EXISTS oidc_config (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	enabled INTEGER NOT NULL DEFAULT 0,
+	mode TEXT NOT NULL DEFAULT 'optional' CHECK (mode IN ('optional','required')),
+	issuer TEXT NOT NULL DEFAULT '',
+	client_id TEXT NOT NULL DEFAULT '',
+	client_secret TEXT NOT NULL DEFAULT '',
+	scopes TEXT NOT NULL DEFAULT 'openid profile email',
+	updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS oidc_states (
+	state TEXT NOT NULL PRIMARY KEY,
+	nonce TEXT NOT NULL,
+	code_verifier TEXT NOT NULL,
+	expires_at TEXT NOT NULL
+);
+`,
+	after(database) {
+		const cols = database.query('PRAGMA table_info(sessions)').all() as { name: string }[];
+		const names = new Set(cols.map((c) => c.name));
+		if (!names.has('auth_method')) {
+			database.exec(`ALTER TABLE sessions ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'password'`);
+		}
+		if (!names.has('idp_label')) {
+			database.exec(`ALTER TABLE sessions ADD COLUMN idp_label TEXT`);
+		}
+	}
+}
 ];
 
 /**

@@ -16,6 +16,7 @@
 			| {
 					ok?: boolean;
 					error?: string;
+					oidcError?: string;
 					message?: string;
 					secret?: string;
 					qrDataUrl?: string;
@@ -25,6 +26,24 @@
 		data: {
 			totp: { confirmedAt: string | null } | null;
 			backupCodes: { total: number; unused: number };
+			isAdmin: boolean;
+			oidc: {
+				enabled: boolean;
+				mode: 'optional' | 'required';
+				issuer: string;
+				clientId: string;
+				secretConfigured: boolean;
+				secretMasked: string;
+				secretFromEnv: boolean;
+				enabledFromEnv: boolean;
+				modeFromEnv: boolean;
+				issuerFromEnv: boolean;
+				clientIdFromEnv: boolean;
+				scopesFromEnv: boolean;
+				scopes: string;
+				redirectUri: string;
+				providerLabel: string;
+			} | null;
 		};
 	} = $props();
 
@@ -33,6 +52,34 @@
 	let disableCode = $state('');
 	let copied = $state(false);
 	let copiedCodes = $state(false);
+	let copiedRedirect = $state(false);
+	let secretVisible = $state(false);
+	let oidcEnabled = $state(false);
+	let oidcMode = $state<'optional' | 'required'>('optional');
+	let oidcIssuer = $state('');
+	let oidcClientId = $state('');
+	let oidcSecret = $state('');
+	let oidcScopes = $state('openid profile email');
+
+	$effect(() => {
+		if (!data.oidc) return;
+		oidcEnabled = data.oidc.enabled;
+		oidcMode = data.oidc.mode;
+		oidcIssuer = data.oidc.issuer;
+		oidcClientId = data.oidc.clientId;
+		oidcScopes = data.oidc.scopes;
+	});
+
+	async function copyRedirect() {
+		if (!data.oidc) return;
+		const ok = await copyText(data.oidc.redirectUri);
+		if (!ok) {
+			toast('Could not copy — select the redirect URI manually', 'error');
+			return;
+		}
+		copiedRedirect = true;
+		setTimeout(() => (copiedRedirect = false), 2000);
+	}
 
 	async function copySecret() {
 		if (!form?.secret) return;
@@ -63,7 +110,8 @@
 		lastForm = form;
 		copied = false;
 		copiedCodes = false;
-		toastFormResult(form);
+		if (form?.oidcError) toast(form.oidcError, 'error');
+		else toastFormResult(form);
 	});
 </script>
 
@@ -174,4 +222,104 @@
 			{/if}
 		</div>
 	</section>
+
+	{#if data.isAdmin && data.oidc}
+		<section class="rounded-lg border border-border bg-surface">
+			<div class="border-b border-border px-4 py-3">
+				<h2 class="font-medium">Single sign-on (OIDC)</h2>
+				<p class="text-sm text-muted-foreground">
+					Connect Authentik or another OIDC provider. Galene redirects for login and sets its own session cookie on return.
+				</p>
+			</div>
+			<form method="POST" action="?/save-oidc" use:enhance={() => ({ update }) => update({ reset: false })} class="flex flex-col gap-4 p-4">
+				<label class="flex items-center justify-between gap-3 text-sm">
+					<span>Show Continue with SSO on the sign-in page</span>
+					<input type="checkbox" name="enabled" value="1" bind:checked={oidcEnabled} class="size-4 accent-primary" />
+				</label>
+				{#if data.oidc.enabledFromEnv}
+					<p class="text-xs text-muted-foreground">Enabled is set by GALENE_OIDC_ENABLED and overrides this checkbox at runtime.</p>
+				{/if}
+
+				<Field label="Issuer URL" hint="From Authentik: Application → Provider → OpenID Configuration Issuer">
+					<Input type="url" name="issuer" bind:value={oidcIssuer} placeholder="https://auth.example/application/o/galene/" autocomplete="off" />
+				</Field>
+				<Field label="Client ID">
+					<Input type="text" name="client_id" bind:value={oidcClientId} autocomplete="off" />
+				</Field>
+				<Field
+					label="Client secret"
+					hint={data.oidc.secretFromEnv
+						? 'Set by GALENE_OIDC_CLIENT_SECRET. This field is not saved.'
+						: data.oidc.secretConfigured
+							? `Saved as ${data.oidc.secretMasked}. Leave blank to keep it.`
+							: 'Required when single sign-on is on.'}
+				>
+					<div class="flex items-center gap-2">
+						<Input
+							type={secretVisible ? 'text' : 'password'}
+							name="client_secret"
+							bind:value={oidcSecret}
+							autocomplete="off"
+							placeholder={data.oidc.secretConfigured ? 'Leave blank to keep current' : ''}
+							disabled={data.oidc.secretFromEnv}
+						/>
+						<Button type="button" variant="secondary" size="sm" onclick={() => (secretVisible = !secretVisible)}>
+							{secretVisible ? 'Hide' : 'Show'}
+						</Button>
+					</div>
+				</Field>
+				<Field label="Scopes" hint="Optional. Defaults are enough for household email matching.">
+					<Input type="text" name="scopes" bind:value={oidcScopes} autocomplete="off" />
+				</Field>
+
+				<fieldset class="flex flex-col gap-2">
+					<legend class="text-sm font-medium">Mode</legend>
+					<label class="flex items-start gap-2 text-sm">
+						<input type="radio" name="mode" value="optional" bind:group={oidcMode} class="mt-1" />
+						<span><span class="font-medium">Optional</span> <span class="text-muted-foreground">— password and MFA stay on the sign-in page.</span></span>
+					</label>
+					<label class="flex items-start gap-2 text-sm">
+						<input type="radio" name="mode" value="required" bind:group={oidcMode} class="mt-1" />
+						<span><span class="font-medium">Required</span> <span class="text-muted-foreground">— SSO is primary. Local password sits behind “Use local password”.</span></span>
+					</label>
+					<p class="text-xs text-muted-foreground">Optional is the default. Required is for a household that wants SSO first.</p>
+				</fieldset>
+
+				<div class="rounded-md border border-border bg-background p-3">
+					<p class="text-sm font-medium">User mapping</p>
+					<p class="mt-1 text-sm">
+						Match existing user by email
+						<span class="ml-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">Recommended</span>
+					</p>
+					<p class="mt-1 text-xs text-muted-foreground">
+						SSO users must already have a Galene account with the same email. Creating an account on first login is off.
+					</p>
+				</div>
+
+				<Field label="Redirect URI" hint="Paste this into the identity provider as an allowed redirect URI.">
+					<div class="flex items-center gap-2">
+						<Input type="text" readonly value={data.oidc.redirectUri} class="font-mono text-xs" />
+						<Button type="button" variant="secondary" size="sm" onclick={copyRedirect}>
+							{copiedRedirect ? 'Copied' : 'Copy'}
+						</Button>
+					</div>
+				</Field>
+
+				{#if form?.oidcError}
+					<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.oidcError}</p>
+				{/if}
+
+				<div class="flex flex-wrap gap-2">
+					<Button type="submit">Save</Button>
+					<Button type="submit" variant="secondary" formaction="?/test-oidc">Test connection</Button>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					App-native OIDC only. Forward-auth at the reverse proxy is out of scope for household v1.
+					{#if data.oidc.issuerFromEnv || data.oidc.clientIdFromEnv || data.oidc.scopesFromEnv || data.oidc.modeFromEnv}
+						A set GALENE_OIDC_* variable overrides the matching field here.
+					{/if}
+				</p>
+			</form>
+		</section>
+	{/if}
 </div>

@@ -13,6 +13,7 @@
  * applies only rows that passed validation at preview time.
  */
 import { randomBytes } from 'node:crypto';
+import { db } from '$lib/server/db';
 import {
 	getAccounts,
 	getCategories,
@@ -23,7 +24,11 @@ import {
 	saveTransaction,
 	type TransactionInput
 } from '$lib/server/finance';
+import { looksLikeOfx, ofxExternalId, parseOfx, type OfxTransaction } from '$lib/server/ofxImport';
 import { parseAmountToCents } from '$lib/utils';
+
+/** Manual OFX/QFX imports share the provider+external_id unique index with bank sync. */
+export const OFX_IMPORT_PROVIDER = 'ofx';
 
 export const CSV_IMPORT_TEMPLATE = `date,account,amount,merchant,notes,category,tags
 2026-01-15,Checking,-12.50,Coffee shop,Morning coffee,Coffee,Fun
@@ -54,6 +59,8 @@ export interface ImportPreviewRow {
 	willCreateAccount: boolean;
 	willCreateCategory: boolean;
 	willCreateTags: string[];
+	/** OFX/QFX only: this row matches a transaction already stored or earlier in the file. */
+	duplicate?: boolean;
 	/** Filled when status is ok */
 	parsed?: {
 		date: string;
@@ -66,6 +73,7 @@ export interface ImportPreviewRow {
 		categoryId: number | null;
 		categoryName: string | null;
 		tagNames: string[];
+		externalId: string | null;
 	};
 }
 
@@ -73,10 +81,13 @@ export interface ImportPreview {
 	id: string;
 	userId: number;
 	createdAt: number;
+	format: 'csv' | 'ofx';
 	options: ImportCreateOptions;
 	rows: ImportPreviewRow[];
 	okCount: number;
 	errorCount: number;
+	/** Ready rows that already exist (FITID or date+amount+payee). Not imported. */
+	skippedCount: number;
 	createAccountNames: string[];
 	createCategoryNames: string[];
 	createTagNames: string[];
@@ -345,27 +356,197 @@ export function buildImportPreview(
 				notes: notesRaw || null,
 				categoryId,
 				categoryName: categoryRaw || null,
-				tagNames
+				tagNames,
+				externalId: null
 			};
 		}
 		rows.push(previewRow);
 	}
 
+	return storePreview(userId, 'csv', options, rows, createAccountNames, createCategoryNames, createTagNames);
+}
+
+function storePreview(
+	userId: number,
+	format: 'csv' | 'ofx',
+	options: ImportCreateOptions,
+	rows: ImportPreviewRow[],
+	createAccountNames: Set<string>,
+	createCategoryNames: Set<string>,
+	createTagNames: Set<string>
+): ImportPreview {
 	const id = randomBytes(16).toString('hex');
 	const preview: ImportPreview = {
 		id,
 		userId,
 		createdAt: Date.now(),
+		format,
 		options,
 		rows,
-		okCount: rows.filter((x) => x.status === 'ok').length,
+		okCount: rows.filter((x) => x.status === 'ok' && !x.duplicate).length,
 		errorCount: rows.filter((x) => x.status === 'error').length,
+		skippedCount: rows.filter((x) => x.duplicate).length,
 		createAccountNames: [...createAccountNames],
 		createCategoryNames: [...createCategoryNames],
 		createTagNames: [...createTagNames]
 	};
 	previews.set(id, preview);
 	return preview;
+}
+
+interface ExistingTxn {
+	date: string;
+	amount_cents: number;
+	merchant: string | null;
+	external_id: string | null;
+	account_id: number;
+}
+
+function loadExisting(userId: number): ExistingTxn[] {
+	return db()
+		.query(
+			`SELECT date, amount_cents, merchant, external_id, account_id
+			 FROM transactions WHERE user_id = ?`
+		)
+		.all(userId) as ExistingTxn[];
+}
+
+function heuristicKey(date: string, signedCents: number, merchant: string, accountKey: string): string {
+	return `${accountKey}\u001f${date}\u001f${signedCents}\u001f${merchant.trim().toLowerCase()}`;
+}
+
+/**
+ * OFX/QFX upload. Account names come from the statement (BANKID + ACCTID) and
+ * follow the same create-if-missing rules as CSV. FITID dedupes first; rows
+ * without FITID use date + signed amount + payee + account.
+ */
+export function buildOfxImportPreview(
+	userId: number,
+	text: string,
+	options: ImportCreateOptions
+): ImportPreview | { error: string } {
+	prunePreviews();
+	const parsed = parseOfx(text);
+	if (parsed.error && parsed.transactions.length === 0) return { error: parsed.error };
+
+	const accounts = getAccounts(userId);
+	const accountByName = new Map(accounts.map((a) => [a.name.trim().toLowerCase(), a]));
+	const accountIdToKey = new Map<number, string>();
+	for (const account of accounts) {
+		accountIdToKey.set(account.id, account.name.trim().toLowerCase());
+	}
+	const existing = loadExisting(userId);
+	const seenFit = new Set(
+		existing.map((row) => row.external_id).filter((id): id is string => !!id)
+	);
+	const seenHeuristic = new Set(
+		existing.map((row) =>
+			heuristicKey(
+				row.date,
+				row.amount_cents,
+				row.merchant ?? '',
+				accountIdToKey.get(row.account_id) ?? String(row.account_id)
+			)
+		)
+	);
+
+	const rows: ImportPreviewRow[] = [];
+	const createAccountNames = new Set<string>();
+
+	for (const tx of parsed.transactions) {
+		const row = ofxPreviewRow(tx, options, accountByName, seenFit, seenHeuristic);
+		if (row.willCreateAccount) createAccountNames.add(row.account);
+		rows.push(row);
+	}
+
+	return storePreview(userId, 'ofx', options, rows, createAccountNames, new Set(), new Set());
+}
+
+function ofxPreviewRow(
+	tx: OfxTransaction,
+	options: ImportCreateOptions,
+	accountByName: Map<string, { id: number; name: string }>,
+	seenFit: Set<string>,
+	seenHeuristic: Set<string>
+): ImportPreviewRow {
+	const errors: string[] = [];
+	if (!tx.date) errors.push('posted date not recognized');
+	if (tx.amountCents == null || tx.amountCents === 0) {
+		errors.push('amount must be a non-zero number');
+	}
+	const type: 'expense' | 'income' = tx.amountCents != null && tx.amountCents < 0 ? 'expense' : 'income';
+
+	let accountId: number | null = null;
+	let willCreateAccount = false;
+	const account = accountByName.get(tx.accountName.toLowerCase());
+	if (account) {
+		accountId = account.id;
+	} else if (options.createAccounts) {
+		willCreateAccount = true;
+		// Caller collects names after the row is built.
+	} else {
+		errors.push(`no account named "${tx.accountName}" (enable Create missing accounts)`);
+	}
+
+	const externalId = ofxExternalId(tx);
+	const signed = tx.amountCents ?? 0;
+	const heuristic = tx.date ? heuristicKey(tx.date, signed, tx.merchant, tx.accountKey) : null;
+
+	let duplicate = false;
+	if (errors.length === 0) {
+		if (externalId && seenFit.has(externalId)) duplicate = true;
+		else if (!externalId && heuristic && seenHeuristic.has(heuristic)) duplicate = true;
+		if (!duplicate) {
+			if (externalId) seenFit.add(externalId);
+			if (heuristic) seenHeuristic.add(heuristic);
+		}
+	}
+
+	const status: ImportRowStatus = errors.length ? 'error' : 'ok';
+	const row: ImportPreviewRow = {
+		line: tx.line,
+		date: tx.dateRaw,
+		dateParsed: tx.date,
+		account: tx.accountName,
+		amount: tx.amountRaw,
+		merchant: tx.merchant,
+		notes: tx.notes,
+		category: '',
+		tags: '',
+		status,
+		errors,
+		willCreateAccount,
+		willCreateCategory: false,
+		willCreateTags: [],
+		duplicate
+	};
+	if (status === 'ok' && tx.date && tx.amountCents != null) {
+		row.parsed = {
+			date: tx.date,
+			accountId,
+			accountName: tx.accountName,
+			type,
+			amountCents: Math.abs(tx.amountCents),
+			merchant: tx.merchant || null,
+			notes: tx.notes || null,
+			categoryId: null,
+			categoryName: null,
+			tagNames: [],
+			externalId
+		};
+	}
+	return row;
+}
+
+/** Route a CSV or OFX/QFX upload into the shared preview store. */
+export function buildFileImportPreview(
+	userId: number,
+	text: string,
+	filename: string,
+	options: ImportCreateOptions
+): ImportPreview | { error: string } {
+	if (looksLikeOfx(text, filename)) return buildOfxImportPreview(userId, text, options);
+	return buildImportPreview(userId, text, options);
 }
 
 
@@ -392,7 +573,7 @@ export function commitImportPreview(
 	let skipped = 0;
 	let failed = 0;
 	for (const row of preview.rows) {
-		if (row.status !== 'ok' || !row.parsed) {
+		if (row.duplicate || row.status !== 'ok' || !row.parsed) {
 			skipped++;
 			continue;
 		}
@@ -404,6 +585,18 @@ export function commitImportPreview(
 					continue;
 				}
 				accountId = getOrCreateAccount(userId, row.parsed.accountName);
+			}
+
+			if (row.parsed.externalId) {
+				const clash = db()
+					.query(
+						'SELECT id FROM transactions WHERE user_id = ? AND provider = ? AND external_id = ?'
+					)
+					.get(userId, OFX_IMPORT_PROVIDER, row.parsed.externalId) as { id: number } | undefined;
+				if (clash) {
+					skipped++;
+					continue;
+				}
 			}
 
 			let categoryId = row.parsed.categoryId;
@@ -440,6 +633,11 @@ export function commitImportPreview(
 				tags: tagIds
 			};
 			saveTransaction(userId, input);
+			if (row.parsed.externalId && input.id) {
+				db()
+					.query('UPDATE transactions SET provider = ?, external_id = ? WHERE id = ? AND user_id = ?')
+					.run(OFX_IMPORT_PROVIDER, row.parsed.externalId, input.id, userId);
+			}
 			created++;
 		} catch {
 			failed++;

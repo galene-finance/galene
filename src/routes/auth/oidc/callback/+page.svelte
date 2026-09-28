@@ -2,7 +2,7 @@
 	import Title from '$lib/components/Title.svelte';
 
 	let { data }: {
-		data: { phase: 'welcome' | 'error' | 'pending'; title: string; body: string; providerLabel: string };
+		data: { phase: 'error' | 'pending'; title: string; body: string; providerLabel: string };
 	} = $props();
 
 	const link =
@@ -27,14 +27,9 @@
 			{#if data.phase === 'error'}
 				<h1 class="text-lg font-semibold tracking-tight">{data.title}</h1>
 				<p class="mt-2 text-sm text-muted-foreground">{data.body}</p>
-				<div class="mt-5">
+				<div class="mt-5 flex flex-col gap-3">
 					<a href="/login" class="{link} border border-border bg-surface text-foreground hover:bg-muted">Back to sign in</a>
-				</div>
-			{:else if data.phase === 'welcome'}
-				<h1 class="text-lg font-semibold tracking-tight">{data.title}</h1>
-				<p class="mt-2 text-sm text-muted-foreground">{data.body}</p>
-				<div class="mt-5">
-					<a href="/" class="{link} bg-primary text-primary-foreground hover:opacity-90">Continue</a>
+					<a href="/login?local=1" class="text-xs text-muted-foreground hover:text-foreground">Use local password</a>
 				</div>
 			{:else}
 				<h1 class="text-lg font-semibold tracking-tight">{data.title}</h1>

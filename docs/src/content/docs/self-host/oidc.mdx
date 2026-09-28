@@ -12,7 +12,7 @@ Examples below use `https://galene.example` for the app and `https://auth.exampl
 ## What you get
 
 - Password and authenticator-app MFA stay available when mode is **Optional** (the default).
-- **Required** makes SSO the primary button. Local password remains behind **Use local password**.
+- **Required** sends `/login` straight to the identity provider. Local password stays at `/login?local=1`. Callback errors include a **Use local password** link to that address.
 - An existing Galene user is matched by email (case-insensitive). An unknown email shows a calm error. Galene does not create a user from the identity provider.
 - **Sign out** clears the Galene session only. It does not sign the browser out of the identity provider.
 
@@ -30,12 +30,12 @@ An administrator opens **Settings → Security → Single sign-on (OIDC)**:
 
 | Field | Example |
 | --- | --- |
-| Enable | On, when you want **Continue with SSO** |
+| Enable | On. Optional shows **Continue with SSO**. Required starts SSO from `/login`. |
 | Issuer URL | `https://auth.example/application/o/galene/` |
 | Client ID | value from the provider |
 | Client secret | value from the provider (masked after save; Show / Hide) |
 | Scopes | `openid profile email` |
-| Mode | Optional (default) or Required |
+| Mode | Optional (default) or Required. Required auto-starts SSO. `/login?local=1` keeps the password form. |
 | User mapping | Match by email. Create-on-first-login is off. |
 | Redirect URI | Read-only. Copy into the provider. |
 
@@ -64,7 +64,7 @@ Behind TLS, keep [cookie and proxy settings](/self-host/reverse-proxy/) as you a
 
 1. Create the Galene user first (Settings → Users, or the first-run account) with the same email the identity provider will send.
 2. Enable Optional, save, and test the connection.
-3. Sign out. On the sign-in page, use **Continue with SSO**.
-4. After the identity provider, Galene shows **Welcome back**, then the home page. The account menu says **Signed in via SSO**.
+3. Sign out. In **Optional** mode, use **Continue with SSO** on the sign-in page. In **Required** mode, opening `/login` starts the identity provider on its own. Open `/login?local=1` for the password form, or use **Use local password** on a callback error.
+4. After the identity provider approves the sign-in, Galene opens the home page. There is no Welcome back step. The account menu says **Signed in via SSO**.
 
 If the email is not a Galene user, the callback explains that and offers **Back to sign in**. No new user row is created.

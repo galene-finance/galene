@@ -21,22 +21,34 @@ import {
 } from '$lib/server/mfa/mfa';
 import { seedDemoData } from '$lib/server/demoData';
 import { ensureDefaultTransferCategories } from '$lib/server/finance';
-import { publicOidcLogin } from '$lib/server/oidc';
+import { localPasswordEscape, publicOidcLogin } from '$lib/server/oidc';
 import { canPublicSignup } from '$lib/server/users';
 import { versionLabel } from '$lib/version';
 
-export function load({ locals, cookies }) {
+export function load({ locals, cookies, url }: { locals: App.Locals; cookies: { get: (name: string) => string | undefined }; url: URL }) {
 	if (locals.user) redirect(303, '/');
 	// A valid pending MFA challenge (set after a correct password) means the
 	// page shows the second step instead of the password form.
 	const mfaToken = cookies.get(mfaCookieName());
 	const challenge = mfaToken ? getLoginChallenge(mfaToken) : null;
 	const oidc = publicOidcLogin();
+	const setup = canPublicSignup();
+	// Required SSO starts the same authorize request as Continue with SSO.
+	// Setup, a pending MFA step, and ?local=1 stay on this page.
+	if (
+		oidc?.mode === 'required' &&
+		!setup &&
+		!challenge &&
+		!localPasswordEscape(url.searchParams.get('local'))
+	) {
+		redirect(303, '/auth/oidc/start');
+	}
 	return {
-		setup: canPublicSignup(),
+		setup,
 		version: versionLabel(),
 		mfa: challenge ? { email: challenge.email } : null,
-		oidc
+		oidc,
+		localPassword: localPasswordEscape(url.searchParams.get('local'))
 	};
 }
 

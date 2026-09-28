@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { createSession, getUserByToken, sessionCookieName, setSessionCookie } from '$lib/server/auth';
+import { createSession, setSessionCookie } from '$lib/server/auth';
 import { assertAllowed, clearOnSuccess, recordFailure } from '$lib/server/loginThrottle';
 import {
 	assertIdToken,
@@ -30,26 +30,10 @@ function errorView(code: OidcCallbackError, detail?: string | null) {
 	};
 }
 
-/** Exchange the IdP code (when present) and render the calm interstitial. */
+/** Exchange the IdP code (when present). Success goes straight home. */
 export async function load(event) {
-	const { url, locals, cookies } = event;
+	const { url, cookies } = event;
 	const params = url.searchParams;
-
-	if (params.get('welcome') === '1') {
-		// hooks.server ran before this load, so a session created on the
-		// previous callback request is the one in locals. Read the cookie
-		// again in case this request is the one that just set it.
-		const token = cookies.get(sessionCookieName());
-		const user = (token ? getUserByToken(token) : null) ?? locals.user;
-		if (!user) redirect(303, '/login');
-		const label = user.idpLabel || providerLabel(loadOidcConfig().issuer);
-		return {
-			phase: 'welcome' as const,
-			title: 'Welcome back',
-			body: 'You’re signed in. Your books are ready.',
-			providerLabel: label
-		};
-	}
 
 	const bareError = params.get('error');
 	if (bareError && !params.get('code')) {
@@ -59,6 +43,12 @@ export async function load(event) {
 
 	const code = params.get('code') ?? '';
 	const state = params.get('state') ?? '';
+	// The welcome interstitial is gone. A leftover bookmark should not sit on
+	// the empty "Signing you in…" state.
+	if (params.get('welcome') === '1' && !code && !state) {
+		return errorView('invalid', 'This sign-in link is no longer used. Start again from the sign-in page.');
+	}
+
 	if (!code && !state && !bareError) {
 		const label = providerLabel(loadOidcConfig().issuer);
 		return {
@@ -164,5 +154,5 @@ export async function load(event) {
 	clearOnSuccess(ip, email);
 	const session = createSession(mapped.userId, { method: 'oidc', idpLabel: providerLabel(config.issuer) });
 	setSessionCookie(cookies, session);
-	redirect(303, '/auth/oidc/callback?welcome=1');
+	redirect(303, '/');
 }

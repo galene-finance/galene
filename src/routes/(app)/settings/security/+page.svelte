@@ -280,7 +280,7 @@
 					</label>
 					<label class="flex items-start gap-2 text-sm">
 						<input type="radio" name="mode" value="required" bind:group={oidcMode} class="mt-1" />
-						<span><span class="font-medium">Required</span> <span class="text-muted-foreground">— SSO is primary. Local password sits behind “Use local password”.</span></span>
+						<span><span class="font-medium">Required</span> <span class="text-muted-foreground">— /login starts SSO. Local password is at /login?local=1.</span></span>
 					</label>
 					<p class="text-xs text-muted-foreground">Optional is the default. Required is for a household that wants SSO first.</p>
 				</fieldset>

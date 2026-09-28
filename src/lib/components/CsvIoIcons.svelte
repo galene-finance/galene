@@ -15,7 +15,7 @@
 		'inline-flex items-center justify-center rounded-md border border-border bg-surface text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
 </script>
 
-<a href={importHref} class="{chrome} {box}" aria-label="Import CSV" title="Import CSV">
+<a href={importHref} class="{chrome} {box}" aria-label="Import" title="Import">
 	<svg
 		class={icon}
 		viewBox="0 0 24 24"

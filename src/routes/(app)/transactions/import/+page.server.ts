@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import {
-	buildImportPreview,
+	buildFileImportPreview,
 	commitImportPreview,
 	getImportPreview
 } from '$lib/server/csvImport';
@@ -27,10 +27,10 @@ export const actions = {
 		const form = await request.formData();
 		const file = form.get('file');
 		if (!(file instanceof File) || file.size === 0) {
-			return fail(400, { error: 'Choose a CSV file to upload.' });
+			return fail(400, { error: 'Choose a CSV, OFX, or QFX file to upload.' });
 		}
 		if (file.size > 2_000_000) {
-			return fail(400, { error: 'File is too large (max 2 MB for MVP).' });
+			return fail(400, { error: 'File is too large (max 2 MB).' });
 		}
 		const options = {
 			createAccounts: boolFlag(form, 'create_accounts'),
@@ -38,7 +38,7 @@ export const actions = {
 			createTags: boolFlag(form, 'create_tags')
 		};
 		const text = await file.text();
-		const built = buildImportPreview(user.id, text, options);
+		const built = buildFileImportPreview(user.id, text, file.name, options);
 		if ('error' in built) return fail(400, { error: built.error });
 		redirect(303, `/transactions/import?preview=${built.id}`);
 	},

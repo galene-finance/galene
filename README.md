@@ -25,7 +25,7 @@ It values **privacy by default** (your SQLite database on your host), **clarity 
 **Highlights:**
 
 - Multi-account transactions, categories, tags, budgets, calendar expectations, cashflow, and trends (budget line and bar drill-down)
-- CSV import and export on the same columns; transaction filters include empty fields and keep their menus
+- CSV, OFX, and QFX import, plus CSV export on the same columns; transaction filters include empty fields and keep their menus
 - Bank sync via SimpleFIN, Plaid, or the demo bank
 - Settings as a searchable card grid; the theme you pick stays across refresh and sign-out
 - Installable on a phone

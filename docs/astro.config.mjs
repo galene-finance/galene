@@ -47,6 +47,7 @@ export default defineConfig({
             { label: 'Categories & cashflow', slug: 'features/categories-cashflow' },
             { label: 'Accounts & tags', slug: 'features/accounts-tags' },
             { label: 'Import and export', slug: 'features/import-transactions' },
+            { label: 'Appearance', slug: 'features/appearance' },
             { label: 'Advisor access', slug: 'features/advisor-access' },
             { label: 'API & MCP', slug: 'features/api-mcp' },
           ],

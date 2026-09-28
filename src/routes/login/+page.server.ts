@@ -21,16 +21,9 @@ import {
 } from '$lib/server/mfa/mfa';
 import { seedDemoData } from '$lib/server/demoData';
 import { ensureDefaultTransferCategories } from '$lib/server/finance';
-import { publicOidcLogin } from '$lib/server/oidc';
+import { localPasswordEscape, publicOidcLogin } from '$lib/server/oidc';
 import { canPublicSignup } from '$lib/server/users';
 import { versionLabel } from '$lib/version';
-
-/** Truthy `local` query (`1`, `true`, `yes`, `on`) keeps the password form under Required SSO. */
-export function localPasswordEscape(value: string | null): boolean {
-	if (!value) return false;
-	const raw = value.trim().toLowerCase();
-	return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
-}
 
 export function load({ locals, cookies, url }: { locals: App.Locals; cookies: { get: (name: string) => string | undefined }; url: URL }) {
 	if (locals.user) redirect(303, '/');

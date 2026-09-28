@@ -116,6 +116,13 @@ export function publicOidcLogin(): { enabled: boolean; mode: OidcMode; providerL
 	return { enabled: true, mode: config.mode, providerLabel: providerLabel(config.issuer) };
 }
 
+/** Truthy `local` query (`1`, `true`, `yes`, `on`) keeps the password form under Required SSO. */
+export function localPasswordEscape(value: string | null): boolean {
+	if (!value) return false;
+	const raw = value.trim().toLowerCase();
+	return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
 export function providerLabel(issuer: string): string {
 	const value = issuer.toLowerCase();
 	if (value.includes('authentik')) return 'Authentik';

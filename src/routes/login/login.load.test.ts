@@ -6,8 +6,8 @@ import { isRedirect } from '@sveltejs/kit';
 import { closeDbForTests, db, migrate } from '$lib/server/db';
 import { createLoginChallenge } from '$lib/server/mfa/mfa';
 import { mfaCookieName } from '$lib/server/auth';
-import { saveOidcSettings } from '$lib/server/oidc';
-import { load, localPasswordEscape } from './+page.server';
+import { localPasswordEscape, saveOidcSettings } from '$lib/server/oidc';
+import { load } from './+page.server';
 
 const ENV_KEYS = [
 	'GALENE_OIDC_ENABLED',

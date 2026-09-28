@@ -20,10 +20,9 @@
 			version: string;
 			mfa: { email: string } | null;
 			oidc: { enabled: boolean; mode: 'optional' | 'required'; providerLabel: string } | null;
+			localPassword: boolean;
 		};
 	} = $props();
-
-	let showPassword = $state(false);
 
 	// Re-seed name/email from a failed submission so they survive the re-render
 	// (the component's local state is reset when the form data updates).
@@ -116,24 +115,6 @@
 						</button>
 					</form>
 				</div>
-			{:else if data.oidc?.mode === 'required' && !showPassword}
-				<div class="flex flex-col gap-3">
-					<p class="text-center text-sm text-muted-foreground">This household signs in with single sign-on.</p>
-					<a
-						href="/auth/oidc/start"
-						class="inline-flex h-9 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
-					>
-						Continue with SSO
-					</a>
-					<p class="text-center text-xs text-muted-foreground">via {data.oidc.providerLabel}</p>
-					<button
-						type="button"
-						class="text-xs text-muted-foreground hover:text-foreground"
-						onclick={() => (showPassword = true)}
-					>
-						Use local password
-					</button>
-				</div>
 			{:else}
 				<form method="POST" action="?/login" use:enhance class="flex flex-col gap-3">
 					<Field label="Email">
@@ -145,9 +126,9 @@
 					{#if form?.error}
 						<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
 					{/if}
-					<Button type="submit">{data.oidc?.mode === 'required' ? 'Sign in with password' : 'Sign in'}</Button>
+					<Button type="submit">{data.localPassword ? 'Sign in with password' : 'Sign in'}</Button>
 				</form>
-				{#if data.oidc}
+				{#if data.oidc?.mode === 'optional'}
 					<div class="my-4 flex items-center gap-3 text-xs text-muted-foreground">
 						<span class="h-px flex-1 bg-border"></span>
 						<span>or</span>

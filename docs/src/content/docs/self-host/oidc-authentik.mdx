@@ -26,12 +26,12 @@ An administrator opens **Settings → Security → Single sign-on (OIDC)**:
 
 | Field | What to enter |
 | --- | --- |
-| Enable | On, to show **Continue with SSO** |
+| Enable | On. Optional shows **Continue with SSO**. Required starts SSO from `/login`. |
 | Issuer URL | `https://auth.example/application/o/galene/` |
 | Client ID | From the Authentik provider |
 | Client secret | From the Authentik provider. Masked after save; Show / Hide while editing. Leave blank on a later save to keep the stored secret. |
 | Scopes | `openid profile email` |
-| Mode | **Optional** (default). Password and authenticator-app MFA stay on the sign-in page. **Required** makes SSO primary and leaves local password behind **Use local password**. |
+| Mode | **Optional** (default). Password and authenticator-app MFA stay on the sign-in page, next to **Continue with SSO**. **Required** sends `/login` straight to Authentik. Local password is `/login?local=1` (also linked from a callback error as **Use local password**). |
 | User mapping | Match by email. Galene does not create a user on first login. |
 | Redirect URI | Read-only. Copy it into Authentik. |
 
@@ -43,8 +43,8 @@ A non-empty `GALENE_OIDC_*` variable overrides the matching field. See [Environm
 
 1. Create the Galene user first (the first-run account, or Settings → Users) with the same email Authentik will send.
 2. Save Optional mode and run **Test connection**.
-3. Sign out. On the sign-in page, choose **Continue with SSO**. The hint reads **via Authentik** when the issuer URL contains `authentik`.
-4. Galene shows **Welcome back**, then home. The account menu says **Signed in via SSO**. **Sign out** clears the Galene session only. It does not sign the browser out of Authentik.
+3. Sign out. In **Optional** mode, choose **Continue with SSO**. The hint reads **via Authentik** when the issuer URL contains `authentik`. In **Required** mode, `/login` starts Authentik immediately. `/login?local=1`, or **Use local password** on a callback error, still shows the password form.
+4. After Authentik, Galene opens home. There is no Welcome back step. The account menu says **Signed in via SSO**. **Sign out** clears the Galene session only. It does not sign the browser out of Authentik.
 
 ## Troubleshooting
 

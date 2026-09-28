@@ -8,8 +8,14 @@
 	import Title from '$lib/components/Title.svelte';
 	import { readableOn } from '$lib/color';
 	import { EMBLEM_ICON_KEY, EMBLEM_SRC, ICONS, getIcon, isEmblemIcon, normalizeBrandingIcon } from '$lib/icons';
+	import {
+		parseThemePack,
+		serializeThemePack,
+		themePackFilename,
+		uniqueThemeName
+	} from '$lib/theme-pack';
 	import { DEFAULT_THEMES, applyThemeNow, themeValue } from '$lib/themes';
-	import { toastFormResult } from '$lib/toasts';
+	import { toast, toastFormResult } from '$lib/toasts';
 	import type { Theme, ThemeColors } from '$lib/types';
 
 	let {
@@ -88,6 +94,82 @@
 		editId = null;
 		editName = '';
 		draft = null;
+	}
+
+	// --- Share pack (export / import) ---
+	let importing = $state(false);
+	let importText = $state('');
+	let importError = $state('');
+	let importName = $state('');
+	let importColors = $state<ThemeColors | null>(null);
+	let replaceId = $state('');
+	let packInput = $state<HTMLInputElement | null>(null);
+
+	const previewSwatches = [
+		{ key: 'background', label: 'Background' },
+		{ key: 'surface', label: 'Surface' },
+		{ key: 'primary', label: 'Accent' },
+		{ key: 'foreground', label: 'Text' },
+		{ key: 'success', label: 'Positive' },
+		{ key: 'destructive', label: 'Negative' }
+	] as const;
+
+	function openImport() {
+		importing = true;
+		importText = '';
+		importError = '';
+		importColors = null;
+		importName = '';
+		replaceId = '';
+	}
+
+	function closeImport() {
+		importing = false;
+		importError = '';
+		importColors = null;
+	}
+
+	function applyPackText(raw: string) {
+		importText = raw;
+		const parsed = parseThemePack(raw);
+		if (!parsed.ok) {
+			importColors = null;
+			importError = parsed.error;
+			return;
+		}
+		importError = '';
+		importColors = parsed.pack.colors;
+		importName = uniqueThemeName(
+			parsed.pack.name,
+			data.themes.map((t) => t.name)
+		);
+	}
+
+	async function onPackFile(event: Event) {
+		const file = (event.currentTarget as HTMLInputElement).files?.[0];
+		if (!file) return;
+		applyPackText(await file.text());
+	}
+
+	function exportPack() {
+		const json = serializeThemePack(selectedTheme.name, selectedTheme.colors);
+		const blob = new Blob([json], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = themePackFilename(selectedTheme.name);
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	async function copyPack() {
+		const json = serializeThemePack(selectedTheme.name, selectedTheme.colors);
+		try {
+			await navigator.clipboard.writeText(json);
+			toast('Theme JSON copied');
+		} catch {
+			toast('Could not copy — use Export to download the file', 'error');
+		}
 	}
 
 	// Live preview: while editing, override the theme variables on the page.
@@ -206,6 +288,9 @@
 
 			<div class="mt-4 flex flex-wrap items-center gap-3">
 				<Button type="button" variant="secondary" onclick={newTheme}>New theme</Button>
+				<Button type="button" variant="secondary" onclick={exportPack}>Export</Button>
+				<Button type="button" variant="secondary" onclick={copyPack}>Copy JSON</Button>
+				<Button type="button" variant="secondary" onclick={openImport}>Import</Button>
 				<div class="flex items-center gap-2">
 					<span class="text-sm text-muted-foreground">Duplicate from</span>
 					<Select
@@ -240,6 +325,83 @@
 					</div>
 				{/if}
 			{/each}
+
+			{#if importing}
+				<div class="mt-4 rounded-lg border border-border p-4">
+					<p class="text-sm text-muted-foreground">
+						Paste a Galene theme pack, or choose a .json file. Nothing is saved until you confirm.
+					</p>
+					<textarea
+						class="mt-3 min-h-36 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs"
+						placeholder={'{"galeneTheme":1,"name":"…","colors":{…}}'}
+						bind:value={importText}
+						oninput={() => applyPackText(importText)}
+					></textarea>
+					<div class="mt-2 flex flex-wrap items-center gap-2">
+						<input
+							bind:this={packInput}
+							type="file"
+							accept=".json,.galene-theme.json,application/json"
+							class="hidden"
+							onchange={onPackFile}
+						/>
+						<Button type="button" variant="secondary" onclick={() => packInput?.click()}>Choose file</Button>
+					</div>
+					{#if importError}
+						<p class="mt-3 text-sm text-destructive" role="alert">{importError}</p>
+					{/if}
+					{#if importColors}
+						<div class="mt-4 flex flex-wrap gap-2">
+							{#each previewSwatches as sw (sw.key)}
+								<div class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1">
+									<span
+										class="size-4 rounded-sm border border-border"
+										style="background: {importColors[sw.key]}"
+									></span>
+									<span class="text-xs text-muted-foreground">{sw.label}</span>
+								</div>
+							{/each}
+							<span class="self-center text-xs text-muted-foreground">Radius {importColors.radius}</span>
+						</div>
+						<form
+							method="POST"
+							action="?/import-theme"
+							use:enhance={() =>
+								({ result, update }) => {
+									if (result?.type === 'success') {
+										closeImport();
+										void update();
+									}
+								}}
+							class="mt-4 flex flex-wrap items-end gap-3"
+						>
+							<input type="hidden" name="pack" value={importText} />
+							<input type="hidden" name="replaceId" value={replaceId} />
+							<Field label="Name" class="w-64">
+								<Input type="text" name="name" bind:value={importName} maxlength={40} />
+							</Field>
+							<Field label="Replace this theme" class="w-52">
+								<Select
+									bind:value={replaceId}
+									placeholder="Save as new"
+									items={[
+										{ value: '', label: 'Save as new' },
+										...data.themes
+											.filter((t) => t.id !== null)
+											.map((t) => ({ value: String(t.id), label: t.name }))
+									]}
+								/>
+							</Field>
+							<Button type="submit">{replaceId ? 'Replace theme' : 'Save theme'}</Button>
+							<Button type="button" variant="secondary" onclick={closeImport}>Cancel</Button>
+						</form>
+					{:else}
+						<div class="mt-4">
+							<Button type="button" variant="secondary" onclick={closeImport}>Cancel</Button>
+						</div>
+					{/if}
+				</div>
+			{/if}
 
 			{#if editing && draft}
 				<div class="mt-4 rounded-lg border border-border p-4">

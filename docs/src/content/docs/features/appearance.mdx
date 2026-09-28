@@ -1,0 +1,42 @@
+---
+title: Appearance
+description: Share an Appearance theme as a versioned JSON pack — export, copy, and import.
+---
+
+Under **Settings → Appearance**, pick a built-in or custom theme, or build your own. A theme is a set of hex colors plus a card radius.
+
+## Share a theme
+
+**Export** downloads the selected theme as `{name}.galene-theme.json` and **Copy JSON** puts the same pack on the clipboard. Both use the colors you see, including a built-in such as Ocean. Importing a built-in creates a new custom theme; it does not change the built-in.
+
+**Import** accepts pasted JSON or a `.json` / `.galene-theme.json` file. Galene shows a color preview and an editable name before anything is saved. Confirming saves a **new** custom theme and selects it. If that name is already used by one of your themes, Galene adds a suffix such as ` (2)`. Replace an existing custom theme only when you choose **Replace this theme**. Built-ins are never overwritten.
+
+A pack that is not valid JSON, uses another version, omits a color, or has a bad hex or radius is declined with an error. Nothing is written.
+
+Packs from other tools (shadcn, oklch, and similar) are not imported directly. Convert them to Galene hex JSON first.
+
+### Format (`galeneTheme: 1`)
+
+Unknown top-level fields are ignored. Every color key below is required.
+
+```json
+{
+  "galeneTheme": 1,
+  "name": "Tron",
+  "colors": {
+    "background": "#000102",
+    "surface": "#0c1421",
+    "surfaceHover": "#030e1c",
+    "foreground": "#e1f2f8",
+    "mutedForeground": "#8f8f8f",
+    "primary": "#00c7c7",
+    "primaryForeground": "#030303",
+    "success": "#24b6a1",
+    "destructive": "#d40f00",
+    "border": "#003636",
+    "warning": "#fbbf24",
+    "input": "#001b1b",
+    "radius": "0.5rem"
+  }
+}
+```

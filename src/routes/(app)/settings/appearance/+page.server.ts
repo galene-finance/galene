@@ -7,6 +7,7 @@ import {
 	isValidThemeValue,
 	saveUserTheme
 } from '$lib/server/themes';
+import { parseThemePack, uniqueThemeName } from '$lib/theme-pack';
 import { DEFAULT_THEME_SLUG, RADIUS_RE, isHexColor } from '$lib/themes';
 import { EMBLEM_ICON_KEY, ICONS, isValidBrandingIcon, normalizeBrandingIcon } from '$lib/icons';
 import type { ThemeColors } from '$lib/types';
@@ -67,6 +68,35 @@ export const actions = {
 		const savedId = saveUserTheme(userId, id, name, colors);
 		setSetting(userId, 'theme', String(savedId));
 		return { ok: true };
+	},
+
+	'import-theme': async ({ request, locals }) => {
+		const userId = locals.user!.id;
+		const form = await request.formData();
+		const parsed = parseThemePack(String(form.get('pack') ?? ''));
+		if (!parsed.ok) return { error: parsed.error };
+
+		const replaceIdRaw = String(form.get('replaceId') ?? '').trim();
+		let id: number | null = null;
+		let name = String(form.get('name') ?? parsed.pack.name).trim();
+		if (!name) return { error: 'Theme name is required.' };
+		if (name.length > 40) return { error: 'Theme name must be 40 characters or fewer.' };
+
+		if (replaceIdRaw) {
+			id = parseInt(replaceIdRaw, 10);
+			if (!Number.isFinite(id) || !getUserThemeById(userId, id)) {
+				return { error: 'Choose a custom theme to replace, or save as a new theme.' };
+			}
+		} else {
+			name = uniqueThemeName(
+				name,
+				getUserThemes(userId).map((t) => t.name)
+			);
+		}
+
+		const savedId = saveUserTheme(userId, id, name, parsed.pack.colors);
+		setSetting(userId, 'theme', String(savedId));
+		return { ok: true, message: id ? 'Theme replaced.' : 'Theme imported.' };
 	},
 
 	'delete-theme': async ({ request, locals }) => {

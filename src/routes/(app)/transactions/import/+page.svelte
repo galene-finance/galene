@@ -18,8 +18,10 @@
 			accounts: { id: number; name: string }[];
 			preview: {
 				id: string;
+				format: 'csv' | 'ofx';
 				okCount: number;
 				errorCount: number;
+				skippedCount: number;
 				options: { createAccounts: boolean; createCategories: boolean; createTags: boolean };
 				createAccountNames: string[];
 				createCategoryNames: string[];
@@ -35,6 +37,7 @@
 					tags: string;
 					status: string;
 					errors: string[];
+					duplicate?: boolean;
 					willCreateAccount: boolean;
 					willCreateCategory: boolean;
 					willCreateTags: string[];
@@ -62,7 +65,7 @@
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">Import transactions</h1>
 			<p class="text-sm text-muted-foreground">
-				Download the CSV template, fill it in, upload for a preview, then confirm to create transactions.
+				Upload a CSV, OFX, or QFX file. You’ll preview every row, then confirm to create transactions.
 			</p>
 		</div>
 		<a href="/transactions" class="text-sm text-primary underline-offset-2 hover:underline">← Transactions</a>
@@ -118,11 +121,11 @@
 				class="mt-4 flex flex-col gap-4"
 			>
 				<label class="flex min-w-0 flex-col gap-1 text-sm">
-					<span class="text-muted-foreground">CSV file</span>
+					<span class="text-muted-foreground">CSV, OFX, or QFX file</span>
 					<input
 						type="file"
 						name="file"
-						accept=".csv,text/csv"
+						accept=".csv,.ofx,.qfx,text/csv,application/x-ofx,application/vnd.intu.qfx"
 						required
 						class="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground"
 					/>
@@ -155,7 +158,14 @@
 		<section class="rounded-lg border border-border bg-surface p-5">
 			<h2 class="text-base font-semibold">3. Preview</h2>
 			<p class="mt-1 text-sm text-muted-foreground">
-				{data.preview.okCount} ready to import
+				{#if data.preview.format === 'ofx'}
+					Format: OFX / QFX. {data.preview.okCount} new
+					{#if data.preview.skippedCount > 0}
+						· {data.preview.skippedCount} already imported (skipped)
+					{/if}
+				{:else}
+					{data.preview.okCount} ready to import
+				{/if}
 				{#if data.preview.errorCount > 0}
 					· <span class="text-destructive">{data.preview.errorCount} with errors (will be skipped)</span>
 				{/if}
@@ -228,8 +238,10 @@
 								</td>
 								<td class="px-3 py-2">{row.merchant || '—'}</td>
 								<td class="px-3 py-2">
-									{#if row.status === 'ok'}
-										<span class="text-success">OK</span>
+									{#if row.duplicate}
+										<span class="text-muted-foreground">Skipped (already imported)</span>
+									{:else if row.status === 'ok'}
+										<span class="text-success">{data.preview.format === 'ofx' ? 'New' : 'OK'}</span>
 										{#if row.willCreateCategory || row.willCreateTags.length}
 											<span class="block text-xs text-muted-foreground">
 												{#if row.willCreateCategory}new category{/if}

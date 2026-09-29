@@ -1,25 +1,38 @@
 # Forward actionable status/* label events to Grok Bot → Galene Lead.
 # Secrets (repo): GALENE_BOARD_WEBHOOK_URL, GALENE_BOARD_WEBHOOK_KEY
-# Only "labeled" (not unlabeled) — status swaps used to storm the webhook.
+# Actionable labels only: status/ready, status/testing-failed, status/ready-for-main.
+# status/in-review no longer posts — review-column moves should not wake Lead.
+# Only "labeled" (not unlabeled / assigned / opened) — status swaps used to storm the webhook.
+# Debounce: per-issue concurrency (cancel-in-progress) plus a ~20s settle and re-check
+# that the triggering label is still on the issue, so label storms do not POST 5× in 2 minutes.
 name: Galene board webhook
 on:
   issues:
     types: [labeled]
 
+permissions:
+  contents: read
+  issues: read
+
 jobs:
   notify:
     if: >-
       github.event.action == 'labeled' &&
-      contains(fromJSON('["status/ready","status/testing-failed","status/in-review","status/ready-for-main"]'), github.event.label.name)
+      contains(fromJSON('["status/ready","status/testing-failed","status/ready-for-main"]'), github.event.label.name)
     runs-on: ubuntu-latest
+    concurrency:
+      group: galene-board-webhook-${{ github.event.issue.number }}
+      cancel-in-progress: true
     steps:
       - name: POST to Grok Bot webhook
         env:
           WEBHOOK_URL: ${{ secrets.GALENE_BOARD_WEBHOOK_URL }}
           WEBHOOK_KEY: ${{ secrets.GALENE_BOARD_WEBHOOK_KEY }}
+          GH_TOKEN: ${{ github.token }}
           EVENT_ACTION: ${{ github.event.action }}
           EVENT_LABEL: ${{ github.event.label.name }}
           EVENT_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_JSON: ${{ toJSON(github.event.issue) }}
         run: |
           set -euo pipefail
@@ -27,6 +40,17 @@ jobs:
             echo "Missing GALENE_BOARD_WEBHOOK_URL or GALENE_BOARD_WEBHOOK_KEY — skipping"
             exit 0
           fi
+
+          echo "Debounce: waiting 20s for label storms to settle on issue #${ISSUE_NUMBER}"
+          sleep 20
+
+          labels=$(gh api "repos/${EVENT_REPO}/issues/${ISSUE_NUMBER}/labels" --jq '.[].name')
+          if ! printf '%s\n' "$labels" | grep -Fxq "$EVENT_LABEL"; then
+            echo "Trigger label '${EVENT_LABEL}' is no longer on issue #${ISSUE_NUMBER} — skipping POST"
+            exit 0
+          fi
+          echo "Trigger label '${EVENT_LABEL}' still on issue #${ISSUE_NUMBER} — POSTing"
+
           payload=$(jq -n \
             --arg action "$EVENT_ACTION" \
             --arg label "$EVENT_LABEL" \

@@ -1,4 +1,4 @@
-import { redirect } from '@sveltejs/kit';
+import { requireAdmin } from '$lib/server/auth';
 import {
 	backupRoot,
 	deleteBackup,
@@ -13,20 +13,13 @@ import type { BackupFile, BackupSettings } from '$lib/types';
 
 export function load({ locals, depends }) {
 	depends('user');
-	if (!locals.user) redirect(303, '/login');
-	if (!locals.user.is_admin) redirect(303, '/settings');
+	requireAdmin(locals);
 	const settings = getBackupSettings();
 	return {
 		settings,
 		backupRoot: backupRoot(),
 		backups: settings.destDir ? listBackups(settings.destDir) : []
 	};
-}
-
-/** Every action on this page is admin-only. */
-function requireAdmin(locals: App.Locals) {
-	if (!locals.user) redirect(303, '/login');
-	if (!locals.user.is_admin) redirect(303, '/settings');
 }
 
 /** "90 minutes" / "an hour" / "a day" style label for an interval in minutes. */

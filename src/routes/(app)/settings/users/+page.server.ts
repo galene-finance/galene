@@ -1,16 +1,9 @@
-import { redirect } from '@sveltejs/kit';
+import { requireAdmin } from '$lib/server/auth';
 import { createUser, deleteUser, getUserRow, listUsers, resetPassword, setUserAdmin } from '$lib/server/users';
 
 export function load({ locals }) {
-	if (!locals.user) redirect(303, '/login');
-	if (!locals.user.is_admin) redirect(303, '/settings');
-	return { users: listUsers(), me: locals.user.id };
-}
-
-/** Every action on this page is admin-only. */
-function requireAdmin(locals: App.Locals) {
-	if (!locals.user) redirect(303, '/login');
-	if (!locals.user.is_admin) redirect(303, '/settings');
+	requireAdmin(locals);
+	return { users: listUsers(), me: locals.user!.id };
 }
 
 export const actions = {

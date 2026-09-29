@@ -1,5 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import type { Cookies } from '@sveltejs/kit';
+import { redirect, type Cookies } from '@sveltejs/kit';
 import type { User } from '$lib/types';
 import { db } from './db';
 import { hashToken, tokenHint, verifyToken } from './tokenHash';
@@ -9,6 +9,12 @@ const SESSION_DAYS = 30;
 
 export function sessionCookieName() {
 	return SESSION_COOKIE;
+}
+
+/** Admin-only pages: sign-in, then back to Settings when the user is not an admin. */
+export function requireAdmin(locals: App.Locals): void {
+	if (!locals.user) redirect(303, '/login');
+	if (!locals.user.is_admin) redirect(303, '/settings');
 }
 
 /**

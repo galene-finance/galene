@@ -4,8 +4,8 @@ import {
 	deleteRule,
 	getAccounts,
 	getCategories,
-	getOrCreateCategory,
 	getRules,
+	resolveCategoryFromForm,
 	saveRule,
 	setRuleEnabled
 } from '$lib/server/finance';
@@ -29,15 +29,7 @@ export const actions = {
 		const name = String(form.get('name') ?? '').trim();
 		if (!name) return { error: 'Rule name is required.' };
 		const type = form.get('type') === 'income' ? 'income' : 'expense';
-		const categoryNew = String(form.get('category_new') ?? '').trim();
-		const categoryExisting = String(form.get('category_id') ?? '').trim();
-		let categoryId: number | null = null;
-		if (categoryNew) {
-			categoryId = getOrCreateCategory(userId, categoryNew, type);
-		} else if (categoryExisting) {
-			const category = getCategories(userId).find((c) => c.id === parseInt(categoryExisting, 10));
-			if (category) categoryId = category.id;
-		}
+		const categoryId = resolveCategoryFromForm(userId, form, type);
 		if (categoryId === null) return { error: 'Select a category for this rule.' };
 
 		const conditions: RuleCondition[] = [];

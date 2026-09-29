@@ -4,6 +4,7 @@ import {
 	getCategories,
 	getOccurrences,
 	getScheduled,
+	monthBounds,
 	getSetting,
 	getTags,
 	getTransactionsInPeriod,
@@ -13,14 +14,6 @@ import {
 	scheduledInputFromForm,
 	transactionInputFromForm
 } from '$lib/server/finance';
-
-function monthBounds(month: string): { from: string; to: string } {
-	const [y, m] = month.split('-').map(Number);
-	return {
-		from: `${month}-01`,
-		to: m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
-	};
-}
 
 export function load({ locals, url }) {
 	const userId = locals.user!.id;

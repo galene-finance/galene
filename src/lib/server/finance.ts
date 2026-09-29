@@ -1,7 +1,7 @@
 import { db } from './db';
 import type { GrantScope } from './advisor';
 import { scopeAccountIds, scopeDateRange } from './advisor';
-import { parseAmountToCents } from '$lib/utils';
+import { monthLabel, parseAmountToCents } from '$lib/utils';
 import { normalizeMerchant } from '$lib/merchantNormalize';
 import type {
 	Account,
@@ -508,6 +508,28 @@ export function getOrCreateCategory(userId: number, name: string, type: Category
 }
 
 /** Create an account if it does not exist (case-insensitive name match). Returns the id. */
+/** Positive integer values of a repeated form field (`ids`, `tags`, …). */
+export function positiveIds(form: FormData, name: string): number[] {
+	return form
+		.getAll(name)
+		.map((v) => parseInt(String(v), 10))
+		.filter((n) => Number.isFinite(n) && n > 0);
+}
+
+/**
+ * Category from the shared combobox pair: `category_new` creates, `category_id` must
+ * already belong to the user. Unknown or empty existing ids become null (callers decide
+ * whether null is an error).
+ */
+export function resolveCategoryFromForm(userId: number, form: FormData, type: CategoryType): number | null {
+	const categoryNew = String(form.get('category_new') ?? '').trim();
+	const categoryExisting = String(form.get('category_id') ?? '').trim();
+	if (categoryNew) return getOrCreateCategory(userId, categoryNew, type);
+	if (!categoryExisting) return null;
+	const category = getCategories(userId).find((c) => c.id === parseInt(categoryExisting, 10));
+	return category ? category.id : null;
+}
+
 export function getOrCreateAccount(userId: number, name: string, type: AccountType = 'bank'): number {
 	const trimmed = name.trim();
 	const existing = db()
@@ -749,20 +771,9 @@ export function transactionInputFromForm(userId: number, form: FormData): { inpu
 		return { error: 'Select an account.' };
 	}
 
-	const categoryNew = String(form.get('category_new') ?? '').trim();
-	const categoryExisting = String(form.get('category_id') ?? '').trim();
-	let categoryId: number | null = null;
-	if (categoryNew) {
-		categoryId = getOrCreateCategory(userId, categoryNew, type);
-	} else if (categoryExisting) {
-		const category = getCategories(userId).find((c) => c.id === parseInt(categoryExisting, 10));
-		if (category) categoryId = category.id;
-	}
+	const categoryId = resolveCategoryFromForm(userId, form, type);
 
-	const tagIds = form
-		.getAll('tags')
-		.map((t) => parseInt(String(t), 10))
-		.filter((n) => Number.isFinite(n) && n > 0);
+	const tagIds = positiveIds(form, 'tags');
 	const tagNew = String(form.get('tag_new') ?? '').trim();
 	if (tagNew) tagIds.push(getOrCreateTag(userId, tagNew));
 
@@ -962,15 +973,10 @@ export function getHomeSummary(userId: number): HomeSummary {
 		balanceCents,
 		monthIncomeCents: incomeRow.s,
 		monthExpenseCents: expenseRow.s,
-		monthLabel: monthLabelFromISO(monthStart),
+		monthLabel: monthLabel(monthStart),
 		recent: attachTags(userId, recent),
 		topCategories
 	};
-}
-
-function monthLabelFromISO(iso: string): string {
-	const [y, m] = iso.split('-').map(Number);
-	return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
 // ---------------------------------------------------------------------------
@@ -1114,6 +1120,21 @@ export function currentPeriodBounds(period: Budget['period'], ref: Date = new Da
 }
 
 /**
+ * Current-period spend for a budget row: refunds reduce used (#17), never below zero.
+ * `from` / `to` are the period bounds (to is exclusive).
+ */
+export function budgetPeriodSpend(
+	userId: number,
+	categoryId: number,
+	period: Budget['period']
+): { from: string; to: string; spentCents: number } {
+	const { from, to } = currentPeriodBounds(period);
+	const signed = categoryAmountInPeriod(userId, categoryId, from, to);
+	const spent = Math.max(0, -signed);
+	return { from, to, spentCents: Math.max(0, Math.round(spent)) };
+}
+
+/**
  * Signed total (cents) for one category in a period (negative for expenses).
  * Split transactions are counted by their allocations; unsplit by their own amount.
  * Split amounts are stored positive, so the transaction's sign is applied here.
@@ -1225,15 +1246,7 @@ export function scheduledInputFromForm(userId: number, form: FormData): { input?
 	}
 
 	const type = form.get('type') === 'income' ? 'income' : 'expense';
-	const categoryNew = String(form.get('category_new') ?? '').trim();
-	const categoryExisting = String(form.get('category_id') ?? '').trim();
-	let category: number | null = null;
-	if (categoryNew) {
-		category = getOrCreateCategory(userId, categoryNew, type);
-	} else if (categoryExisting) {
-		const cat = getCategories(userId).find((c) => c.id === parseInt(categoryExisting, 10));
-		if (cat) category = cat.id;
-	}
+	const category = resolveCategoryFromForm(userId, form, type);
 
 	const repeats = form.get('repeats') === '1';
 	let repeatInterval: number | null = null;
@@ -1253,10 +1266,7 @@ export function scheduledInputFromForm(userId: number, form: FormData): { input?
 	const color = String(form.get('color') ?? '').trim() || null;
 	const notes = String(form.get('notes') ?? '').trim() || null;
 
-	const tagIds = form
-		.getAll('tags')
-		.map((v) => parseInt(String(v), 10))
-		.filter((n) => Number.isFinite(n) && n > 0);
+	const tagIds = positiveIds(form, 'tags');
 	const tagNew = String(form.get('tag_new') ?? '').trim();
 	if (tagNew) tagIds.push(getOrCreateTag(userId, tagNew));
 

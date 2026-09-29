@@ -65,7 +65,8 @@
 		<script>
 			// ADO-21: Firefox iOS Desktop Site (and similar) can give a layout
 			// viewport much wider than visualViewport. Clamp root to visual
-			// width when that gap appears. No 100vw; no minimum-scale hacks.
+			// width when that gap appears. ADO-34: skip clamp while pinch-zoomed
+			// (visualViewport.scale !== ~1). No 100vw; no minimum-scale hacks.
 			(function () {
 				var root = document.documentElement;
 				function visualWidth() {
@@ -85,8 +86,13 @@
 					if (!(vis > 0)) return;
 					root.style.setProperty('--vvw', vis + 'px');
 					var layout = layoutWidth();
-					// Desktop-site / wrong-first-paint signature: layout >> visual
-					if (layout > vis + 8) {
+					// ADO-34: only clamp at ~1x scale (Desktop Site / bad first paint).
+					// Pinch-zoom shrinks visualViewport.width while layout stays ~device-width,
+					// which would otherwise fire the clamp and fight page zoom (tiny Trends SVG).
+					var vv = window.visualViewport;
+					var scale = vv && typeof vv.scale === 'number' ? vv.scale : 1;
+					var atOne = Math.abs(scale - 1) < 0.02;
+					if (atOne && layout > vis + 8) {
 						root.classList.add('galene-vv-clamp');
 					} else {
 						root.classList.remove('galene-vv-clamp');

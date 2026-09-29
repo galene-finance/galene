@@ -5,7 +5,7 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import { formatMoney } from '$lib/utils';
-	import { toastFormResult } from '$lib/toasts';
+	import { watchFormToast } from '$lib/formToast.svelte';
 
 	let {
 		form,
@@ -47,14 +47,12 @@
 		};
 	} = $props();
 
+	watchFormToast(() => form);
 	let lastForm = untrack(() => form);
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;
-		toastFormResult(form);
-		if (form?.ok && form.result) {
-			void goto('/transactions');
-		}
+		if (form?.ok && form.result) void goto('/transactions');
 	});
 </script>
 

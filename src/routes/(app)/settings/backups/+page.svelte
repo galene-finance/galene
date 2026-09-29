@@ -6,7 +6,7 @@
 	import Input from '$lib/components/ui/Input.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
 	import Title from '$lib/components/Title.svelte';
-	import { toastFormResult } from '$lib/toasts';
+	import { watchFormToast } from '$lib/formToast.svelte';
 	import { formatBytes } from '$lib/utils';
 	import type { BackupFile, BackupSettings } from '$lib/types';
 
@@ -76,12 +76,7 @@
 	}
 
 	// Toast the latest action result (replaces the old top-of-page status block).
-	let lastForm = untrack(() => form);
-	$effect(() => {
-		if (form === lastForm) return;
-		lastForm = form;
-		toastFormResult(form);
-	});
+	watchFormToast(() => form);
 </script>
 
 <Title title="Backups" />

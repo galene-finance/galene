@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import AddScheduledDialog from '$lib/components/AddScheduledDialog.svelte';
 	import AddTransactionDialog from '$lib/components/AddTransactionDialog.svelte';
 	import Title from '$lib/components/Title.svelte';
@@ -12,7 +11,7 @@
 		estimatedPopupHeight,
 		type PillPopupRow
 	} from '$lib/calendarPillPopup';
-	import { toastFormResult } from '$lib/toasts';
+	import { watchFormToast } from '$lib/formToast.svelte';
 	import { formatMoney, monthLabel, todayISO } from '$lib/utils';
 	import type { Account, Category, Scheduled, Tag, Transaction } from '$lib/types';
 
@@ -171,12 +170,7 @@
 	});
 
 	// Toast the latest action result (replaces the old top-of-page status block).
-	let lastForm = untrack(() => form);
-	$effect(() => {
-		if (form === lastForm) return;
-		lastForm = form;
-		toastFormResult(form);
-	});
+	watchFormToast(() => form);
 </script>
 
 <Title title="Calendar" />

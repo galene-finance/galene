@@ -2,13 +2,11 @@ import { redirect } from '@sveltejs/kit';
 import { budgetsForCategory, getCategories, getTransactionsInPeriod, monthSpendingCents, saveBudget } from '$lib/server/finance';
 import { scopeDateRange } from '$lib/server/advisor';
 import { mondayOnOrBefore, parseISO, toISO, type TrendPeriod, type TrendPoint } from '$lib/trendsChart';
+import { isCalendarDate } from '$lib/utils';
 import { drillRows } from '$lib/trendDrill';
 import type { Budget } from '$lib/types';
 
 type Period = TrendPeriod;
-
-const isDate = (s: string | null) =>
-	s != null && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s);
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -36,8 +34,8 @@ export function load({ locals, url }) {
 				: new Date(now.getFullYear() - 9, 0, 1);
 	const fromParam = url.searchParams.get('from');
 	const toParam = url.searchParams.get('to');
-	let from = isDate(fromParam) ? parseISO(fromParam!) : defaultFrom;
-	let to = isDate(toParam) ? parseISO(toParam!) : now;
+	let from = isCalendarDate(fromParam) ? parseISO(fromParam) : defaultFrom;
+	let to = isCalendarDate(toParam) ? parseISO(toParam) : now;
 	if (from > to) [from, to] = [to, from];
 	const scope = locals.viewer?.scope ?? null;
 	if (scope) {

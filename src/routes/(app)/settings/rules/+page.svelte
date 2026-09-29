@@ -1,11 +1,10 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import Button from '$lib/components/ui/Button.svelte';
 	import RuleDialog from '$lib/components/RuleDialog.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import type { Account, CategorizationRule, Category, RuleCondition } from '$lib/types';
-	import { toastFormResult } from '$lib/toasts';
+	import { watchFormToast } from '$lib/formToast.svelte';
 	import { formatMoney } from '$lib/utils';
 
 	let {
@@ -59,12 +58,7 @@
 	}
 
 	// Toast the latest action result (replaces the old top-of-page status block).
-	let lastForm = untrack(() => form);
-	$effect(() => {
-		if (form === lastForm) return;
-		lastForm = form;
-		toastFormResult(form);
-	});
+	watchFormToast(() => form);
 </script>
 
 <Title title="Categorization rules" />

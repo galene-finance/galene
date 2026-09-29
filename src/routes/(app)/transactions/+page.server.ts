@@ -6,10 +6,11 @@ import {
 	clearTransactionSplits,
 	countUncategorizedMatchingMerchant,
 	deleteTransaction,
-	getAccounts,
 	getCategories,
 	getOrCreateCategory,
 	getOrCreateTag,
+	positiveIds,
+	resolveCategoryFromForm,
 	getSetting,
 	getTags,
 	getTransactions,
@@ -63,46 +64,23 @@ export const actions = {
 
 	'bulk-delete': async ({ request, locals }) => {
 		const form = await request.formData();
-		const ids = form
-			.getAll('ids')
-			.map((v) => parseInt(String(v), 10))
-			.filter((n) => Number.isFinite(n) && n > 0);
-		bulkDeleteTransactions(locals.user!.id, ids);
+		bulkDeleteTransactions(locals.user!.id, positiveIds(form, 'ids'));
 		return { ok: true };
 	},
 
 	'bulk-category': async ({ request, locals }) => {
 		const userId = locals.user!.id;
 		const form = await request.formData();
-		const ids = form
-			.getAll('ids')
-			.map((v) => parseInt(String(v), 10))
-			.filter((n) => Number.isFinite(n) && n > 0);
 		const type = form.get('type') === 'income' ? 'income' : 'expense';
-		const categoryNew = String(form.get('category_new') ?? '').trim();
-		const categoryExisting = String(form.get('category_id') ?? '').trim();
-		let categoryId: number | null = null;
-		if (categoryNew) {
-			categoryId = getOrCreateCategory(userId, categoryNew, type);
-		} else if (categoryExisting) {
-			const category = getCategories(userId).find((c) => c.id === parseInt(categoryExisting, 10));
-			if (category) categoryId = category.id;
-		}
-		bulkSetCategory(userId, ids, categoryId);
+		bulkSetCategory(userId, positiveIds(form, 'ids'), resolveCategoryFromForm(userId, form, type));
 		return { ok: true };
 	},
 
 	'bulk-tags': async ({ request, locals }) => {
 		const userId = locals.user!.id;
 		const form = await request.formData();
-		const ids = form
-			.getAll('ids')
-			.map((v) => parseInt(String(v), 10))
-			.filter((n) => Number.isFinite(n) && n > 0);
-		const tagIds = form
-			.getAll('tags')
-			.map((v) => parseInt(String(v), 10))
-			.filter((n) => Number.isFinite(n) && n > 0);
+		const ids = positiveIds(form, 'ids');
+		const tagIds = positiveIds(form, 'tags');
 		const tagNew = String(form.get('tag_new') ?? '').trim();
 		if (tagNew) tagIds.push(getOrCreateTag(userId, tagNew));
 		bulkAddTags(userId, ids, tagIds);
@@ -159,16 +137,7 @@ export const actions = {
 		const id = parseInt(String(form.get('id') ?? ''), 10);
 		if (!Number.isFinite(id)) return {};
 		const type = form.get('type') === 'income' ? 'income' : 'expense';
-		const categoryNew = String(form.get('category_new') ?? '').trim();
-		const categoryExisting = String(form.get('category_id') ?? '').trim();
-		let categoryId: number | null = null;
-		if (categoryNew) {
-			categoryId = getOrCreateCategory(userId, categoryNew, type);
-		} else if (categoryExisting) {
-			const category = getCategories(userId).find((c) => c.id === parseInt(categoryExisting, 10));
-			if (category) categoryId = category.id;
-		}
-		bulkSetCategory(userId, [id], categoryId);
+		bulkSetCategory(userId, [id], resolveCategoryFromForm(userId, form, type));
 		return { ok: true };
 	},
 

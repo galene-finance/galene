@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { isCalendarDate } from '$lib/utils';
 import {
 	cashflowFiltersActive,
 	cashflowForMonths,
@@ -29,11 +30,10 @@ export function load({ locals, url }) {
 
 	// Date range: ?from=YYYY-MM-DD&to=YYYY-MM-DD. The view is month-based, so only
 	// the year-month of each date matters. Defaults to the last 6 months.
-	const isDate = (s: string | null) => s != null && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s);
 	const fromParam = url.searchParams.get('from');
 	const toParam = url.searchParams.get('to');
-	let fromMonth = isDate(fromParam) ? fromParam!.slice(0, 7) : shiftMonth(currentMonth, -5);
-	let toMonth = isDate(toParam) ? toParam!.slice(0, 7) : currentMonth;
+	let fromMonth = isCalendarDate(fromParam) ? fromParam.slice(0, 7) : shiftMonth(currentMonth, -5);
+	let toMonth = isCalendarDate(toParam) ? toParam.slice(0, 7) : currentMonth;
 	if (fromMonth > toMonth) [fromMonth, toMonth] = [toMonth, fromMonth];
 	if (monthDiff(fromMonth, toMonth) > 23) fromMonth = shiftMonth(toMonth, -23); // cap at 24 months
 

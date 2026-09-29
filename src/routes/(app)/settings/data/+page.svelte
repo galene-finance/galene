@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import CsvIoIcons from '$lib/components/CsvIoIcons.svelte';
@@ -8,7 +7,7 @@
 	import Field from '$lib/components/ui/Field.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import Title from '$lib/components/Title.svelte';
-	import { toastFormResult } from '$lib/toasts';
+	import { watchFormToast } from '$lib/formToast.svelte';
 	import { DATA_TYPES, type DataTypeInfo, type DeletableDataType } from '$lib/types';
 
 	let {
@@ -75,12 +74,7 @@
 	);
 
 	// Toast the latest action result (replaces the old top-of-page status block).
-	let lastForm = untrack(() => form);
-	$effect(() => {
-		if (form === lastForm) return;
-		lastForm = form;
-		toastFormResult(form);
-	});
+	watchFormToast(() => form);
 </script>
 
 <Title title="Data" />

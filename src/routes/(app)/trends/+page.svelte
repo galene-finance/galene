@@ -129,6 +129,12 @@
 		barOpen = true;
 	}
 
+	// Dialog restores focus to the clicked bar on close, which leaves a blue
+	// :focus-visible capsule. Prevent that restore so the highlight clears.
+	function onBarDialogCloseAutoFocus(e: Event) {
+		e.preventDefault();
+	}
+
 	// Mouse hover shows the amount. Touch toggles it. Keyboard focus shows it
 	// without a hover. Nothing here locks page scroll.
 	let tip = $state<{ key: string; text: string; left: number; top: number } | null>(null);
@@ -482,6 +488,7 @@
 	size="md"
 	title={bar ? `${bar.label} · ${formatMoney(bar.spentCents)}` : 'Transactions'}
 	description="Transactions that make up this bar."
+	onCloseAutoFocus={onBarDialogCloseAutoFocus}
 >
 	{#if bar}
 		<div class="flex flex-col gap-4">

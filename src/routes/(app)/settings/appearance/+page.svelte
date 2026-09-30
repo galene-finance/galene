@@ -15,7 +15,8 @@
 		uniqueThemeName
 	} from '$lib/theme-pack';
 	import { DEFAULT_THEMES, applyThemeNow, themeValue } from '$lib/themes';
-	import { toast, toastFormResult } from '$lib/toasts';
+	import { watchFormToast } from '$lib/formToast.svelte';
+	import { toast } from '$lib/toasts';
 	import type { Theme, ThemeColors } from '$lib/types';
 
 	let {
@@ -218,12 +219,7 @@
 	});
 
 	// Toast the latest action result (replaces the old top-of-page status block).
-	let lastForm = untrack(() => form);
-	$effect(() => {
-		if (form === lastForm) return;
-		lastForm = form;
-		toastFormResult(form);
-	});
+	watchFormToast(() => form);
 </script>
 
 <Title title="Appearance" />

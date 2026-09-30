@@ -20,7 +20,7 @@
 	import RuleDialog from '$lib/components/RuleDialog.svelte';
 	import SplitDialog from '$lib/components/SplitDialog.svelte';
 	import { formatMoney, formatDate, todayISO, dayGroupLabel } from '$lib/utils';
-	import { toastFormResult } from '$lib/toasts';
+	import { watchFormToast } from '$lib/formToast.svelte';
 	import type { Account, Category, RuleCondition, Tag, Transaction } from '$lib/types';
 
 	let { form, data }: {
@@ -53,12 +53,7 @@
 	const tagItems = $derived(data.tags.map((t) => ({ value: String(t.id), label: t.name })));
 	const tagsOf = (t: Transaction) => t.tags ?? [];
 
-	let lastForm = untrack(() => form);
-	$effect(() => {
-		if (form === lastForm) return;
-		lastForm = form;
-		toastFormResult(form);
-	});
+	watchFormToast(() => form);
 
 	// Filter state (synced from the URL after each navigation).
 	// untrack is the first paint only. The effect below applies the next URL.

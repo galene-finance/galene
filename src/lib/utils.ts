@@ -50,6 +50,14 @@ export function suggestedOpeningCents(
 	return Math.round(bankBalanceCents) - Math.round(txnSumOnOrAfterAsOfCents);
 }
 
+/**
+ * Calendar-shaped YYYY-MM-DD (month 01–12, day 01–31).
+ * Does not reject impossible days such as Feb 31 — URL filters use this shape check.
+ */
+export function isCalendarDate(value: string | null): value is string {
+	return value != null && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value);
+}
+
 export function todayISO(): string {
 	const d = new Date();
 	const month = String(d.getMonth() + 1).padStart(2, '0');

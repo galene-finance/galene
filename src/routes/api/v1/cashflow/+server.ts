@@ -1,13 +1,13 @@
 import { apiUser, json, unauthorized } from '$lib/server/api';
 import { cashflowForMonths, lastDayOfMonth, monthDiff, shiftMonth } from '$lib/server/finance';
+import { isCalendarDate } from '$lib/utils';
 
-const isDate = (s: string | null) => s != null && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s);
 const isMonth = (s: string | null) => s != null && /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
 
 /** Accepts YYYY-MM or YYYY-MM-DD; returns the YYYY-MM part or null. */
 function toMonth(s: string | null): string | null {
 	if (isMonth(s)) return s;
-	if (isDate(s)) return s!.slice(0, 7);
+	if (isCalendarDate(s)) return s.slice(0, 7);
 	return null;
 }
 

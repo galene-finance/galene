@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Field from '$lib/components/ui/Field.svelte';
@@ -7,7 +6,8 @@
 	import Title from '$lib/components/Title.svelte';
 	import type { ApiTokenInfo } from '$lib/server/apiTokens';
 	import { copyText } from '$lib/clipboard';
-	import { toast, toastFormResult } from '$lib/toasts';
+	import { watchFormToast } from '$lib/formToast.svelte';
+	import { toast } from '$lib/toasts';
 
 	let {
 		form,
@@ -71,12 +71,7 @@
 	];
 
 	// Toast the latest action result (replaces the old top-of-page status block).
-	let lastForm = untrack(() => form);
-	$effect(() => {
-		if (form === lastForm) return;
-		lastForm = form;
-		toastFormResult(form);
-	});
+	watchFormToast(() => form);
 </script>
 
 <Title title="API" />

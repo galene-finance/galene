@@ -1,9 +1,7 @@
 import { apiUser, idList, json, unauthorized } from '$lib/server/api';
 import { parseEmptyFields } from '$lib/server/transactionFilters';
 import { scopedTransactions, viewerScope } from '$lib/server/scopeQuery';
-import { parseAmountToCents } from '$lib/utils';
-
-const isDate = (s: string | null) => s != null && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s);
+import { isCalendarDate, parseAmountToCents } from '$lib/utils';
 
 export function GET(event) {
 	const user = apiUser(event);
@@ -20,8 +18,8 @@ export function GET(event) {
 	const page = Math.max(1, parseInt(p.get('page') ?? '1', 10) || 1);
 	const pageSize = Math.min(100, Math.max(1, parseInt(p.get('page_size') ?? '25', 10) || 25));
 
-	const dateFrom = isDate(p.get('date_from')) ? p.get('date_from')! : null;
-	const dateTo = isDate(p.get('date_to')) ? p.get('date_to')! : null;
+	const dateFrom = isCalendarDate(p.get('date_from')) ? p.get('date_from') : null;
+	const dateTo = isCalendarDate(p.get('date_to')) ? p.get('date_to') : null;
 
 	const result = scopedTransactions(user.id, {
 		accountIds: idList(p.get('account')),

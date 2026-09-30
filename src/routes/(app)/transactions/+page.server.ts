@@ -26,6 +26,7 @@ import {
 import { parseAmountToCents } from '$lib/utils';
 import { parseTransactionFilters } from '$lib/server/transactionFilters';
 import { scopedAccounts, scopedCategories, scopedTransactions, viewerScope } from '$lib/server/scopeQuery';
+import { countOpenSyncReviews } from '$lib/server/sync';
 
 const PAGE_SIZES = [25, 50, 75, 100];
 
@@ -39,7 +40,8 @@ export function load({ locals, url }) {
 		viewer: locals.user?.role === 'viewer',
 		accounts: scopedAccounts(userId, scope),
 		categories: scopedCategories(userId, scope),
-		tags: scope ? [] : getTags(userId)
+		tags: scope ? [] : getTags(userId),
+		openSyncReviews: scope ? 0 : countOpenSyncReviews(userId)
 	};
 }
 

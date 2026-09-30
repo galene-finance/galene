@@ -376,8 +376,20 @@
 		<div class="flex flex-wrap items-center gap-2">
 			<CsvIoIcons {exportHref} />
 			{#if !viewer}
-			<Button variant="secondary" type="button" onclick={() => (scheduledOpen = true)}>+ New scheduled</Button>
-			<Button type="button" onclick={openAdd}>+ Add transaction</Button>
+				<Button variant="secondary" type="button" onclick={() => (scheduledOpen = true)}>+ New scheduled</Button>
+				{#if (data.openSyncReviews ?? 0) > 0}
+					<a
+						href="/transactions/review"
+						class="inline-flex h-9 items-center rounded-md border border-border bg-surface px-3 text-sm text-foreground hover:bg-muted"
+					>
+						Review sync
+						<span
+							class="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground"
+							>{data.openSyncReviews}</span
+						>
+					</a>
+				{/if}
+				<Button type="button" onclick={openAdd}>+ Add transaction</Button>
 			{/if}
 		</div>
 	</div>
@@ -632,6 +644,11 @@
 									{:else}
 										<span class="text-muted-foreground">—</span>
 									{/if}
+									{#if tx.pending}
+										<span
+											class="ml-1.5 inline-flex shrink-0 align-middle rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+											>Pending</span>
+									{/if}
 								</div>
 								{#if tx.merchant}
 									<button
@@ -735,6 +752,11 @@
 									{tx.merchant}
 								{:else}
 									<span class="text-muted-foreground">—</span>
+								{/if}
+								{#if tx.pending}
+									<span
+										class="ml-1.5 inline-flex align-middle rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+										>Pending</span>
 								{/if}
 							</span>
 							{#if tx.merchant}

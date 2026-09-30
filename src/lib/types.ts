@@ -76,6 +76,12 @@ export interface Transaction {
 	/** Set when the transaction was imported from a bank provider. */
 	provider?: string | null;
 	external_id?: string | null;
+	/** True when the provider still marks this charge as pending. */
+	pending?: boolean;
+	/** Posted row: pending external id it replaces (when the provider sent one). */
+	pending_transaction_id?: string | null;
+	/** Last sync time we saw this row still marked pending. */
+	pending_last_seen_at?: string | null;
 	account_name?: string;
 	category_name?: string | null;
 	category_color?: string | null;
@@ -129,6 +135,30 @@ export interface RecurringSuggestion {
 	categoryName: string | null;
 	confidence: number;
 	sampleDates: string[];
+}
+
+
+/** Ambiguous orphan left for the user after a bank sync (issue #127). */
+export type SyncReviewStatus = 'open' | 'kept' | 'folded' | 'dismissed';
+
+export interface SyncReviewCandidate {
+	id: number;
+	date: string;
+	amount_cents: number;
+	merchant: string | null;
+	external_id: string | null;
+}
+
+export interface SyncReviewItem {
+	id: number;
+	orphan_transaction_id: number;
+	provider: string;
+	status: SyncReviewStatus;
+	reason: string;
+	created_at: string;
+	resolved_at: string | null;
+	orphan: SyncReviewCandidate;
+	candidates: SyncReviewCandidate[];
 }
 
 export type NotificationKind = 'sync_failed' | 'sync_recovered' | 'budget_overrun' | 'bill_upcoming';

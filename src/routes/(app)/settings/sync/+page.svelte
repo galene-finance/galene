@@ -102,6 +102,7 @@
 			linked: Record<string, LinkedAccount[]>;
 			allAccounts: { id: number; name: string; type: string; provider: string | null; external_id: string | null }[];
 			userId: number;
+			openSyncReviews: number;
 			plaid: { clientId: string; env: string; sandboxInstance: string; secretConfigured: boolean };
 		};
 	} = $props();
@@ -158,6 +159,15 @@
 		>← Back to Settings</a
 	>
 	<h1 class="text-2xl font-semibold tracking-tight">Bank sync</h1>
+
+	{#if (data.openSyncReviews ?? 0) > 0}
+		<div class="rounded-lg border border-border bg-surface px-4 py-3 text-sm">
+			<a href="/transactions/review" class="font-medium text-primary underline-offset-2 hover:underline">
+				{data.openSyncReviews} sync item{data.openSyncReviews === 1 ? '' : 's'} need review
+			</a>
+			<span class="text-muted-foreground"> — possible duplicates or replaced pending charges.</span>
+		</div>
+	{/if}
 
 	{#each data.providers as p (p.id)}
 		{@const conn = data.connections.find((c) => c.provider === p.id)}

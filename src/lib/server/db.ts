@@ -774,6 +774,39 @@ CREATE TABLE IF NOT EXISTS oidc_states (
 			database.exec(`ALTER TABLE sessions ADD COLUMN idp_label TEXT`);
 		}
 	}
+},
+{
+	// Phase: persist pending metadata + sync review queue (issue #127).
+	// Column adds are guarded because the migrate harness rewinds user_version
+	// and would otherwise re-run ALTER on an already-migrated file.
+	sql: `
+CREATE TABLE IF NOT EXISTS sync_review_items (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	orphan_transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+	provider TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','kept','folded','dismissed')),
+	candidate_transaction_ids TEXT NOT NULL DEFAULT '[]',
+	reason TEXT NOT NULL DEFAULT 'ambiguous_orphan',
+	created_at TEXT NOT NULL DEFAULT (datetime('now')),
+	resolved_at TEXT,
+	UNIQUE (user_id, orphan_transaction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_review_user_status ON sync_review_items(user_id, status);
+`,
+	after(database) {
+		const cols = database.query('PRAGMA table_info(transactions)').all() as { name: string }[];
+		const names = new Set(cols.map((c) => c.name));
+		if (!names.has('pending')) {
+			database.exec(`ALTER TABLE transactions ADD COLUMN pending INTEGER NOT NULL DEFAULT 0`);
+		}
+		if (!names.has('pending_transaction_id')) {
+			database.exec(`ALTER TABLE transactions ADD COLUMN pending_transaction_id TEXT`);
+		}
+		if (!names.has('pending_last_seen_at')) {
+			database.exec(`ALTER TABLE transactions ADD COLUMN pending_last_seen_at TEXT`);
+		}
+	}
 }
 ];
 

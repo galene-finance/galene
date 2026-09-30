@@ -147,3 +147,71 @@ describe('pending row already posted in the same response', () => {
 		expect(covered.has('p2')).toBe(false);
 	});
 });
+
+
+describe('persist pending metadata across syncs (#127)', () => {
+	test('stores pending flag and pending_transaction_id on insert', () => {
+		const database = open();
+		const { userId, accountId } = seed(database);
+		database
+			.query(
+				`INSERT INTO transactions (
+					user_id, account_id, date, amount_cents, merchant, provider, external_id,
+					pending, pending_transaction_id, pending_last_seen_at
+				 ) VALUES (?, ?, '2026-09-01', -1000, 'Cafe', 'plaid', 'pending-keep', 1, NULL, '2026-09-01 12:00:00')`
+			)
+			.run(userId, accountId);
+		const row = database
+			.query(
+				`SELECT pending, pending_transaction_id, pending_last_seen_at, external_id FROM transactions WHERE external_id = 'pending-keep'`
+			)
+			.get() as {
+			pending: number;
+			pending_transaction_id: string | null;
+			pending_last_seen_at: string | null;
+			external_id: string;
+		};
+		expect(row.pending).toBe(1);
+		expect(row.pending_last_seen_at).toBe('2026-09-01 12:00:00');
+		expect(row.external_id).toBe('pending-keep');
+	});
+
+	test('folds a stored pending row when a later sync posts with pending_transaction_id', () => {
+		const database = open();
+		const { userId, accountId, categoryId } = seed(database);
+		// Sync 1: pending charge arrives and is persisted.
+		database
+			.query(
+				`INSERT INTO transactions (
+					user_id, account_id, date, amount_cents, merchant, notes, provider, external_id,
+					category_id, pending, pending_last_seen_at
+				 ) VALUES (?, ?, '2026-09-01', -1000, 'Cafe', 'lunch', 'plaid', 'pending-later', ?, 1, '2026-09-01 10:00:00')`
+			)
+			.run(userId, accountId, categoryId);
+		// Sync 2: posted charge names the pending id (pending row not in this response).
+		database
+			.query(
+				`INSERT INTO transactions (
+					user_id, account_id, date, amount_cents, merchant, provider, external_id,
+					pending, pending_transaction_id
+				 ) VALUES (?, ?, '2026-09-03', -1250, 'Cafe', 'plaid', 'posted-later', 0, 'pending-later')`
+			)
+			.run(userId, accountId);
+		foldPendingIntoPosted(userId, 'plaid', accountId, 'pending-later', 'posted-later', database);
+		const rows = database
+			.query('SELECT external_id, amount_cents, category_id, notes, pending FROM transactions')
+			.all() as {
+			external_id: string;
+			amount_cents: number;
+			category_id: number | null;
+			notes: string | null;
+			pending: number;
+		}[];
+		expect(rows).toHaveLength(1);
+		expect(rows[0]?.external_id).toBe('posted-later');
+		expect(rows[0]?.amount_cents).toBe(-1250);
+		expect(rows[0]?.category_id).toBe(categoryId);
+		expect(rows[0]?.notes).toBe('lunch');
+		expect(rows[0]?.pending).toBe(0);
+	});
+});

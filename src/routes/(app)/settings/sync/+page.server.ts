@@ -9,7 +9,7 @@ import {
 	plaidLinkEnabled,
 	savePlaidConfig
 } from '$lib/server/providers/plaid';
-import { connect, disconnect, getLinkedAccounts, listConnections, mapAccount, setSyncInterval, syncNow } from '$lib/server/sync';
+import { connect, countOpenSyncReviews, disconnect, getLinkedAccounts, listConnections, mapAccount, setSyncInterval, syncNow } from '$lib/server/sync';
 import { mergedNote } from '$lib/utils';
 
 /** "90 minutes" / "an hour" / "a day" style label for an interval in minutes. */
@@ -61,6 +61,7 @@ export function load({ locals, depends }) {
 		linked,
 		allAccounts,
 		userId,
+		openSyncReviews: countOpenSyncReviews(userId),
 		// Plaid is configured per user; the form pre-fills the saved values —
 		// except the secret, which never reaches the browser (see
 		// plaidConfigForClient).

@@ -683,6 +683,7 @@ export function getTransactions(userId: number, f: TransactionFilters): Transact
 	const rows = db()
 		.query(
 			`SELECT t.id, t.account_id, t.category_id, t.date, t.amount_cents, t.merchant, t.notes, t.color,
+			        t.pending, t.pending_transaction_id, t.pending_last_seen_at,
 			        a.name AS account_name, c.name AS category_name, c.color AS category_color,
 			        CASE WHEN c.id IS NULL THEN NULL WHEN c.is_transfer = 1 THEN 'transfer' ELSE c.type END AS category_type
 			 FROM transactions t
@@ -699,6 +700,9 @@ export function getTransactions(userId: number, f: TransactionFilters): Transact
 		category_type: CategoryType | null;
 	})[];
 
+	for (const row of rows) {
+		row.pending = !!(row as Transaction & { pending?: number | boolean }).pending;
+	}
 	const items = attachSplits(userId, attachTags(userId, rows));
 	return { items, total, pages: Math.max(1, Math.ceil(total / f.pageSize)) };
 }

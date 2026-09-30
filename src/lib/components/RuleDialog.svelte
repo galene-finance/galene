@@ -212,43 +212,52 @@
 				Conditions
 				<span class="ml-1 text-xs font-normal text-muted-foreground">All must match</span>
 			</p>
-			<div class="mt-2 flex flex-col gap-2">
+			<div class="mt-2 flex flex-col gap-2.5">
 				{#each conditions as cond, i (i)}
-					<div class="flex flex-wrap items-center gap-2">
-						<Select bind:value={cond.field} items={FIELD_ITEMS} class="w-32" />
-						<Select bind:value={cond.op} items={OPS[cond.field]} class="w-36" />
-						{#if cond.field === 'account'}
-							<Select
-								bind:value={cond.value}
-								items={accountItems}
-								placeholder="Select account"
-								class="min-w-40 flex-1"
-							/>
-						{:else if cond.field === 'amount' && cond.op === 'between'}
-							<Input
-								bind:value={cond.value}
-								inputmode="decimal"
-								placeholder="Min"
-								class="min-w-24 flex-1"
-							/>
-							<Input
-								bind:value={cond.value2}
-								inputmode="decimal"
-								placeholder="Max"
-								class="min-w-24 flex-1"
-							/>
-						{:else}
-							<Input
-								bind:value={cond.value}
-								type="text"
-								inputmode={cond.field === 'amount' ? 'decimal' : undefined}
-								placeholder={cond.field === 'merchant' ? 'e.g. whole foods' : '0.00'}
-								class="min-w-40 flex-1"
-							/>
-						{/if}
-						<Button variant="ghost" size="sm" type="button" onclick={() => removeCondition(i)}>
-							Remove
-						</Button>
+					<div class="rounded-[10px] border border-border bg-muted p-3">
+						<div class="mb-2 flex items-center justify-between gap-2">
+							<span
+								class="rounded-full bg-primary/10 px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-primary"
+							>
+								Condition {i + 1}
+							</span>
+							<Button variant="ghost" size="sm" type="button" onclick={() => removeCondition(i)}>
+								Remove
+							</Button>
+						</div>
+						<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+							<Select bind:value={cond.field} items={FIELD_ITEMS} class="w-full sm:w-32" />
+							<Select bind:value={cond.op} items={OPS[cond.field]} class="w-full sm:w-36" />
+							{#if cond.field === 'account'}
+								<Select
+									bind:value={cond.value}
+									items={accountItems}
+									placeholder="Select account"
+									class="w-full min-w-40 sm:flex-1"
+								/>
+							{:else if cond.field === 'amount' && cond.op === 'between'}
+								<Input
+									bind:value={cond.value}
+									inputmode="decimal"
+									placeholder="Min"
+									class="w-full min-w-24 sm:flex-1"
+								/>
+								<Input
+									bind:value={cond.value2}
+									inputmode="decimal"
+									placeholder="Max"
+									class="w-full min-w-24 sm:flex-1"
+								/>
+							{:else}
+								<Input
+									bind:value={cond.value}
+									type="text"
+									inputmode={cond.field === 'amount' ? 'decimal' : undefined}
+									placeholder={cond.field === 'merchant' ? 'e.g. whole foods' : '0.00'}
+									class="w-full min-w-40 sm:flex-1"
+								/>
+							{/if}
+						</div>
 					</div>
 				{/each}
 			</div>

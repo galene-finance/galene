@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite';
 import { db } from './db';
 import { getProvider } from './providers';
 import { applyCategorizationRules } from './finance';
@@ -248,10 +249,14 @@ export async function syncNow(userId: number, providerId: string): Promise<SyncS
 		const postedPendingIds = pendingIdsReplacedInResponse(providerTransactions);
 		let created = 0;
 		let updated = 0;
+		const seenAt = dbTime(new Date());
 		for (const pt of providerTransactions) {
 			if (isPendingAlreadyPosted(pt, postedPendingIds)) continue;
 			const accountId = accountMap.get(pt.account_external_id);
 			if (accountId == null) continue;
+			const pendingFlag = pt.pending === true ? 1 : 0;
+			const pendingTxnId = pt.pending_transaction_id ?? null;
+			const pendingLastSeen = pendingFlag ? seenAt : null;
 			const existing = db()
 				.query('SELECT id FROM transactions WHERE user_id = ? AND provider = ? AND external_id = ?')
 				.get(userId, providerId, pt.external_id) as { id: number } | undefined;
@@ -259,26 +264,55 @@ export async function syncNow(userId: number, providerId: string): Promise<SyncS
 				db()
 					.query(
 						`UPDATE transactions
-						 SET account_id = ?, date = ?, amount_cents = ?, merchant = ?, notes = ?, updated_at = datetime('now')
+						 SET account_id = ?, date = ?, amount_cents = ?, merchant = ?, notes = ?,
+						     pending = ?, pending_transaction_id = ?,
+						     pending_last_seen_at = CASE WHEN ? = 1 THEN ? ELSE pending_last_seen_at END,
+						     updated_at = datetime('now')
 						 WHERE id = ? AND user_id = ?`
 					)
-					.run(accountId, pt.date, pt.amount_cents, pt.merchant ?? null, pt.notes ?? null, existing.id, userId);
+					.run(
+						accountId,
+						pt.date,
+						pt.amount_cents,
+						pt.merchant ?? null,
+						pt.notes ?? null,
+						pendingFlag,
+						pendingTxnId,
+						pendingFlag,
+						pendingLastSeen,
+						existing.id,
+						userId
+					);
 				updated++;
 			} else {
 				const result = db()
 					.query(
-						`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, notes, provider, external_id)
-						 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+						`INSERT INTO transactions (
+							user_id, account_id, date, amount_cents, merchant, notes, provider, external_id,
+							pending, pending_transaction_id, pending_last_seen_at
+						 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 					)
-					.run(userId, accountId, pt.date, pt.amount_cents, pt.merchant ?? null, pt.notes ?? null, providerId, pt.external_id);
+					.run(
+						userId,
+						accountId,
+						pt.date,
+						pt.amount_cents,
+						pt.merchant ?? null,
+						pt.notes ?? null,
+						providerId,
+						pt.external_id,
+						pendingFlag,
+						pendingTxnId,
+						pendingLastSeen
+					);
 				created++;
 				// Imported transactions start uncategorized; let the user's rules fill them in.
 				applyCategorizationRules(userId, Number(result.lastInsertRowid));
-				}
-				if (!pt.pending && pt.pending_transaction_id) {
+			}
+			if (!pt.pending && pt.pending_transaction_id) {
 				foldPendingIntoPosted(userId, providerId, accountId, pt.pending_transaction_id, pt.external_id);
-				}
-				}
+			}
+		}
 
 		// The upsert above imported every copy the provider reports now; fold
 		// the stale copies it no longer reports into their replacements.
@@ -394,10 +428,12 @@ export function foldPendingIntoPosted(
 				 SET category_id = COALESCE(category_id, ?),
 				     color = COALESCE(color, ?),
 				     notes = COALESCE(notes, ?),
+				     pending = 0,
+				     pending_transaction_id = COALESCE(pending_transaction_id, ?),
 				     updated_at = datetime('now')
 				 WHERE id = ? AND user_id = ?`
 			)
-			.run(pending.category_id, pending.color, pending.notes, posted.id, userId);
+			.run(pending.category_id, pending.color, pending.notes, pendingExternalId, posted.id, userId);
 		database
 			.query(
 				`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
@@ -503,7 +539,7 @@ export function pickRepostTarget(
  * and either the same amount or the same merchant within the ORPHAN_AMOUNT_*
  * band (grocery auth→adjust). When several live same-merchant rows qualify,
  * pickRepostTarget keeps only a clear winner. The live row keeps the posted
- * amount. Truly ambiguous rows are left for the user.
+ * amount. Truly ambiguous rows are queued for in-app review (#127).
  *
  * Returns the number of rows merged away.
  */
@@ -545,51 +581,257 @@ export function mergeRepostedTransactions(
 			) as ReplacementRow[];
 		const live = candidates.filter((c) => liveIds.has(c.external_id));
 		const target = pickRepostTarget(orphan, live);
-		if (!target) continue; // 0 or ambiguous — leave for the user
-		const orphanSplits = (
-			database.query('SELECT COUNT(*) AS c FROM transaction_splits WHERE transaction_id = ?').get(orphan.id) as { c: number }
-		).c;
-		if (orphanSplits > 0 && target.split_count > 0) continue; // two split layouts can't be combined
-		database.run('BEGIN');
-		try {
-			// User-owned fields move over only where the live row has none of
-			// its own; the live row's existing values (and its just-refreshed
-			// provider data) win.
-			database
-				.query(
-					`UPDATE transactions
-					 SET category_id = COALESCE(category_id, ?),
-					     color = COALESCE(color, ?),
-					     notes = COALESCE(notes, ?),
-					     updated_at = datetime('now')
-					 WHERE id = ? AND user_id = ?`
-				)
-				.run(orphan.category_id, orphan.color, orphan.notes, target.id, userId);
-			// Tags: the orphan's are copied across; the originals are dropped
-			// with the row.
-			database
-				.query(
-					`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
-					 SELECT ?, tag_id FROM transaction_tags WHERE transaction_id = ?`
-				)
-				.run(target.id, orphan.id);
-			// Splits: re-point the orphan's to the live row when it has none.
-			if (orphanSplits > 0 && target.split_count === 0) {
-				database.query('UPDATE transaction_splits SET transaction_id = ? WHERE transaction_id = ?').run(target.id, orphan.id);
-			}
-			database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(orphan.id, userId);
-			database.run('COMMIT');
+		if (!target) {
+			// 0 or ambiguous — queue for user review instead of silent leave (#127).
+			enqueueSyncReview(userId, providerId, orphan.id, live.map((c) => c.id), database);
+			continue;
+		}
+		if (foldOrphanIntoTarget(userId, orphan, target, database)) {
 			merged++;
 			// The merchant may have changed on the re-post (e.g. a corrected
 			// name); let the user's rules categorize the survivor if it has
 			// no category yet.
 			if (orphan.category_id == null && target.category_id == null) applyCategorizationRules(userId, target.id);
-		} catch (error) {
-			database.run('ROLLBACK');
-			throw error;
 		}
 	}
 	return merged;
+}
+
+/**
+ * Fold an orphan row's user-owned fields into a live target, then delete the
+ * orphan. Shared by the automatic orphan sweep and the review-queue "fold
+ * into" action. Returns false when both sides already have splits.
+ */
+export function foldOrphanIntoTarget(
+	userId: number,
+	orphan: { id: number; category_id: number | null; color: string | null; notes: string | null },
+	target: { id: number; category_id: number | null; split_count: number },
+	database: Database = db()
+): boolean {
+	const orphanSplits = (
+		database.query('SELECT COUNT(*) AS c FROM transaction_splits WHERE transaction_id = ?').get(orphan.id) as {
+			c: number;
+		}
+	).c;
+	if (orphanSplits > 0 && target.split_count > 0) return false;
+	database.run('BEGIN');
+	try {
+		database
+			.query(
+				`UPDATE transactions
+				 SET category_id = COALESCE(category_id, ?),
+				     color = COALESCE(color, ?),
+				     notes = COALESCE(notes, ?),
+				     pending = 0,
+				     updated_at = datetime('now')
+				 WHERE id = ? AND user_id = ?`
+			)
+			.run(orphan.category_id, orphan.color, orphan.notes, target.id, userId);
+		database
+			.query(
+				`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
+				 SELECT ?, tag_id FROM transaction_tags WHERE transaction_id = ?`
+			)
+			.run(target.id, orphan.id);
+		if (orphanSplits > 0 && target.split_count === 0) {
+			database
+				.query('UPDATE transaction_splits SET transaction_id = ? WHERE transaction_id = ?')
+				.run(target.id, orphan.id);
+		}
+		database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(orphan.id, userId);
+		database.run('COMMIT');
+		return true;
+	} catch (error) {
+		database.run('ROLLBACK');
+		throw error;
+	}
+}
+
+/** Queue an orphan for user review when auto-fold has no clear winner. */
+export function enqueueSyncReview(
+	userId: number,
+	providerId: string,
+	orphanTransactionId: number,
+	candidateIds: number[],
+	database: Database = db()
+): void {
+	const existing = database
+		.query(
+			`SELECT id, status FROM sync_review_items
+			 WHERE user_id = ? AND orphan_transaction_id = ?`
+		)
+		.get(userId, orphanTransactionId) as { id: number; status: string } | undefined;
+	// keep both / dismiss / folded: do not reopen.
+	if (existing && existing.status !== 'open') return;
+	const payload = JSON.stringify(candidateIds);
+	if (existing) {
+		database
+			.query(
+				`UPDATE sync_review_items
+				 SET provider = ?, candidate_transaction_ids = ?, reason = 'ambiguous_orphan'
+				 WHERE id = ?`
+			)
+			.run(providerId, payload, existing.id);
+		return;
+	}
+	database
+		.query(
+			`INSERT INTO sync_review_items
+			 (user_id, orphan_transaction_id, provider, status, candidate_transaction_ids, reason)
+			 VALUES (?, ?, ?, 'open', ?, 'ambiguous_orphan')`
+		)
+		.run(userId, orphanTransactionId, providerId, payload);
+}
+
+export function countOpenSyncReviews(userId: number, database: Database = db()): number {
+	const row = database
+		.query(`SELECT COUNT(*) AS c FROM sync_review_items WHERE user_id = ? AND status = 'open'`)
+		.get(userId) as { c: number };
+	return row.c;
+}
+
+interface ReviewTxnRow {
+	id: number;
+	date: string;
+	amount_cents: number;
+	merchant: string | null;
+	external_id: string | null;
+	category_id: number | null;
+	color: string | null;
+	notes: string | null;
+	split_count: number;
+}
+
+function loadReviewTxn(database: Database, userId: number, id: number): ReviewTxnRow | null {
+	return (
+		(database
+			.query(
+				`SELECT id, date, amount_cents, merchant, external_id, category_id, color, notes,
+					(SELECT COUNT(*) FROM transaction_splits s WHERE s.transaction_id = t.id) AS split_count
+				 FROM transactions t
+				 WHERE id = ? AND user_id = ?`
+			)
+			.get(id, userId) as ReviewTxnRow | undefined) ?? null
+	);
+}
+
+export function listOpenSyncReviews(userId: number, database: Database = db()) {
+	const rows = database
+		.query(
+			`SELECT id, orphan_transaction_id, provider, status, candidate_transaction_ids, reason, created_at, resolved_at
+			 FROM sync_review_items
+			 WHERE user_id = ? AND status = 'open'
+			 ORDER BY created_at DESC, id DESC`
+		)
+		.all(userId) as {
+		id: number;
+		orphan_transaction_id: number;
+		provider: string;
+		status: string;
+		candidate_transaction_ids: string;
+		reason: string;
+		created_at: string;
+		resolved_at: string | null;
+	}[];
+	const items = [];
+	for (const row of rows) {
+		const orphan = loadReviewTxn(database, userId, row.orphan_transaction_id);
+		if (!orphan) {
+			database.query('DELETE FROM sync_review_items WHERE id = ?').run(row.id);
+			continue;
+		}
+		let candidateIds: number[] = [];
+		try {
+			const parsed = JSON.parse(row.candidate_transaction_ids) as unknown;
+			if (Array.isArray(parsed)) candidateIds = parsed.filter((n): n is number => typeof n === 'number');
+		} catch {
+			candidateIds = [];
+		}
+		const candidates = candidateIds
+			.map((cid) => loadReviewTxn(database, userId, cid))
+			.filter((t): t is ReviewTxnRow => !!t)
+			.map((t) => ({
+				id: t.id,
+				date: t.date,
+				amount_cents: t.amount_cents,
+				merchant: t.merchant,
+				external_id: t.external_id
+			}));
+		items.push({
+			id: row.id,
+			orphan_transaction_id: row.orphan_transaction_id,
+			provider: row.provider,
+			status: row.status as 'open',
+			reason: row.reason,
+			created_at: row.created_at,
+			resolved_at: row.resolved_at,
+			orphan: {
+				id: orphan.id,
+				date: orphan.date,
+				amount_cents: orphan.amount_cents,
+				merchant: orphan.merchant,
+				external_id: orphan.external_id
+			},
+			candidates
+		});
+	}
+	return items;
+}
+
+/**
+ * Resolve a review item: keep both, dismiss, or fold the orphan into a live id.
+ */
+export function resolveSyncReview(
+	userId: number,
+	reviewId: number,
+	action: 'keep' | 'dismiss' | 'fold',
+	foldIntoId?: number,
+	database: Database = db()
+): { ok: true } | { error: string } {
+	const row = database
+		.query(
+			`SELECT id, orphan_transaction_id, status, candidate_transaction_ids
+			 FROM sync_review_items WHERE id = ? AND user_id = ?`
+		)
+		.get(reviewId, userId) as
+		| {
+				id: number;
+				orphan_transaction_id: number;
+				status: string;
+				candidate_transaction_ids: string;
+		  }
+		| undefined;
+	if (!row) return { error: 'Review item not found.' };
+	if (row.status !== 'open') return { error: 'That review item is already resolved.' };
+	const now = dbTime(new Date());
+	if (action === 'keep') {
+		database
+			.query(`UPDATE sync_review_items SET status = 'kept', resolved_at = ? WHERE id = ? AND user_id = ?`)
+			.run(now, reviewId, userId);
+		return { ok: true };
+	}
+	if (action === 'dismiss') {
+		database
+			.query(
+				`UPDATE sync_review_items SET status = 'dismissed', resolved_at = ? WHERE id = ? AND user_id = ?`
+			)
+			.run(now, reviewId, userId);
+		return { ok: true };
+	}
+	if (action !== 'fold' || foldIntoId == null || !Number.isFinite(foldIntoId)) {
+		return { error: 'Pick a transaction to fold into.' };
+	}
+	const orphan = loadReviewTxn(database, userId, row.orphan_transaction_id);
+	const target = loadReviewTxn(database, userId, foldIntoId);
+	if (!orphan || !target) return { error: 'One of those transactions is gone.' };
+	if (orphan.id === target.id) return { error: 'Cannot fold a transaction into itself.' };
+	if (!foldOrphanIntoTarget(userId, orphan, target, database)) {
+		return { error: 'Both transactions are split; fold them manually or keep both.' };
+	}
+	database
+		.query(`UPDATE sync_review_items SET status = 'folded', resolved_at = ? WHERE id = ? AND user_id = ?`)
+		.run(now, reviewId, userId);
+	return { ok: true };
 }
 
 /** Provider accounts linked to this user's Galene accounts, with imported transaction counts. */

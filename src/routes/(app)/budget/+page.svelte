@@ -112,6 +112,21 @@
 		return `/transactions?${params.toString()}`;
 	}
 
+	/** Progress tone for narrow cards: amber near limit (≥90%), red over. */
+	function progressTone(spentCents: number, limitCents: number): 'ok' | 'near' | 'over' {
+		if (spentCents > limitCents) return 'over';
+		if (limitCents > 0 && spentCents / limitCents >= 0.9) return 'near';
+		return 'ok';
+	}
+
+	function progressPct(spentCents: number, limitCents: number): number {
+		return Math.min(100, Math.round((spentCents / Math.max(1, limitCents)) * 100));
+	}
+
+	function displayPct(spentCents: number, limitCents: number): number {
+		return Math.round((spentCents / Math.max(1, limitCents)) * 100);
+	}
+
 	// Toast the latest action result (replaces the old top-of-page status block).
 	watchFormToast(() => form);
 </script>
@@ -134,7 +149,84 @@
 			</p>
 		</div>
 	{:else}
-		<div class="galene-scroll-x min-w-0 max-w-full overflow-x-auto rounded-lg border border-border bg-surface">
+		<!-- Narrow: stacked cards (Brand lock Budgets A / #148). Desktop keeps the table. -->
+		<ul class="flex flex-col gap-3 md:hidden">
+			{#each data.budgets as b (b.id)}
+				{@const tone = progressTone(b.spentCents, b.limit_cents)}
+				{@const barPct = progressPct(b.spentCents, b.limit_cents)}
+				{@const labelPct = displayPct(b.spentCents, b.limit_cents)}
+				<li
+					class="rounded-xl border bg-surface p-4 {tone === 'near'
+						? 'border-warning/40 bg-gradient-to-b from-warning/15 to-surface'
+						: tone === 'over'
+							? 'border-destructive/40 bg-gradient-to-b from-destructive/10 to-surface'
+							: 'border-border'}"
+				>
+					<div class="mb-2.5 flex items-center justify-between gap-2">
+						<span class="flex min-w-0 items-center gap-2">
+							<span
+								class="size-2.5 shrink-0 rounded-full"
+								style="background: {b.category_color ?? 'transparent'}"
+							></span>
+							<span class="truncate text-[0.95rem] font-semibold tracking-tight">{b.category_name}</span>
+						</span>
+						<span
+							class="inline-flex shrink-0 items-center rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-primary"
+						>
+							{b.period}
+						</span>
+					</div>
+					<div class="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+						<div
+							class="h-full rounded-full {tone === 'over'
+								? 'bg-destructive'
+								: tone === 'near'
+									? 'bg-warning'
+									: 'bg-primary'}"
+							style="width: {barPct}%"
+						></div>
+					</div>
+					<div class="flex items-baseline justify-between gap-2">
+						<div class="min-w-0">
+							<div class="text-sm font-medium">
+								<a
+									href={spentTransactionsHref(b)}
+									class="underline decoration-current/40 underline-offset-2 hover:decoration-current {tone === 'over'
+										? 'text-destructive'
+										: 'text-foreground hover:text-primary'}"
+									aria-label="Spent {formatMoney(b.spentCents)} transactions"
+								>
+									{formatMoney(b.spentCents)}
+								</a>
+								<span class="font-normal text-muted-foreground"> of {formatMoney(b.limit_cents)}</span>
+							</div>
+							<div class="mt-0.5 text-xs text-muted-foreground">{periodLabel(b.period, b.from, b.to)}</div>
+						</div>
+						<span
+							class="shrink-0 text-xs font-semibold {tone === 'near'
+								? 'text-warning'
+								: tone === 'over'
+									? 'text-destructive'
+									: 'text-muted-foreground'}"
+						>
+							{labelPct}%
+						</span>
+					</div>
+					<div class="mt-3 flex justify-end gap-3">
+						<button type="button" class="text-sm text-primary hover:underline" onclick={() => openEdit(b)}>
+							Edit
+						</button>
+						<form method="POST" action="?/delete" class="inline">
+							<input type="hidden" name="id" value={b.id} />
+							<button type="submit" class="text-sm text-destructive hover:underline">Delete</button>
+						</form>
+					</div>
+				</li>
+			{/each}
+		</ul>
+
+		<!-- Desktop / md+: existing table (unchanged behavior). -->
+		<div class="galene-scroll-x hidden min-w-0 max-w-full overflow-x-auto rounded-lg border border-border bg-surface md:block">
 			<table class="w-full min-w-[760px] text-sm">
 				<thead>
 					<tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">

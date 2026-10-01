@@ -7,6 +7,7 @@ Release), which commits it and tags `vX.Y`.
 
 ## [Unreleased]
 
+- MCP ships inside the main app image; Settings → API toggle enables the HTTP listener (**default off**). Separate `:mcp-*` remains a thin alias for migration.
 - Docs: README Highlights and the docs introduction name shipped capabilities (advisor access, settings hub, installable app, theme persist, transaction filters, trends drill-down, HTTP MCP, CSV export, account-menu version).
 
 ## [0.1]

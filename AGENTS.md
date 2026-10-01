@@ -17,7 +17,7 @@ Galene is self-hostable personal finance (SvelteKit + Bun + SQLite). Prefer smal
 2. **Feature branch** off `main`: `feat/issue-N-slug` or `fix/issue-N-slug`.
 3. **Docs check.** Before calling the work done, review `docs/` for anything the change makes wrong or incomplete. Update pages in the same PR when operators/users need to know; otherwise note `docs N/A` in the issue comment.
 4. **Open a PR into `test`** (preferred) or land on `test` only when explicitly asked. CI publishes:
-   - `ghcr.io/galene-finance/galene:app-test` / `:mcp-test` (mutable)
+   - `ghcr.io/galene-finance/galene:app-test` / `:mcp-test` (mutable; MCP bits live in the app image — `:mcp-*` is a thin alias)
    - `ghcr.io/galene-finance/galene:app-test-<sha>` / `:mcp-test-<sha>` (immutable)
 5. **Comment on the issue** in the same turn the work lands on `test`: short SHA + commit URL, what changed, docs note, how to verify on `:app-test`. Do **not** close the issue.
 6. **Human verifies** on `:app-test` (Settings → About / `GET /version` for the SHA). Approve by merging `test` → `main` (or asking for that ship).

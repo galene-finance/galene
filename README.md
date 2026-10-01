@@ -30,7 +30,7 @@ It values **privacy by default** (your SQLite database on your host), **clarity 
 - Settings as a searchable card grid; the theme you pick stays across refresh and sign-out
 - Installable on a phone
 - Advisor access: a frozen Accountant Pack, or a read-only Viewer
-- Read-only API, and MCP over stdio or HTTP with an API token
+- Read-only API, and MCP over stdio or HTTP with an API token (MCP ships in the app image; HTTP listener off by default in Settings)
 - Account menu shows the app version and commit
 - Docker, Podman, or from source
 

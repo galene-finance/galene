@@ -807,6 +807,19 @@ CREATE INDEX IF NOT EXISTS idx_sync_review_user_status ON sync_review_items(user
 			database.exec(`ALTER TABLE transactions ADD COLUMN pending_last_seen_at TEXT`);
 		}
 	}
+},
+{
+	// Phase: MCP enable toggle (ADO-35). Singleton row; default off so upgrades
+	// never open a listener until Settings (or GALENE_ENABLE_MCP) turns it on.
+	sql: `
+CREATE TABLE IF NOT EXISTS mcp_config (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	enabled INTEGER NOT NULL DEFAULT 0,
+	port INTEGER NOT NULL DEFAULT 3001,
+	host TEXT NOT NULL DEFAULT '0.0.0.0',
+	updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`
 }
 ];
 

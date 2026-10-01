@@ -1,11 +1,11 @@
 # Galene — Container Deployment Guide (Docker & Podman)
 
-Galene ships as **two images** built from one [`Dockerfile`](Dockerfile):
+Galene ships from one [`Dockerfile`](Dockerfile). Normal installs use the **app** image only (MCP bits included). The **mcp** target remains a thin alias for migration:
 
 | Target | Image | What it is |
 | --- | --- | --- |
-| `app` | `galene:app` | The web app: Bun.serve on port **3000**, single-file SQLite database in `/app/data` |
-| `mcp` | `galene:mcp` | The MCP (Model Context Protocol) stdio server — a self-contained bundle that talks to a running Galene instance over its REST API |
+| `app` | `galene:app` | The web app: Bun.serve on port **3000**, SQLite in `/app/data`, plus `mcp-bundle.js`. Enable MCP HTTP in Settings → API (**default off**). |
+| `mcp` | `galene:mcp` | Thin alias of the same MCP bundle (stdio / optional HTTP). Prefer the app image. |
 
 Both images:
 
@@ -37,18 +37,19 @@ The same file works with **`podman-compose`** (see [Podman](#podman)).
 
 ---
 
-## The two images
+## Images
 
-### `app` — the web app
+### `app` — the web app (includes MCP)
 
 ```
 FROM oven/bun:1.4.0-slim
 USER galene            # non-root, uid 10001
 WORKDIR /app
 ENV GALENE_DATA_DIR=/app/data  PORT=3000  NODE_ENV=production
-EXPOSE 3000
+EXPOSE 3000 3001
 HEALTHCHECK  GET /api/v1 → 401 means healthy
 CMD ["bun", "build/index.js"]
+# also ships ./mcp-bundle.js
 ```
 
 Notes:
@@ -56,8 +57,9 @@ Notes:
 - **No `VOLUME` instruction, on purpose.** The app has a startup check that **refuses to run if its data directory is not a mounted volume** (see [Data, volumes, backups](#data-volumes-and-backups)). A bare `docker run` without `-v` will not start — that is the point.
 - **Healthcheck:** `GET /api/v1` answers `401` (JSON) when the server is up and reachable; the container reports `healthy` on that. `docker ps` / `docker compose ps` shows the state.
 - **Shutdown:** the app's shutdown handler waits up to 30 s to finish in-flight work (WAL checkpoint, etc.); the compose file sets `stop_grace_period: 40s` to give it headroom before SIGKILL.
+- **MCP:** `mcp-bundle.js` is in the image. Settings → API → **Enable MCP HTTP listener** is **off by default** (no process / no port). When on, the app spawns the bundle on port **3001** (configurable). Publish `3001:3001` only when MCP is enabled. Stdio clients can launch the same bundle without the toggle.
 
-### `mcp` — the MCP server
+### `mcp` — thin alias (migration)
 
 ```
 FROM oven/bun:1.4.0-slim
@@ -66,10 +68,7 @@ ENV GALENE_API_URL=http://localhost:3000
 CMD ["bun", "mcp-bundle.js"]
 ```
 
-- **stdio transport** — an MCP client (Claude Desktop, Grok, …) launches it; it is not a long-running daemon and has no port.
-- **`GALENE_API_TOKEN` is required at runtime** — the process exits with an error message if it is missing.
-- **`GALENE_API_URL`** is the base URL of your Galene instance (default `http://localhost:3000`).
-- It exposes the read-only API as tools: `galene_summary`, `galene_accounts`, `galene_transactions`, `galene_budgets`, `galene_scheduled`, `galene_categories`, `galene_notifications`, and `galene_version` (which Galene server version is running).
+Same bundle as the app image. Prefer enabling MCP on the app for HTTP, or `docker run --entrypoint bun <app-image> mcp-bundle.js` for stdio. `:mcp-*` tags stay published temporarily so older client configs keep working.
 
 Usage is covered in [MCP server usage](#mcp-server-usage).
 
@@ -153,12 +152,15 @@ Then in the UI: Settings → Backups → Folder → `/app/backups` → Save fold
 | `XFF_DEPTH` | `1` | Optional Bun adapter: which hop in `X-Forwarded-For` is the client when `ADDRESS_HEADER=x-forwarded-for`. |
 | `GALENE_ALLOW_EPHEMERAL_DATA` | *(unset)* | `1` disables the startup volume check. Only for throwaway/test containers. |
 
-MCP image only:
+MCP (Settings-managed HTTP on the app, or standalone / thin `:mcp-*`):
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `GALENE_API_URL` | `http://localhost:3000` | Base URL of the Galene instance the MCP server calls. |
-| `GALENE_API_TOKEN` | — (**required**) | An API token from Settings → API. |
+| `GALENE_ENABLE_MCP` | *(unset → Settings, default off)* | `1`/`0` overrides Settings → API MCP HTTP listener. |
+| `GALENE_MCP_PORT` | *(unset → Settings, default 3001)* | MCP HTTP listen port when enabled. |
+| `GALENE_MCP_HOST` | *(unset → Settings, default 0.0.0.0)* | MCP HTTP bind address when enabled. |
+| `GALENE_API_URL` | `http://localhost:3000` | Base URL for a standalone/stdio MCP process. App-spawned MCP uses `http://127.0.0.1:$PORT`. |
+| `GALENE_API_TOKEN` | — | Required for **stdio**. Do not set on the app for Settings-managed HTTP MCP. |
 
 ### The `Secure` cookie flag and plain HTTP
 
@@ -229,11 +231,19 @@ The version (**major.minor** from `package.json`) plus the git commit and build 
 
 ## MCP server usage
 
-The MCP server needs (1) a running Galene instance and (2) an API token (Settings → **API** → Create token — shown once, copy it now).
+The app image includes the MCP bundle. Create an API token in Settings → **API** (shown once — copy it).
 
-### Client on the same host as the container
+### HTTP (recommended for always-on)
 
-Your MCP client (Claude Desktop, Grok, …) launches the container for each session:
+1. As an administrator, open Settings → API and turn on **Enable MCP HTTP listener** (default **off** — upgrades never enable it).
+2. Publish port **3001** (or your chosen port) on the container if clients are outside it.
+3. Point the client at `http://<host>:<port>/mcp` with `Authorization: Bearer <token>` on each request. Do not put the token in the app environment.
+
+Optional: `GALENE_ENABLE_MCP=1` forces the listener on; `GALENE_MCP_PORT` / `GALENE_MCP_HOST` override the bind.
+
+### Stdio (client launches the process)
+
+Your MCP client launches the bundle for each session. From the **app** image:
 
 ```json
 {
@@ -242,33 +252,22 @@ Your MCP client (Claude Desktop, Grok, …) launches the container for each sess
       "command": "docker",
       "args": [
         "run", "--rm", "-i",
-        "-e", "GALENE_API_URL=http://localhost:3000",
-        "-e", "GALENE_API_TOKEN=galene_…",
-        "ghcr.io/<owner>/<repo>:mcp-latest"
+        "-e", "GALENE_API_URL=http://host.docker.internal:3000",
+        "-e", "GALENE_API_TOKEN=<paste your token here>",
+        "--entrypoint", "bun",
+        "ghcr.io/<owner>/<repo>:app-latest",
+        "mcp-bundle.js"
       ]
     }
   }
 }
 ```
 
-`-i` is required (stdio transport); `--rm` cleans up after each session. If you published the image under a local name (e.g. `galene:mcp`), use that instead of the GHCR reference. If the app's port is remapped (e.g. `3103:3000`), point `GALENE_API_URL` at the mapped port.
+`-i` is required (stdio); `--rm` cleans up after each session. Use a `GALENE_API_URL` that is reachable from the MCP process. From a source checkout, `bun mcp/index.ts` with the same env works.
 
-### Client on another machine
+### Migration from `:mcp-latest`
 
-Same, but `GALENE_API_URL` is the address of your Galene server, e.g. `http://galene.example.com:3000` (or the URL behind your proxy if the API is exposed there).
-
-### Running it by hand
-
-```bash
-docker run -i --rm \
-  -e GALENE_API_URL=http://localhost:3000 \
-  -e GALENE_API_TOKEN=galene_… \
-  galene:mcp
-```
-
-It speaks JSON-RPC over stdin/stdout (the MCP protocol) and exits when stdin closes.
-
----
+Switch clients to the app image (HTTP via Settings, or stdio entrypoint above). The `:mcp-*` tags remain a thin alias of the same bundle for a transition period.
 
 ## Podman
 
@@ -315,7 +314,9 @@ GHCR requires a token; use a **classic** personal access token (fine-grained tok
 # Docker
 echo "<PAT>" | docker login ghcr.io --username <github-user> --password-stdin
 docker pull ghcr.io/<owner>/<repo>:app-latest
-docker pull ghcr.io/<owner>/<repo>:mcp-latest
+docker pull ghcr.io/<owner>/<repo>:app-latest
+# Optional migration alias:
+# docker pull ghcr.io/<owner>/<repo>:mcp-latest
 
 # Podman
 podman login ghcr.io   # enter <github-user> and the PAT

@@ -1,8 +1,8 @@
-# Galene — one build, two targets:
+# Galene — app image only:
 #   --target app : the web app (Bun.serve, port 3000, SQLite in /app/data, backups in /app/backups).
-#                  Also ships mcp-bundle.js; enable the HTTP listener in Settings (default off).
-#   --target mcp : thin alias of the same MCP bundle (stdio / optional HTTP). Prefer the app
-#                  image for normal installs; kept for migration from :mcp-latest.
+#                  MCP HTTP is path-mounted at /mcp when enabled in Settings (default off).
+#                  Also ships mcp-bundle.js for stdio clients (`docker run --entrypoint bun … mcp-bundle.js`).
+#   No separate `:mcp-*` image is published.
 #
 # Base images are pinned to the Bun version that generated bun.lock.
 #
@@ -38,13 +38,15 @@ RUN bun install --frozen-lockfile
 
 COPY . .
 
-# SvelteKit build (custom Bun adapter → build/) and the MCP server as a
-# single self-contained bundle (no node_modules needed at runtime)
+# SvelteKit build (custom Bun adapter → build/). MCP handlers are Bun-bundled next.
 RUN bun run build
 
-# The MCP bundle bakes in the package.json version (bun build can't bundle
-# JSON imports, so it's passed as a define).
-RUN bun build mcp/index.ts --target=bun --define GALENE_VERSION="\"$APP_VERSION\"" --outfile=mcp-dist/mcp-bundle.js
+# MCP bits (Bun-bundled so Node builtins resolve; never Vite-SSR the SDK;
+# version for the stdio bundle is baked via --define — bun can't bundle JSON imports):
+#   mcp-bundle.js  — stdio / optional standalone HTTP entry
+#   mcp-handler.js — in-process /mcp route (named exports)
+RUN bun build mcp/index.ts --target=bun --define GALENE_VERSION="\"$APP_VERSION\"" --outfile=mcp-dist/mcp-bundle.js \
+ && bun build mcp/http.ts --target=bun --outfile=mcp-dist/mcp-handler.js
 
 # ---------- app ----------
 FROM oven/bun:1.4.0-slim AS app
@@ -73,13 +75,13 @@ ENV GALENE_DATA_DIR=/app/data \
     NODE_ENV=production
 
 EXPOSE 3000
-# MCP HTTP (Settings → API, default off). Publish only when MCP is enabled.
-EXPOSE 3001
 
 COPY --from=build --chown=galene:galene /app/build ./build
-# MCP bits (~214 KiB): Settings can spawn this; stdio clients can also
+# MCP bits: stdio clients can
 # `docker run --rm -i --entrypoint bun <app-image> mcp-bundle.js`.
+# HTTP MCP is served by the app at /mcp (loads mcp-handler.js) when enabled.
 COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-bundle.js ./mcp-bundle.js
+COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-handler.js ./mcp-handler.js
 
 # Created in the image so a named volume initialized from them is owned by the
 # app user (a fresh named volume would otherwise be root-owned and unwritable).
@@ -90,28 +92,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD bun -e 'fetch("http://localhost:3000/api/v1").then(r => process.exit(r.status === 401 ? 0 : 1)).catch(() => process.exit(1))'
 
 CMD ["bun", "build/index.js"]
-
-# ---------- mcp (thin alias; prefer app image + Settings toggle) ----------
-FROM oven/bun:1.4.0-slim AS mcp
-
-RUN id galene >/dev/null 2>&1 || useradd -m -u 10001 galene
-USER galene
-
-ARG GIT_SHA=local
-ARG BUILD_DATE=unknown
-ARG APP_VERSION=dev
-LABEL org.opencontainers.image.version="${APP_VERSION}" \
-    org.opencontainers.image.revision="${GIT_SHA}" \
-    org.opencontainers.image.created="${BUILD_DATE}" \
-    org.opencontainers.image.source="https://github.com/galene-finance/galene"
-
-WORKDIR /app
-
-# Same mcp-bundle.js as the app image. Stdio unless GALENE_MCP_PORT is set.
-# Prefer enabling MCP in the app (Settings → API) instead of a second container.
-ENV GALENE_API_URL=http://localhost:3000
-
-COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-bundle.js ./mcp-bundle.js
-
-EXPOSE 3001
-CMD ["bun", "mcp-bundle.js"]

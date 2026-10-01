@@ -810,7 +810,8 @@ CREATE INDEX IF NOT EXISTS idx_sync_review_user_status ON sync_review_items(user
 },
 {
 	// Phase: MCP enable toggle (ADO-35). Singleton row; default off so upgrades
-	// never open a listener until Settings (or GALENE_ENABLE_MCP) turns it on.
+	// never expose /mcp until Settings (or GALENE_ENABLE_MCP) turns it on.
+	// port/host columns are unused since ADO-36 (MCP is on the app port only).
 	sql: `
 CREATE TABLE IF NOT EXISTS mcp_config (
 	id INTEGER PRIMARY KEY CHECK (id = 1),

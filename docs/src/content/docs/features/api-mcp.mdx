@@ -3,7 +3,7 @@ title: API & MCP
 description: The read-only REST API and the bundled MCP server.
 ---
 
-Galene exposes its data two ways: a read-only JSON REST API, and an MCP (Model Context Protocol) server that wraps it for AI assistants. The MCP server talks stdio when a client launches it, or HTTP when an administrator enables the listener in Settings (default **off**).
+Galene exposes its data two ways: a read-only JSON REST API, and an MCP (Model Context Protocol) server that wraps it for AI assistants. The MCP server talks stdio when a client launches it, or HTTP on the **same host and port as the app** at `/mcp` when an administrator enables it in Settings (default **off**).
 
 ## REST API
 
@@ -21,13 +21,13 @@ Unauthenticated requests get a JSON `401`.
 
 ## MCP in the app image
 
-The main app image (`:app-latest` / `:app-test`) includes the MCP bundle (`mcp-bundle.js`, ~214 KiB). You do **not** need a separate `:mcp-latest` container for normal installs.
+The app image (`:app-latest` / `:app-test`) includes the MCP bundle (`mcp-bundle.js`, ~214 KiB) for stdio clients. There is **no** separate `:mcp-*` image. HTTP MCP is served by the app itself at `/mcp` — no second port.
 
 1. Create an API token (Settings → API).
-2. **HTTP (long-running):** an administrator turns on **Enable MCP HTTP listener** under Settings → API (default off). Off means no MCP process and no listener. On starts the bundled server on the configured port (default **3001**). Each client sends `Authorization: Bearer <token>` per request. Do not set `GALENE_API_TOKEN` on the app process for this mode.
+2. **HTTP (same port as the app):** an administrator turns on **Enable MCP HTTP** under Settings → API (default off). Off means `/mcp` is not live. On serves MCP at `http://<host>:<app-port>/mcp`. Each client sends `Authorization: Bearer <token>` per request. Do not set `GALENE_API_TOKEN` on the app process for this mode.
 3. **Stdio (client-launched):** the MCP client starts the bundle itself — no Settings toggle required.
 
-Optional env override: `GALENE_ENABLE_MCP=1` / `0` forces the HTTP listener on or off (same pattern as `GALENE_OIDC_ENABLED`). `GALENE_MCP_PORT` / `GALENE_MCP_HOST` override the saved bind when set.
+Optional env override: `GALENE_ENABLE_MCP=1` / `0` forces MCP HTTP on or off (same pattern as `GALENE_OIDC_ENABLED`). There is no MCP port or host setting — MCP always uses the app listener when enabled.
 
 ### Stdio client config
 
@@ -63,13 +63,13 @@ docker run --rm -i \
 
 ### HTTP client config
 
-After enabling the listener in Settings (and publishing the port if the client is outside the container):
+After enabling MCP in Settings:
 
 ```json
 {
   "mcpServers": {
     "galene": {
-      "url": "http://127.0.0.1:3001/mcp",
+      "url": "http://127.0.0.1:3000/mcp",
       "headers": {
         "Authorization": "Bearer galene_…"
       }
@@ -78,25 +78,17 @@ After enabling the listener in Settings (and publishing the port if the client i
 }
 ```
 
-Use plain HTTP on localhost or a private network only. Do not expose that port as plain HTTP on a public interface — terminate TLS at the reverse proxy and forward to the MCP port.
+Use the same host and port as the app (only port **3000** in compose). Use plain HTTP on localhost or a private network only. Do not expose the app as plain HTTP on a public interface — terminate TLS at the reverse proxy and forward to the app port; `/mcp` is covered by the same proxy rule as the UI.
 
-Publish the port when needed, for example in compose:
+## Migration from dual-port / `:mcp-*`
 
-```yaml
-ports:
-  - "3000:3000"
-  - "3001:3001"   # only when MCP HTTP is enabled
-```
+The separate `:mcp-*` image is **no longer published**. Operators who ran MCP on a separate port (ADO-35 default **3001**) or a `:mcp-*` container should:
 
-## Migration from `:mcp-latest`
-
-Operators who ran a separate MCP container can:
-
-1. Pull a current `:app-*` image (it already contains `mcp-bundle.js`).
-2. Enable MCP in Settings → API (or set `GALENE_ENABLE_MCP=1`), publish port **3001** if clients need it, and point HTTP clients at `/mcp`.
-3. For stdio-only clients, switch the client command to the app image entrypoint shown above (or keep launching `mcp/index.ts` from a source checkout).
-
-The `:mcp-*` tags remain published for a while as a thin alias of the same bundle so existing client configs keep working. Prefer the app image long-term; a separate MCP container is no longer required.
+1. Pull a current `:app-*` image (replace any `:mcp-*` compose service).
+2. Enable MCP in Settings → API (or set `GALENE_ENABLE_MCP=1`). Default remains **off**.
+3. Point HTTP clients at `http://<app-host>:<app-port>/mcp` (same origin as the UI). No second published port.
+4. For stdio-only clients, launch `mcp-bundle.js` from the **app** image (`docker run --entrypoint bun <app-image> mcp-bundle.js`) or `mcp/index.ts` from a source checkout.
+5. Remove any `3001:3001` / `GALENE_MCP_PORT` / `GALENE_MCP_HOST` / `:mcp-*` compose leftovers.
 
 ## Tools
 

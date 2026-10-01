@@ -4,52 +4,33 @@ import { db } from './db';
 import { appVersion } from '../version';
 
 /**
- * Household MCP HTTP listener (ADO-35).
+ * Household MCP HTTP (ADO-36).
  *
  * Precedence: a set GALENE_ENABLE_MCP env var overrides the Settings toggle.
- * GALENE_MCP_PORT / GALENE_MCP_HOST override the saved port/host when set.
- * Default is off — upgrades never open a listener until an admin enables it.
+ * Default is off — upgrades never expose /mcp until an admin enables it.
  *
- * When on, the app spawns the bundled MCP server (mcp-bundle.js in the image,
- * or mcp/index.ts from a source checkout). Off stops that child — no listener.
- * Stdio clients can still launch the bundle themselves without this toggle.
+ * When on, MCP is served on the **app HTTP port** at `/mcp` (same process; no
+ * second listener or child). Off = that path is not live. Stdio clients can
+ * still launch mcp-bundle.js / mcp/index.ts without this toggle.
+ *
+ * Port/host columns may still exist on mcp_config from ADO-35; they are not
+ * read or written anymore.
  */
 
 const ROW_ID = 1;
-const DEFAULT_PORT = 3001;
-const DEFAULT_HOST = '0.0.0.0';
+/** Legacy defaults kept only so INSERT stays compatible with the ADO-35 schema. */
+const LEGACY_PORT = 3001;
+const LEGACY_HOST = '0.0.0.0';
+
+export const MCP_HTTP_PATH = '/mcp';
 
 export interface McpConfig {
 	enabled: boolean;
-	port: number;
-	host: string;
 	enabledFromEnv: boolean;
-	portFromEnv: boolean;
-	hostFromEnv: boolean;
 }
 
 interface ConfigRow {
 	enabled: number;
-	port: number;
-	host: string;
-}
-
-type McpChild = {
-	kill: (code?: number | NodeJS.Signals) => boolean | void;
-	killed?: boolean;
-	exited?: Promise<number>;
-	pid?: number;
-};
-
-let child: McpChild | null = null;
-let startedKey: string | null = null;
-/** Test hook: replace spawn without hitting the real Bun.spawn. */
-let spawnImpl: ((cmd: string[], opts: SpawnOpts) => McpChild) | null = null;
-
-interface SpawnOpts {
-	env: Record<string, string | undefined>;
-	stdout: 'inherit';
-	stderr: 'inherit';
 }
 
 function envTrim(name: string): string {
@@ -64,17 +45,9 @@ function envBool(name: string): boolean | null {
 	return null;
 }
 
-function envPort(name: string): number | null {
-	const raw = envTrim(name);
-	if (!raw) return null;
-	const n = Number(raw);
-	if (!Number.isInteger(n) || n < 1 || n > 65535) return null;
-	return n;
-}
-
 export function ensureMcpRow(): ConfigRow {
 	const existing = db()
-		.query('SELECT enabled, port, host FROM mcp_config WHERE id = ?')
+		.query('SELECT enabled FROM mcp_config WHERE id = ?')
 		.get(ROW_ID) as ConfigRow | undefined;
 	if (existing) return existing;
 	db()
@@ -82,159 +55,63 @@ export function ensureMcpRow(): ConfigRow {
 			`INSERT INTO mcp_config (id, enabled, port, host)
 			 VALUES (?, 0, ?, ?)`
 		)
-		.run(ROW_ID, DEFAULT_PORT, DEFAULT_HOST);
-	return { enabled: 0, port: DEFAULT_PORT, host: DEFAULT_HOST };
+		.run(ROW_ID, LEGACY_PORT, LEGACY_HOST);
+	return { enabled: 0 };
 }
 
 export function loadMcpConfig(): McpConfig {
 	const row = ensureMcpRow();
 	const enabledEnv = envBool('GALENE_ENABLE_MCP');
-	const portEnv = envPort('GALENE_MCP_PORT');
-	const hostEnv = envTrim('GALENE_MCP_HOST');
 	return {
 		enabled: enabledEnv ?? row.enabled === 1,
-		port: portEnv ?? row.port,
-		host: hostEnv || row.host || DEFAULT_HOST,
-		enabledFromEnv: enabledEnv !== null,
-		portFromEnv: portEnv !== null,
-		hostFromEnv: hostEnv.length > 0
+		enabledFromEnv: enabledEnv !== null
 	};
+}
+
+export function isMcpEnabled(): boolean {
+	return loadMcpConfig().enabled;
 }
 
 export interface McpSettingsInput {
 	enabled: boolean;
-	port: number;
-	host: string;
 }
 
 export function saveMcpSettings(input: McpSettingsInput): { ok: true } | { ok: false; error: string } {
 	ensureMcpRow();
-	const port = Number(input.port);
-	if (!Number.isInteger(port) || port < 1 || port > 65535) {
-		return { ok: false, error: 'MCP port must be an integer between 1 and 65535.' };
-	}
-	const host = input.host.trim() || DEFAULT_HOST;
-	if (host.length > 255 || /[\s]/.test(host)) {
-		return { ok: false, error: 'MCP host must be a hostname or IP without spaces.' };
-	}
 	db()
 		.query(
 			`UPDATE mcp_config
-			 SET enabled = ?, port = ?, host = ?, updated_at = datetime('now')
+			 SET enabled = ?, updated_at = datetime('now')
 			 WHERE id = ?`
 		)
-		.run(input.enabled ? 1 : 0, port, host, ROW_ID);
-	applyMcpRuntime();
+		.run(input.enabled ? 1 : 0, ROW_ID);
 	return { ok: true };
 }
 
-/** Settings form values for the API page (admin). */
-export function mcpSettingsView() {
-	const config = loadMcpConfig();
-	return {
-		enabled: config.enabled,
-		port: config.port,
-		host: config.host,
-		enabledFromEnv: config.enabledFromEnv,
-		portFromEnv: config.portFromEnv,
-		hostFromEnv: config.hostFromEnv,
-		listening: isMcpListening(),
-		listenUrl: `http://${config.host === '0.0.0.0' ? '127.0.0.1' : config.host}:${config.port}/mcp`,
-		version: appVersion
-	};
-}
-
-/** Path to the MCP entry the child runs. Bundle in the image; source in a checkout. */
-export function mcpEntryPath(cwd = process.cwd()): string {
-	const bundle = resolve(cwd, 'mcp-bundle.js');
-	if (existsSync(bundle)) return bundle;
-	return resolve(cwd, 'mcp/index.ts');
-}
-
-function appBaseUrl(): string {
+/** Loopback base URL for in-process MCP tools calling the REST API. */
+export function mcpAppBaseUrl(): string {
 	const port = process.env.PORT ?? '3000';
 	return `http://127.0.0.1:${port}`;
 }
 
-function runtimeKey(config: McpConfig): string {
-	return `${config.enabled ? 1 : 0}:${config.port}:${config.host}`;
-}
-
-function defaultSpawn(cmd: string[], opts: SpawnOpts): McpChild {
-	// Bun.spawn is available under the Bun runtime (dev + production image).
-	return Bun.spawn(cmd, {
-		env: opts.env,
-		stdout: opts.stdout,
-		stderr: opts.stderr
-	}) as unknown as McpChild;
-}
-
-export function stopMcpChild(): void {
-	if (!child) {
-		startedKey = null;
-		return;
-	}
-	try {
-		child.kill();
-	} catch {
-		// Already exited.
-	}
-	child = null;
-	startedKey = null;
-}
-
-export function isMcpListening(): boolean {
-	return child != null && !child.killed;
-}
-
-/**
- * Start or stop the MCP child to match the effective config.
- * Safe to call repeatedly (startup, Settings save, tests).
- */
-export function applyMcpRuntime(): void {
+/** Settings form values for the API page (admin). */
+export function mcpSettingsView(appOrigin: string) {
 	const config = loadMcpConfig();
-	const key = runtimeKey(config);
-	if (!config.enabled) {
-		stopMcpChild();
-		return;
-	}
-	if (child && !child.killed && startedKey === key) return;
-	stopMcpChild();
-	const entry = mcpEntryPath();
-	const spawn = spawnImpl ?? defaultSpawn;
-	child = spawn(['bun', entry], {
-		env: {
-			...process.env,
-			GALENE_API_URL: appBaseUrl(),
-			GALENE_MCP_PORT: String(config.port),
-			GALENE_MCP_HOST: config.host,
-			// HTTP mode must not carry a process-wide API token.
-			GALENE_API_TOKEN: undefined
-		},
-		stdout: 'inherit',
-		stderr: 'inherit'
-	});
-	startedKey = key;
-	void child.exited?.then(() => {
-		if (startedKey === key) {
-			child = null;
-			startedKey = null;
-		}
-	});
+	const origin = appOrigin.replace(/\/$/, '') || mcpAppBaseUrl();
+	return {
+		enabled: config.enabled,
+		enabledFromEnv: config.enabledFromEnv,
+		/** Path is live when enabled (same process; no second port). */
+		listening: config.enabled,
+		listenUrl: `${origin}${MCP_HTTP_PATH}`,
+		path: MCP_HTTP_PATH,
+		version: appVersion
+	};
 }
 
-/** Called once from hooks.server.ts — same pattern as backup/sync schedulers. */
-export function startMcpRuntime(): void {
-	applyMcpRuntime();
-	// Adapter emits this after draining HTTP; child is not detached so it also
-	// dies if the parent exits abruptly.
-	process.once('sveltekit:shutdown', () => stopMcpChild());
-}
-
-/** Test-only: inject a fake spawn and reset process state. */
-export function _resetMcpRuntimeForTests(opts?: {
-	spawn?: (cmd: string[], opts: SpawnOpts) => McpChild;
-}): void {
-	stopMcpChild();
-	spawnImpl = opts?.spawn ?? null;
+/** Path to the MCP entry for stdio clients. Bundle in the image; source in a checkout. */
+export function mcpEntryPath(cwd = process.cwd()): string {
+	const bundle = resolve(cwd, 'mcp-bundle.js');
+	if (existsSync(bundle)) return bundle;
+	return resolve(cwd, 'mcp/index.ts');
 }

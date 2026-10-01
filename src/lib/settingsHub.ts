@@ -103,7 +103,7 @@ export function settingsSections(isAdmin: boolean): SettingsSection[] {
 				{
 					href: '/settings/api',
 					title: 'API',
-					desc: 'API tokens and optional MCP (HTTP off by default) for scripts and AI assistants.',
+					desc: 'API tokens and optional MCP on /mcp (off by default) for scripts and AI assistants.',
 					keywords: 'api tokens mcp server scripts assistants',
 					icon: '{ }'
 				}

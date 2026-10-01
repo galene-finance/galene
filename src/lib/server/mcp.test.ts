@@ -17,57 +17,44 @@ import { migrate } from './db';
 migrate(database);
 
 const {
-	_resetMcpRuntimeForTests,
-	applyMcpRuntime,
 	ensureMcpRow,
-	isMcpListening,
+	isMcpEnabled,
 	loadMcpConfig,
 	mcpEntryPath,
+	mcpSettingsView,
 	saveMcpSettings,
-	stopMcpChild
+	MCP_HTTP_PATH
 } = await import('./mcp');
 
-describe('MCP settings', () => {
+describe('MCP settings (app-port /mcp)', () => {
 	beforeEach(() => {
 		delete process.env.GALENE_ENABLE_MCP;
-		delete process.env.GALENE_MCP_PORT;
-		delete process.env.GALENE_MCP_HOST;
 		database.query('DELETE FROM mcp_config').run();
-		_resetMcpRuntimeForTests({
-			spawn: () => ({
-				kill: () => true,
-				killed: false,
-				exited: new Promise(() => {}),
-				pid: 4242
-			})
-		});
 	});
 
-	afterEach(() => {
-		stopMcpChild();
-		_resetMcpRuntimeForTests();
-	});
-
-	test('default is off and no listener starts', () => {
+	test('default is off and path is not live', () => {
 		const cfg = loadMcpConfig();
 		expect(cfg.enabled).toBe(false);
-		expect(cfg.port).toBe(3001);
-		applyMcpRuntime();
-		expect(isMcpListening()).toBe(false);
+		expect(cfg.enabledFromEnv).toBe(false);
+		expect(isMcpEnabled()).toBe(false);
+		const view = mcpSettingsView('http://127.0.0.1:3000');
+		expect(view.listening).toBe(false);
+		expect(view.path).toBe('/mcp');
+		expect(view.listenUrl).toBe('http://127.0.0.1:3000/mcp');
+		expect(MCP_HTTP_PATH).toBe('/mcp');
 	});
 
-	test('persists enable/port/host and starts the child when on', () => {
-		const saved = saveMcpSettings({ enabled: true, port: 3101, host: '127.0.0.1' });
+	test('persists enable toggle; path live when on', () => {
+		const saved = saveMcpSettings({ enabled: true });
 		expect(saved).toEqual({ ok: true });
-		const cfg = loadMcpConfig();
-		expect(cfg.enabled).toBe(true);
-		expect(cfg.port).toBe(3101);
-		expect(cfg.host).toBe('127.0.0.1');
-		expect(isMcpListening()).toBe(true);
+		expect(loadMcpConfig().enabled).toBe(true);
+		expect(isMcpEnabled()).toBe(true);
+		expect(mcpSettingsView('http://example.test').listening).toBe(true);
+		expect(mcpSettingsView('http://example.test').listenUrl).toBe('http://example.test/mcp');
 
-		saveMcpSettings({ enabled: false, port: 3101, host: '127.0.0.1' });
+		saveMcpSettings({ enabled: false });
 		expect(loadMcpConfig().enabled).toBe(false);
-		expect(isMcpListening()).toBe(false);
+		expect(isMcpEnabled()).toBe(false);
 	});
 
 	test('GALENE_ENABLE_MCP overrides the saved toggle', () => {
@@ -76,20 +63,22 @@ describe('MCP settings', () => {
 		process.env.GALENE_ENABLE_MCP = '1';
 		expect(loadMcpConfig().enabled).toBe(true);
 		expect(loadMcpConfig().enabledFromEnv).toBe(true);
-		applyMcpRuntime();
-		expect(isMcpListening()).toBe(true);
+		expect(isMcpEnabled()).toBe(true);
 
 		process.env.GALENE_ENABLE_MCP = '0';
 		database.query('UPDATE mcp_config SET enabled = 1 WHERE id = 1').run();
 		expect(loadMcpConfig().enabled).toBe(false);
-		applyMcpRuntime();
-		expect(isMcpListening()).toBe(false);
+		expect(isMcpEnabled()).toBe(false);
 	});
 
-	test('rejects an invalid port', () => {
-		const bad = saveMcpSettings({ enabled: true, port: 0, host: '0.0.0.0' });
-		expect(bad.ok).toBe(false);
-		expect(isMcpListening()).toBe(false);
+	test('does not read or require port/host from Settings', () => {
+		ensureMcpRow();
+		database.query(`UPDATE mcp_config SET enabled = 1, port = 9999, host = '10.0.0.1' WHERE id = 1`).run();
+		const view = mcpSettingsView('http://127.0.0.1:3000');
+		expect(view.enabled).toBe(true);
+		expect(view.listenUrl).toBe('http://127.0.0.1:3000/mcp');
+		expect('port' in view).toBe(false);
+		expect('host' in view).toBe(false);
 	});
 
 	test('mcpEntryPath prefers mcp-bundle.js when present', () => {

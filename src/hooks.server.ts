@@ -5,7 +5,6 @@ import { getViewerByToken } from '$lib/server/advisor';
 import { forbidViewerMutation, guardViewerPage } from '$lib/server/viewerGuard';
 import { startSyncScheduler } from '$lib/server/scheduler';
 import { startBackupScheduler } from '$lib/server/backup';
-import { startMcpRuntime } from '$lib/server/mcp';
 import { assertDataDirOnVolume } from '$lib/server/db';
 import { db } from '$lib/server/db';
 import type { Handle } from '@sveltejs/kit';
@@ -16,7 +15,6 @@ assertDataDirOnVolume();
 // Starts the bank-sync auto-sync loop and the scheduled-backup loop, once per process.
 startSyncScheduler();
 startBackupScheduler();
-startMcpRuntime();
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const token = event.cookies.get('galene_session');

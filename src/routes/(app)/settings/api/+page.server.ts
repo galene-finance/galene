@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { createApiToken, deleteApiToken, listApiTokens } from '$lib/server/apiTokens';
 import { mcpEntryPath, mcpSettingsView, saveMcpSettings } from '$lib/server/mcp';
 
-export function load({ locals }) {
+export function load({ locals, url }) {
 	const isAdmin = locals.user!.is_admin === 1;
 	return {
 		tokens: listApiTokens(locals.user!.id),
@@ -11,7 +11,7 @@ export function load({ locals }) {
 		mcpBundleHint: mcpEntryPath(),
 		apiUrl: `http://localhost:${process.env.PORT ?? 3000}`,
 		isAdmin,
-		mcp: isAdmin ? mcpSettingsView() : null
+		mcp: isAdmin ? mcpSettingsView(url.origin) : null
 	};
 }
 
@@ -36,11 +36,8 @@ export const actions = {
 			return { error: 'Only an administrator can change the MCP server.' };
 		}
 		const form = await request.formData();
-		const port = parseInt(String(form.get('port') ?? ''), 10);
 		const result = saveMcpSettings({
-			enabled: form.get('enabled') === '1',
-			port: Number.isFinite(port) ? port : 3001,
-			host: String(form.get('host') ?? '0.0.0.0')
+			enabled: form.get('enabled') === '1'
 		});
 		if (!result.ok) return { mcpError: result.error };
 		return { ok: true, message: 'MCP settings saved.' };

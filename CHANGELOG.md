@@ -7,7 +7,7 @@ Release), which commits it and tags `vX.Y`.
 
 ## [Unreleased]
 
-- MCP ships inside the main app image; Settings → API toggle enables the HTTP listener (**default off**). Separate `:mcp-*` remains a thin alias for migration.
+- MCP HTTP is served on the **app port** at `/mcp` when enabled in Settings → API (**default off**); no separate MCP port. Separate `:mcp-*` remains a thin alias for stdio/migration.
 - Docs: README Highlights and the docs introduction name shipped capabilities (advisor access, settings hub, installable app, theme persist, transaction filters, trends drill-down, HTTP MCP, CSV export, account-menu version).
 
 ## [0.1]

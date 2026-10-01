@@ -22,13 +22,10 @@
 			isAdmin: boolean;
 			mcp: {
 				enabled: boolean;
-				port: number;
-				host: string;
 				enabledFromEnv: boolean;
-				portFromEnv: boolean;
-				hostFromEnv: boolean;
 				listening: boolean;
 				listenUrl: string;
+				path: string;
 				version: string;
 			} | null;
 		};
@@ -37,8 +34,6 @@
 	let tokenName = $state('');
 	let copied = $state(false);
 	let mcpEnabled = $state(false);
-	let mcpPort = $state('3001');
-	let mcpHost = $state('0.0.0.0');
 
 	$effect(() => {
 		if (form?.token) {
@@ -50,8 +45,6 @@
 	$effect(() => {
 		if (!data.mcp) return;
 		mcpEnabled = data.mcp.enabled;
-		mcpPort = String(data.mcp.port);
-		mcpHost = data.mcp.host;
 	});
 
 	async function copyToken() {
@@ -176,11 +169,12 @@
 	{#if data.isAdmin && data.mcp}
 		<section class="rounded-lg border border-border bg-surface">
 			<div class="border-b border-border px-4 py-3">
-				<h2 class="font-medium">MCP HTTP server</h2>
+				<h2 class="font-medium">MCP HTTP</h2>
 				<p class="text-sm text-muted-foreground">
-					Long-running MCP over HTTP on this host. Off by default (no process, no listener). Turn on to start
-					the bundled server; each client sends a Settings → API token per request. Stdio clients can still
-					launch the bundle without this toggle.
+					Serve MCP on the same host and port as the app at
+					<code class="font-mono text-xs">{data.mcp.path}</code>. Off by default (path not live). Turn on to
+					expose MCP for HTTP clients; each client sends a Settings → API token per request. No second port.
+					Stdio clients can still launch the bundle without this toggle.
 				</p>
 			</div>
 			<form
@@ -190,7 +184,7 @@
 				class="flex flex-col gap-4 p-4"
 			>
 				<label class="flex items-center justify-between gap-3 text-sm">
-					<span>Enable MCP HTTP listener</span>
+					<span>Enable MCP HTTP</span>
 					<input type="checkbox" name="enabled" value="1" bind:checked={mcpEnabled} class="size-4 accent-primary" />
 				</label>
 				{#if data.mcp.enabledFromEnv}
@@ -200,34 +194,20 @@
 					</p>
 				{/if}
 
-				<div class="grid gap-3 sm:grid-cols-2">
-					<Field label="Port" hint={data.mcp.portFromEnv ? 'Overridden by GALENE_MCP_PORT.' : 'Default 3001.'}>
-						<Input type="number" name="port" bind:value={mcpPort} min="1" max="65535" required />
-					</Field>
-					<Field
-						label="Bind address"
-						hint={data.mcp.hostFromEnv
-							? 'Overridden by GALENE_MCP_HOST.'
-							: '0.0.0.0 listens on all interfaces.'}
-					>
-						<Input type="text" name="host" bind:value={mcpHost} autocomplete="off" />
-					</Field>
-				</div>
-
 				{#if data.mcp.enabled}
 					<div class="rounded-md border border-border bg-background p-3 text-sm">
 						<p>
 							Status:
 							{#if data.mcp.listening}
-								<span class="font-medium text-primary">listening</span>
+								<span class="font-medium text-primary">live</span>
 							{:else}
-								<span class="font-medium">enabled (starting…)</span>
+								<span class="font-medium">enabled</span>
 							{/if}
 							— <code class="font-mono text-xs">{data.mcp.listenUrl}</code>
 						</p>
 						<p class="mt-2 text-muted-foreground">
-							Publish the port in compose/quadlet if clients are outside this container. Terminate TLS at
-							the reverse proxy; do not expose plain HTTP on a public interface.
+							Same port as the app (no second publish). Terminate TLS at the reverse proxy; do not expose
+							plain HTTP on a public interface.
 						</p>
 						<p class="mt-2 mb-1 text-sm">Client config (HTTP):</p>
 						<pre class="overflow-x-auto rounded bg-background p-3 font-mono text-xs">{mcpHttpConfig}</pre>

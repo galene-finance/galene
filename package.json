@@ -1,6 +1,6 @@
 {
   "name": "galene",
-  "version": "0.3",
+  "version": "0.4",
   "private": true,
   "type": "module",
   "scripts": {

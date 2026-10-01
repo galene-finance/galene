@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
 	estimatedPopupHeight,
 	formatRepeat,
+	nextPillTapAction,
+	pillPopupUsesTapToggle,
 	popupPosition,
 	scheduledPillRows,
 	transactionPillRows
@@ -204,5 +206,27 @@ describe('popupPosition', () => {
 			tall
 		);
 		expect(pos.top).toBe(400 - tall - 6);
+	});
+});
+
+
+describe('pillPopupUsesTapToggle', () => {
+	test('true when hover is none (touch-first)', () => {
+		expect(pillPopupUsesTapToggle(true)).toBe(true);
+		expect(pillPopupUsesTapToggle(false)).toBe(false);
+	});
+});
+
+describe('nextPillTapAction', () => {
+	test('second tap on the open source hides', () => {
+		const el = { isSameNode(other: Node | null) { return other === (this as unknown as Node); } };
+		expect(nextPillTapAction(el, el as unknown as Node, true)).toBe('hide');
+	});
+
+	test('tap on another source shows', () => {
+		const a = { isSameNode(other: Node | null) { return false; } };
+		const b = {} as Node;
+		expect(nextPillTapAction(a, b, true)).toBe('show');
+		expect(nextPillTapAction(null, b, false)).toBe('show');
 	});
 });

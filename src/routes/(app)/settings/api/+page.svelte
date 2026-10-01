@@ -13,21 +13,45 @@
 		form,
 		data
 	}: {
-		form: { error?: string; token?: string; tokenName?: string } | undefined;
-		data: { tokens: ApiTokenInfo[]; mcpArgs: string[]; apiUrl: string };
+		form: { error?: string; mcpError?: string; token?: string; tokenName?: string; message?: string; ok?: boolean } | undefined;
+		data: {
+			tokens: ApiTokenInfo[];
+			mcpArgs: string[];
+			mcpBundleHint: string;
+			apiUrl: string;
+			isAdmin: boolean;
+			mcp: {
+				enabled: boolean;
+				port: number;
+				host: string;
+				enabledFromEnv: boolean;
+				portFromEnv: boolean;
+				hostFromEnv: boolean;
+				listening: boolean;
+				listenUrl: string;
+				version: string;
+			} | null;
+		};
 	} = $props();
 
 	let tokenName = $state('');
 	let copied = $state(false);
+	let mcpEnabled = $state(false);
+	let mcpPort = $state('3001');
+	let mcpHost = $state('0.0.0.0');
 
-	// Clear the input once the token has been created. Not in onsubmit: the
-	// enhanced form serializes the fields after the submit handlers run, so
-	// clearing there would send an empty name.
 	$effect(() => {
 		if (form?.token) {
 			tokenName = '';
 			copied = false;
 		}
+	});
+
+	$effect(() => {
+		if (!data.mcp) return;
+		mcpEnabled = data.mcp.enabled;
+		mcpPort = String(data.mcp.port);
+		mcpHost = data.mcp.host;
 	});
 
 	async function copyToken() {
@@ -58,6 +82,25 @@
 		2
 	));
 
+	const mcpHttpConfig = $derived(
+		data.mcp
+			? JSON.stringify(
+					{
+						mcpServers: {
+							galene: {
+								url: data.mcp.listenUrl,
+								headers: {
+									Authorization: 'Bearer <paste your token here>'
+								}
+							}
+						}
+					},
+					null,
+					2
+				)
+			: ''
+	);
+
 	const endpoints: [path: string, desc: string][] = [
 		['/api/v1/summary', 'Balance, month income/expense, recent transactions, top categories'],
 		['/api/v1/accounts', 'Accounts with current balances'],
@@ -70,7 +113,6 @@
 		['/api/v1/notifications', 'App notifications']
 	];
 
-	// Toast the latest action result (replaces the old top-of-page status block).
 	watchFormToast(() => form);
 </script>
 
@@ -131,12 +173,84 @@
 		</div>
 	</section>
 
+	{#if data.isAdmin && data.mcp}
+		<section class="rounded-lg border border-border bg-surface">
+			<div class="border-b border-border px-4 py-3">
+				<h2 class="font-medium">MCP HTTP server</h2>
+				<p class="text-sm text-muted-foreground">
+					Long-running MCP over HTTP on this host. Off by default (no process, no listener). Turn on to start
+					the bundled server; each client sends a Settings → API token per request. Stdio clients can still
+					launch the bundle without this toggle.
+				</p>
+			</div>
+			<form
+				method="POST"
+				action="?/save-mcp"
+				use:enhance={() => ({ update }) => update({ reset: false })}
+				class="flex flex-col gap-4 p-4"
+			>
+				<label class="flex items-center justify-between gap-3 text-sm">
+					<span>Enable MCP HTTP listener</span>
+					<input type="checkbox" name="enabled" value="1" bind:checked={mcpEnabled} class="size-4 accent-primary" />
+				</label>
+				{#if data.mcp.enabledFromEnv}
+					<p class="text-xs text-muted-foreground">
+						Enabled is set by <code class="font-mono text-xs">GALENE_ENABLE_MCP</code> and overrides this
+						checkbox at runtime.
+					</p>
+				{/if}
+
+				<div class="grid gap-3 sm:grid-cols-2">
+					<Field label="Port" hint={data.mcp.portFromEnv ? 'Overridden by GALENE_MCP_PORT.' : 'Default 3001.'}>
+						<Input type="number" name="port" bind:value={mcpPort} min="1" max="65535" required />
+					</Field>
+					<Field
+						label="Bind address"
+						hint={data.mcp.hostFromEnv
+							? 'Overridden by GALENE_MCP_HOST.'
+							: '0.0.0.0 listens on all interfaces.'}
+					>
+						<Input type="text" name="host" bind:value={mcpHost} autocomplete="off" />
+					</Field>
+				</div>
+
+				{#if data.mcp.enabled}
+					<div class="rounded-md border border-border bg-background p-3 text-sm">
+						<p>
+							Status:
+							{#if data.mcp.listening}
+								<span class="font-medium text-primary">listening</span>
+							{:else}
+								<span class="font-medium">enabled (starting…)</span>
+							{/if}
+							— <code class="font-mono text-xs">{data.mcp.listenUrl}</code>
+						</p>
+						<p class="mt-2 text-muted-foreground">
+							Publish the port in compose/quadlet if clients are outside this container. Terminate TLS at
+							the reverse proxy; do not expose plain HTTP on a public interface.
+						</p>
+						<p class="mt-2 mb-1 text-sm">Client config (HTTP):</p>
+						<pre class="overflow-x-auto rounded bg-background p-3 font-mono text-xs">{mcpHttpConfig}</pre>
+					</div>
+				{/if}
+
+				{#if form?.mcpError}
+					<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.mcpError}</p>
+				{/if}
+
+				<Button type="submit">Save MCP settings</Button>
+			</form>
+		</section>
+	{/if}
+
 	<section class="rounded-lg border border-border bg-surface">
 		<div class="border-b border-border px-4 py-3">
-			<h2 class="font-medium">MCP server</h2>
+			<h2 class="font-medium">MCP stdio (client-launched)</h2>
 			<p class="text-sm text-muted-foreground">
-				Connect an MCP client (Claude Desktop, Grok, …) to this instance. The client launches the bundled stdio
-				server, which reads your data through the REST API.
+				Connect an MCP client (Claude Desktop, Grok, …) that launches the bundled stdio server. No Settings
+				toggle required — the client starts the process. In the app image the entry is
+				<code class="font-mono text-xs">mcp-bundle.js</code>; from source use
+				<code class="font-mono text-xs">mcp/index.ts</code>.
 			</p>
 		</div>
 		<div class="p-4">

@@ -14,6 +14,8 @@ services:
       target: app
     ports:
       - "3000:3000"
+      # Uncomment when MCP HTTP is enabled in Settings → API (default off):
+      # - "3001:3001"
     environment:
       # The Dockerfile sets NODE_ENV=production, which makes the session
       # cookie Secure by default. Over plain HTTP (no TLS-terminating proxy)

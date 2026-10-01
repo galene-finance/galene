@@ -1,6 +1,8 @@
 # Galene — one build, two targets:
-#   --target app : the web app (Bun.serve, port 3000, SQLite in /app/data, backups in /app/backups)
-#   --target mcp : the MCP server (stdio; talks outbound to the app's REST API)
+#   --target app : the web app (Bun.serve, port 3000, SQLite in /app/data, backups in /app/backups).
+#                  Also ships mcp-bundle.js; enable the HTTP listener in Settings (default off).
+#   --target mcp : thin alias of the same MCP bundle (stdio / optional HTTP). Prefer the app
+#                  image for normal installs; kept for migration from :mcp-latest.
 #
 # Base images are pinned to the Bun version that generated bun.lock.
 #
@@ -71,8 +73,13 @@ ENV GALENE_DATA_DIR=/app/data \
     NODE_ENV=production
 
 EXPOSE 3000
+# MCP HTTP (Settings → API, default off). Publish only when MCP is enabled.
+EXPOSE 3001
 
 COPY --from=build --chown=galene:galene /app/build ./build
+# MCP bits (~214 KiB): Settings can spawn this; stdio clients can also
+# `docker run --rm -i --entrypoint bun <app-image> mcp-bundle.js`.
+COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-bundle.js ./mcp-bundle.js
 
 # Created in the image so a named volume initialized from them is owned by the
 # app user (a fresh named volume would otherwise be root-owned and unwritable).
@@ -84,7 +91,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 CMD ["bun", "build/index.js"]
 
-# ---------- mcp ----------
+# ---------- mcp (thin alias; prefer app image + Settings toggle) ----------
 FROM oven/bun:1.4.0-slim AS mcp
 
 RUN id galene >/dev/null 2>&1 || useradd -m -u 10001 galene
@@ -100,8 +107,8 @@ LABEL org.opencontainers.image.version="${APP_VERSION}" \
 
 WORKDIR /app
 
-# stdio unless GALENE_MCP_PORT is set. HTTP reads the API token from
-# each request. Do not put the token in the environment for that mode.
+# Same mcp-bundle.js as the app image. Stdio unless GALENE_MCP_PORT is set.
+# Prefer enabling MCP in the app (Settings → API) instead of a second container.
 ENV GALENE_API_URL=http://localhost:3000
 
 COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-bundle.js ./mcp-bundle.js

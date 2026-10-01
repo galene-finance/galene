@@ -1,6 +1,6 @@
-# Publishes the two Galene images to GitHub Container Registry:
-#   ghcr.io/<owner>/<repo>:app[-<ver>|-latest]   (web app)
-#   ghcr.io/<owner>/<repo>:mcp[-<ver>|-latest]   (MCP server)
+# Publishes Galene images to GitHub Container Registry:
+#   ghcr.io/<owner>/<repo>:app[-<ver>|-latest]   (web app + MCP bundle)
+#   ghcr.io/<owner>/<repo>:mcp[-<ver>|-latest]   (thin MCP alias for migration)
 #
 # Flow:
 #   push to `test`  -> :app-test / :mcp-test (mutable, "latest on test") plus

@@ -3,7 +3,7 @@ title: API & MCP
 description: The read-only REST API and the bundled MCP server.
 ---
 
-Galene exposes its data two ways: a read-only JSON REST API, and an MCP (Model Context Protocol) server that wraps it for AI assistants. The MCP server talks stdio when a client launches it, or HTTP when you leave it running.
+Galene exposes its data two ways: a read-only JSON REST API, and an MCP (Model Context Protocol) server that wraps it for AI assistants. The MCP server talks stdio when a client launches it, or HTTP when an administrator enables the listener in Settings (default **off**).
 
 ## REST API
 
@@ -19,11 +19,19 @@ curl -H "Authorization: Bearer galene_…" http://localhost:3000/api/v1/summary
 
 Unauthenticated requests get a JSON `401`.
 
-## MCP server
+## MCP in the app image
 
-The repo ships a stdio MCP server that talks to a running Galene instance over the REST API. It exposes the data as tools: `galene_summary`, `galene_accounts`, `galene_transactions`, `galene_budgets`, `galene_scheduled`, `galene_categories`, `galene_notifications`, and `galene_version`.
+The main app image (`:app-latest` / `:app-test`) includes the MCP bundle (`mcp-bundle.js`, ~214 KiB). You do **not** need a separate `:mcp-latest` container for normal installs.
 
-Add it to your MCP client's config, substituting one of your tokens:
+1. Create an API token (Settings → API).
+2. **HTTP (long-running):** an administrator turns on **Enable MCP HTTP listener** under Settings → API (default off). Off means no MCP process and no listener. On starts the bundled server on the configured port (default **3001**). Each client sends `Authorization: Bearer <token>` per request. Do not set `GALENE_API_TOKEN` on the app process for this mode.
+3. **Stdio (client-launched):** the MCP client starts the bundle itself — no Settings toggle required.
+
+Optional env override: `GALENE_ENABLE_MCP=1` / `0` forces the HTTP listener on or off (same pattern as `GALENE_OIDC_ENABLED`). `GALENE_MCP_PORT` / `GALENE_MCP_HOST` override the saved bind when set.
+
+### Stdio client config
+
+From a source checkout:
 
 ```json
 {
@@ -40,30 +48,28 @@ Add it to your MCP client's config, substituting one of your tokens:
 }
 ```
 
-## Long-running endpoint
+From the app image (stdio session):
 
-Set `GALENE_MCP_PORT` on the same MCP image and leave the process running. Do not set `GALENE_API_TOKEN` on that process. Each client sends its own Settings → API token.
-
-The listen URL is `http://<host>:<port>/mcp`. Use plain HTTP on localhost or a private LAN only. Do not expose that port as plain HTTP on a public interface. Terminate TLS at the reverse proxy and forward to the MCP port.
-
-```yaml
-mcp:
-  image: ghcr.io/galene-finance/galene:mcp-latest
-  restart: unless-stopped
-  environment:
-    GALENE_API_URL: http://app:3000
-    GALENE_MCP_PORT: "3001"
-  ports:
-    - "3001:3001"
+```bash
+docker run --rm -i \
+  -e GALENE_API_URL=http://host.docker.internal:3000 \
+  -e GALENE_API_TOKEN=galene_… \
+  --entrypoint bun \
+  ghcr.io/galene-finance/galene:app-latest \
+  mcp-bundle.js
 ```
 
-Point the client at the URL. The token is a request header, not a `docker run` environment variable.
+(`host.docker.internal` is an example for reaching the app from another container on Docker Desktop; use a URL that is reachable from the MCP process.)
+
+### HTTP client config
+
+After enabling the listener in Settings (and publishing the port if the client is outside the container):
 
 ```json
 {
   "mcpServers": {
     "galene": {
-      "url": "https://galene.example/mcp",
+      "url": "http://127.0.0.1:3001/mcp",
       "headers": {
         "Authorization": "Bearer galene_…"
       }
@@ -72,4 +78,26 @@ Point the client at the URL. The token is a request header, not a `docker run` e
 }
 ```
 
-A missing or unknown token is rejected. Delete the token in Settings → API and the next request from that client fails. Stdio clients keep using the environment variable above. The tools stay read-only.
+Use plain HTTP on localhost or a private network only. Do not expose that port as plain HTTP on a public interface — terminate TLS at the reverse proxy and forward to the MCP port.
+
+Publish the port when needed, for example in compose:
+
+```yaml
+ports:
+  - "3000:3000"
+  - "3001:3001"   # only when MCP HTTP is enabled
+```
+
+## Migration from `:mcp-latest`
+
+Operators who ran a separate MCP container can:
+
+1. Pull a current `:app-*` image (it already contains `mcp-bundle.js`).
+2. Enable MCP in Settings → API (or set `GALENE_ENABLE_MCP=1`), publish port **3001** if clients need it, and point HTTP clients at `/mcp`.
+3. For stdio-only clients, switch the client command to the app image entrypoint shown above (or keep launching `mcp/index.ts` from a source checkout).
+
+The `:mcp-*` tags remain published for a while as a thin alias of the same bundle so existing client configs keep working. Prefer the app image long-term; a separate MCP container is no longer required.
+
+## Tools
+
+The MCP server exposes: `galene_summary`, `galene_accounts`, `galene_transactions`, `galene_budgets`, `galene_scheduled`, `galene_categories`, `galene_notifications`, and `galene_version`. Tools stay read-only. A missing or unknown token is rejected; delete the token in Settings → API and the next request from that client fails.

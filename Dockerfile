@@ -38,13 +38,15 @@ RUN bun install --frozen-lockfile
 
 COPY . .
 
-# SvelteKit build (custom Bun adapter → build/) and the MCP server as a
-# single self-contained bundle (no node_modules needed at runtime)
+# SvelteKit build (custom Bun adapter → build/). MCP handlers are Bun-bundled next.
 RUN bun run build
 
-# The MCP bundle bakes in the package.json version (bun build can't bundle
-# JSON imports, so it's passed as a define).
-RUN bun build mcp/index.ts --target=bun --define GALENE_VERSION="\"$APP_VERSION\"" --outfile=mcp-dist/mcp-bundle.js
+# MCP bits (Bun-bundled so Node builtins resolve; never Vite-SSR the SDK;
+# version for the stdio bundle is baked via --define — bun can't bundle JSON imports):
+#   mcp-bundle.js  — stdio / optional standalone HTTP entry
+#   mcp-handler.js — in-process /mcp route (named exports)
+RUN bun build mcp/index.ts --target=bun --define GALENE_VERSION="\"$APP_VERSION\"" --outfile=mcp-dist/mcp-bundle.js \
+ && bun build mcp/http.ts --target=bun --outfile=mcp-dist/mcp-handler.js
 
 # ---------- app ----------
 FROM oven/bun:1.4.0-slim AS app
@@ -75,10 +77,11 @@ ENV GALENE_DATA_DIR=/app/data \
 EXPOSE 3000
 
 COPY --from=build --chown=galene:galene /app/build ./build
-# MCP bits (~214 KiB): stdio clients can
+# MCP bits: stdio clients can
 # `docker run --rm -i --entrypoint bun <app-image> mcp-bundle.js`.
-# HTTP MCP is served by the app at /mcp when enabled in Settings (default off).
+# HTTP MCP is served by the app at /mcp (loads mcp-handler.js) when enabled.
 COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-bundle.js ./mcp-bundle.js
+COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-handler.js ./mcp-handler.js
 
 # Created in the image so a named volume initialized from them is owned by the
 # app user (a fresh named volume would otherwise be root-owned and unwritable).

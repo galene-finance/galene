@@ -148,7 +148,30 @@
 			{#if data.tokens.length === 0}
 				<p class="py-4 text-center text-sm text-muted-foreground">No tokens yet.</p>
 			{:else}
-				<ul class="divide-y divide-border">
+				<!-- Narrow: Tokens B — meta on its line(s); Delete right-aligned on its own line (#148). -->
+				<ul class="divide-y divide-border md:hidden">
+					{#each data.tokens as t (t.id)}
+						<li class="flex flex-col gap-2 py-3">
+							<span class="truncate text-sm font-medium">{t.name}</span>
+							<span class="text-xs leading-snug text-muted-foreground">
+								<span>created {t.created_at}</span>
+								<span aria-hidden="true"> · </span>
+								<span>last used {t.last_used_at ?? 'never'}</span>
+							</span>
+							<form method="POST" action="?/delete" class="flex justify-end">
+								<input type="hidden" name="id" value={t.id} />
+								<button
+									type="submit"
+									class="inline-flex items-center rounded-md border border-destructive/35 bg-destructive/10 px-3 py-1.5 text-sm font-medium text-destructive hover:bg-destructive/20"
+								>
+									Delete
+								</button>
+							</form>
+						</li>
+					{/each}
+				</ul>
+				<!-- md+: keep the existing single-row layout. -->
+				<ul class="hidden divide-y divide-border md:block">
 					{#each data.tokens as t (t.id)}
 						<li class="flex items-center gap-3 py-2.5">
 							<span class="flex-1 truncate text-sm">{t.name}</span>

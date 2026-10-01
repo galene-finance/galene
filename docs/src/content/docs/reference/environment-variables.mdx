@@ -26,15 +26,15 @@ description: Every environment variable the app image reads (including optional 
 | `GALENE_OIDC_SCOPES` | unset | Space-separated scopes. Overrides Settings when non-empty. Default in Settings is `openid profile email`. |
 | `GALENE_ENABLE_MCP` | unset | `1`/`0` overrides Settings → API MCP HTTP on/off. Unset uses the saved toggle (**default off**). When off, `/mcp` is not live. When on, MCP shares the app `PORT` (no separate MCP port). |
 
-## MCP bundle (stdio or thin `:mcp-*` image)
+## MCP bundle (stdio from the app image)
 
-The same `mcp-bundle.js` ships inside the app image. A separate `:mcp-*` image remains a thin alias for migration. Prefer enabling MCP on the app (Settings → API → `/mcp` on the app port) for HTTP; for stdio, launch the bundle from the app image or from source.
+`mcp-bundle.js` ships inside the app image. There is no separate `:mcp-*` image. Prefer enabling MCP on the app (Settings → API → `/mcp` on the app port) for HTTP; for stdio, launch the bundle from the app image or from source.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `GALENE_API_URL` | `http://localhost:3000` | Base URL of the Galene instance the MCP server calls. |
+| `GALENE_API_URL` | `http://localhost:3000` | Base URL of the Galene instance the MCP stdio process calls. |
 | `GALENE_API_TOKEN` | — | API token from Settings → API. Required for **stdio**. Do **not** set it on the app when using Settings-managed HTTP MCP. |
-| `GALENE_MCP_PORT` | unset | Standalone bundle only: port for a long-running HTTP endpoint when launching the bundle alone. Unset keeps stdio. Prefer app `/mcp` instead. |
-| `GALENE_MCP_HOST` | `0.0.0.0` | Standalone bundle only: bind address when `GALENE_MCP_PORT` is set. |
+| `GALENE_MCP_PORT` | unset | Optional when launching the bundle alone for a local HTTP process. Unset keeps stdio. Prefer app `/mcp` instead. |
+| `GALENE_MCP_HOST` | `0.0.0.0` | Bind address when `GALENE_MCP_PORT` is set on a locally launched bundle. |
 
 When to set `GALENE_COOKIE_SECURE` and the adapter proxy headers (`PROTOCOL_HEADER`, `HOST_HEADER`, …): [Reverse proxy](/self-host/reverse-proxy/). A non-empty `GALENE_OIDC_*` / `GALENE_ENABLE_MCP` variable overrides the matching Settings field; see [Single sign-on (OIDC)](/self-host/oidc/) and [API & MCP](/features/api-mcp/). Outside the container the default `GALENE_DATA_DIR` is `./data` — see [From source](/self-host/from-source/).

@@ -1,19 +1,21 @@
-# Publishes Galene images to GitHub Container Registry:
-#   ghcr.io/<owner>/<repo>:app[-<ver>|-latest]   (web app + MCP bundle)
-#   ghcr.io/<owner>/<repo>:mcp[-<ver>|-latest]   (thin MCP alias for migration)
+# Publishes the Galene app image to GitHub Container Registry:
+#   ghcr.io/<owner>/<repo>:app[-<ver>|-latest]
 #
 # Flow:
-#   push to `test`  -> :app-test / :mcp-test (mutable, "latest on test") plus
-#                      :app-test-<sha> / :mcp-test-<sha> (immutable, pin a build)
-#   merge to `main` -> :app-latest / :mcp-latest (+ :app-main / :mcp-main)
-#   tag v*          -> :app-<ver> / :mcp-<ver> (release; see release.yml)
+#   push to `test`  -> :app-test (mutable, "latest on test") plus
+#                      :app-test-<sha> (immutable, pin a build)
+#   merge to `main` -> :app-latest (+ :app-main)
+#   tag v*          -> :app-<ver> (release; see release.yml)
+#
+# MCP HTTP lives in the app image at /mcp when enabled in Settings (default off).
+# No separate `:mcp-*` image is published.
 #
 # For a private beta repo this works out of the box: GITHUB_TOKEN can publish
 # to the workflow's own repository. Pulling the images from *another* machine
 # (e.g. your home server) requires a classic PAT with read:packages —
 # fine-grained tokens cannot access GHCR.
 #
-# Both images are multi-arch (linux/amd64 + linux/arm64) so amd64 and
+# The image is multi-arch (linux/amd64 + linux/arm64) so amd64 and
 # Apple Silicon / arm64 hosts each get a native image. Keep both
 # platforms in the build steps below (buildx + QEMU are set up for that).
 
@@ -60,18 +62,15 @@ jobs:
           if [[ "$ref" =~ ^v[0-9] ]]; then ver="${ref#v}"; else ver="$ref"; fi
           base="${{ env.REGISTRY }}/${{ github.repository }}"
           app_tags="$base:app-$ver"
-          mcp_tags="$base:mcp-$ver"
           # build-push-action wants comma-separated tags
           if [ "$GITHUB_REF_NAME" = "main" ]; then
             app_tags="$app_tags,$base:app-latest"
-            mcp_tags="$mcp_tags,$base:mcp-latest"
           elif [[ ! "$ref" =~ ^v[0-9] ]]; then
             # Branch builds (e.g. test) also get an immutable per-commit tag
             # so a specific build can be pinned; the branch-name tag stays
             # "latest on that branch".
             sha="${GITHUB_SHA:0:7}"
             app_tags="$app_tags,$base:app-${ver}-${sha}"
-            mcp_tags="$mcp_tags,$base:mcp-${ver}-${sha}"
           fi
           # Version baked into the app and stamped as an OCI label: the tag
           # when publishing from a tag, otherwise package.json (the single
@@ -82,7 +81,6 @@ jobs:
             app_version="$(node -p "require('./package.json').version")"
           fi
           echo "app=$app_tags" >> "$GITHUB_OUTPUT"
-          echo "mcp=$mcp_tags" >> "$GITHUB_OUTPUT"
           echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
@@ -100,22 +98,6 @@ jobs:
             BUILD_DATE=${{ steps.tags.outputs.build_date }}
           # Links the package to this repository (avoids the "package was
           # pushed without a repo link" warning if it was ever pushed CLI-side)
-          labels: org.opencontainers.image.repos=${{ env.REGISTRY }}/${{ github.repository }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push mcp image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: mcp
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.tags.outputs.mcp }}
-          build-args: |
-            APP_VERSION=${{ steps.tags.outputs.app_version }}
-            GIT_SHA=${{ github.sha }}
-            BUILD_DATE=${{ steps.tags.outputs.build_date }}
           labels: org.opencontainers.image.repos=${{ env.REGISTRY }}/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

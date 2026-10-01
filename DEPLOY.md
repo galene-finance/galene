@@ -1,17 +1,16 @@
 # Galene — Container Deployment Guide (Docker & Podman)
 
-Galene ships from one [`Dockerfile`](Dockerfile). Normal installs use the **app** image only (MCP bits included). The **mcp** target remains a thin alias for migration:
+Galene ships from one [`Dockerfile`](Dockerfile) — the **app** image only (MCP bits included; no separate `:mcp-*` image):
 
 | Target | Image | What it is |
 | --- | --- | --- |
 | `app` | `galene:app` | The web app: Bun.serve on port **3000**, SQLite in `/app/data`, plus `mcp-bundle.js`. Enable MCP at `/mcp` in Settings → API (**default off**; same port). |
-| `mcp` | `galene:mcp` | Thin alias of the same MCP bundle (stdio / optional standalone HTTP). Prefer the app image `/mcp`. |
 
-Both images:
+The image:
 
-- are based on **`oven/bun:1.4.0-slim`** (pinned; the build stage uses full `oven/bun:1.4.0`), Debian 13 (trixie) underneath
-- run as a **non-root user** `galene` (uid 10001)
-- contain only the build output and the Bun runtime — no `node_modules`, no source
+- is based on **`oven/bun:1.4.0-slim`** (pinned; the build stage uses full `oven/bun:1.4.0`), Debian 13 (trixie) underneath
+- runs as a **non-root user** `galene` (uid 10001)
+- contains only the build output and the Bun runtime — no `node_modules`, no source
 
 The app is a **single replica**: it runs in-process schedulers (bank auto-sync, backups, notifications) and a single SQLite file. Run one instance; put your TLS-terminating proxy in front if you want HTTPS.
 
@@ -39,7 +38,7 @@ The same file works with **`podman-compose`** (see [Podman](#podman)).
 
 ## Images
 
-### `app` — the web app (includes MCP)
+### `app` — the web app (includes MCP; only published image)
 
 ```
 FROM oven/bun:1.4.0-slim
@@ -58,19 +57,6 @@ Notes:
 - **Healthcheck:** `GET /api/v1` answers `401` (JSON) when the server is up and reachable; the container reports `healthy` on that. `docker ps` / `docker compose ps` shows the state.
 - **Shutdown:** the app's shutdown handler waits up to 30 s to finish in-flight work (WAL checkpoint, etc.); the compose file sets `stop_grace_period: 40s` to give it headroom before SIGKILL.
 - **MCP:** Settings → API → **Enable MCP HTTP** is **off by default** (`/mcp` not live). When on, MCP is served on the **same port as the app** at `/mcp` (no second publish). `mcp-bundle.js` remains for stdio clients.
-
-### `mcp` — thin alias (migration)
-
-```
-FROM oven/bun:1.4.0-slim
-USER galene
-ENV GALENE_API_URL=http://localhost:3000
-CMD ["bun", "mcp-bundle.js"]
-```
-
-Same bundle as the app image. Prefer enabling MCP on the app (`/mcp` on the app port) for HTTP, or `docker run --entrypoint bun <app-image> mcp-bundle.js` for stdio. `:mcp-*` tags stay published temporarily so older client configs keep working.
-
-Usage is covered in [MCP server usage](#mcp-server-usage).
 
 ---
 
@@ -152,12 +138,12 @@ Then in the UI: Settings → Backups → Folder → `/app/backups` → Save fold
 | `XFF_DEPTH` | `1` | Optional Bun adapter: which hop in `X-Forwarded-For` is the client when `ADDRESS_HEADER=x-forwarded-for`. |
 | `GALENE_ALLOW_EPHEMERAL_DATA` | *(unset)* | `1` disables the startup volume check. Only for throwaway/test containers. |
 
-MCP (Settings-managed HTTP on the app, or standalone / thin `:mcp-*`):
+MCP (Settings-managed HTTP on the app, or stdio from the app image):
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `GALENE_ENABLE_MCP` | *(unset → Settings, default off)* | `1`/`0` overrides Settings → API MCP HTTP (`/mcp` on the app port). |
-| `GALENE_API_URL` | `http://localhost:3000` | Base URL for a standalone/stdio MCP process (thin `:mcp-*` / client-launched bundle). |
+| `GALENE_API_URL` | `http://localhost:3000` | Base URL for a client-launched stdio MCP process (`mcp-bundle.js` from the app image). |
 | `GALENE_API_TOKEN` | — | Required for **stdio**. Do not set on the app for Settings-managed HTTP MCP. |
 
 ### The `Secure` cookie flag and plain HTTP
@@ -223,7 +209,7 @@ The version (**major.minor** from `package.json`) plus the git commit and build 
 - **In the app** — Settings → **About** (version, commit linked to GitHub, build date, check-for-updates link). Also shown on the login page.
 - **HTTP** — `curl -s http://localhost:3000/version` → `{"name":"galene","version":"0.1","commit":"…","built_at":"…"}` (no authentication needed).
 - **Image labels** — `docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}} {{index .Config.Labels "org.opencontainers.image.revision"}}' ghcr.io/<owner>/<repo>:app-latest`
-- **Image tags** — `app-<ver>` / `mcp-<ver>` for releases, `app-latest` / `mcp-latest` for `main`, `app-test` / `mcp-test` for the `test` branch (for branch builds the baked-in version is the one in `package.json` at that commit).
+- **Image tags** — `app-<ver>` for releases, `app-latest` for `main`, `app-test` / `app-test-<sha>` for the `test` branch (for branch builds the baked-in version is the one in `package.json` at that commit). No `:mcp-*` tags.
 
 ---
 
@@ -262,9 +248,9 @@ Your MCP client launches the bundle for each session. From the **app** image:
 
 `-i` is required (stdio); `--rm` cleans up after each session. Use a `GALENE_API_URL` that is reachable from the MCP process. From a source checkout, `bun mcp/index.ts` with the same env works.
 
-### Migration from dual-port / `:mcp-latest`
+### Migration from dual-port / `:mcp-*`
 
-Switch HTTP clients to `http://<app-host>:<app-port>/mcp` after enabling MCP in Settings (drop any `3001` publish / `GALENE_MCP_PORT` on the app). Stdio: use the app image entrypoint above. The `:mcp-*` tags remain a thin alias of the same bundle for a transition period.
+The `:mcp-*` image is **no longer published**. Switch to `:app-*`, enable MCP in Settings (default **off**), point HTTP clients at `http://<app-host>:<app-port>/mcp`, and drop any `3001` publish / `GALENE_MCP_PORT` / `:mcp-*` compose service. Stdio: use the app image entrypoint above.
 
 ## Podman
 
@@ -286,9 +272,9 @@ The repo includes [`.github/workflows/docker-publish.yml`](.github/workflows/doc
 
 - **Triggers:** push to `main` or `test`, any `v*` tag, and manual runs (workflow_dispatch).
 - **Tags produced:**
-  - `ghcr.io/<owner>/<repo>:app-<ver>` and `:mcp-<ver>` — where `<ver>` is the tag without the `v` (e.g. `v1.2.3` → `1.2.3`), or the branch name for branch pushes
-  - plus `:app-latest` / `:mcp-latest` on `main`
-  - plus `:app-test-<sha>` / `:mcp-test-<sha>` (immutable, one per commit) on `test`
+  - `ghcr.io/<owner>/<repo>:app-<ver>` — where `<ver>` is the tag without the `v` (e.g. `v1.2.3` → `1.2.3`), or the branch name for branch pushes
+  - plus `:app-latest` on `main`
+  - plus `:app-test-<sha>` (immutable, one per commit) on `test`
 - **Releases:** the separate [`.github/workflows/release.yml`](.github/workflows/release.yml) (Actions → **Release**) is how you cut one: enter a version, it bumps `package.json`, commits, and tags `v<ver>` — the tag then lands here. The version is baked into the app (Settings → About, `GET /version`) and stamped as the `org.opencontainers.image.version` label, so the image tag, the app, and `package.json` always agree.
 - **Auth:** the workflow uses the built-in `GITHUB_TOKEN` with `packages: write`, which can publish to the **workflow's own repository** — no secrets to configure for the beta repo.
 - **Architecture:** multi-arch — **`linux/amd64` + `linux/arm64`**. The workflow builds both platforms (buildx + QEMU), so amd64 and Apple Silicon / arm64 hosts each pull a native image. The base `oven/bun` images are published for both architectures.
@@ -297,9 +283,9 @@ The repo includes [`.github/workflows/docker-publish.yml`](.github/workflows/doc
 ### Testing a build before it reaches `main`
 
 1. Push your work to the `test` branch — `git push origin HEAD:test`, or merge a PR into it.
-2. The Docker workflow publishes `:app-test` / `:mcp-test` (always the latest `test` build) plus an immutable `:app-test-<sha>` / `:mcp-test-<sha>` for that exact commit.
+2. The Docker workflow publishes `:app-test` (always the latest `test` build) plus an immutable `:app-test-<sha>` for that exact commit.
 3. On your server, point the compose file at `image: ghcr.io/<owner>/<repo>:app-test` (or the `-<sha>` tag to pin a specific build), then `docker compose pull && docker compose up -d`.
-4. When it checks out, merge `test` into `main`. The `main` push refreshes `:app-latest` / `:mcp-latest`; switch the compose file back to `:app-latest` and pull again.
+4. When it checks out, merge `test` into `main`. The `main` push refreshes `:app-latest`; switch the compose file back to `:app-latest` and pull again.
 
 One wrinkle: a `test` build bakes in the `package.json` version at that commit — the last *released* version until the next release. The commit SHA (Settings → About, `GET /version`, the image's `org.opencontainers.image.revision` label) is what distinguishes one test build from another.
 
@@ -313,7 +299,6 @@ echo "<PAT>" | docker login ghcr.io --username <github-user> --password-stdin
 docker pull ghcr.io/<owner>/<repo>:app-latest
 docker pull ghcr.io/<owner>/<repo>:app-latest
 # Optional migration alias:
-# docker pull ghcr.io/<owner>/<repo>:mcp-latest
 
 # Podman
 podman login ghcr.io   # enter <github-user> and the PAT

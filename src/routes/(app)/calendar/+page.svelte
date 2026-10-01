@@ -12,6 +12,8 @@
 		transactionPillRows,
 		popupPosition,
 		estimatedPopupHeight,
+		pillPopupUsesTapToggle,
+		nextPillTapAction,
 		type PillPopupRow
 	} from '$lib/calendarPillPopup';
 	import {
@@ -236,6 +238,19 @@
 	const PILL_POPUP_ID = 'calendar-pill-popup';
 	let popup = $state<{ rows: PillPopupRow[]; top: number; left: number } | null>(null);
 	let popupSource: HTMLElement | null = null;
+	/** Touch-first: sticky tap open/close instead of hover/long-press. */
+	let tapToggle = $state(false);
+
+	$effect(() => {
+		if (!browser) return;
+		const mql = window.matchMedia('(hover: none)');
+		const sync = () => {
+			tapToggle = pillPopupUsesTapToggle(mql.matches);
+		};
+		sync();
+		mql.addEventListener('change', sync);
+		return () => mql.removeEventListener('change', sync);
+	});
 
 	function showPillPopup(el: EventTarget | null, rows: PillPopupRow[]) {
 		if (!(el instanceof HTMLElement) || rows.length === 0) {
@@ -263,8 +278,44 @@
 	}
 
 	function hidePillPopupOnLeave(el: EventTarget | null) {
+		if (tapToggle) return;
 		if (el instanceof HTMLElement && document.activeElement === el) return;
 		hidePillPopup();
+	}
+
+	function onPillPointerEnter(el: EventTarget | null, rows: PillPopupRow[]) {
+		if (tapToggle) return;
+		showPillPopup(el, rows);
+	}
+
+	function onPillFocus(el: EventTarget | null, rows: PillPopupRow[]) {
+		// Touch tap focuses then blurs — that flash is why sticky tap-toggle exists.
+		if (tapToggle) return;
+		showPillPopup(el, rows);
+	}
+
+	function onPillBlur() {
+		if (tapToggle) return;
+		hidePillPopup();
+	}
+
+	/** Mobile: tap toggles sticky popup. Desktop: optional click (scheduled edit). */
+	function onPillClick(
+		e: MouseEvent,
+		rows: PillPopupRow[],
+		onDesktopClick?: () => void
+	) {
+		if (!tapToggle) {
+			onDesktopClick?.();
+			return;
+		}
+		e.preventDefault();
+		e.stopPropagation();
+		const el = e.currentTarget;
+		if (!(el instanceof HTMLElement)) return;
+		const action = nextPillTapAction(popupSource, el, popup != null);
+		if (action === 'hide') hidePillPopup();
+		else showPillPopup(el, rows);
 	}
 
 	$effect(() => {
@@ -274,6 +325,26 @@
 		return () => {
 			window.removeEventListener('scroll', hide, true);
 			window.removeEventListener('resize', hide);
+		};
+	});
+
+	// Tap-elsewhere closes sticky popup (opening click must not immediately dismiss).
+	$effect(() => {
+		if (!browser || !tapToggle || !popup) return;
+		const onPointerDown = (e: PointerEvent) => {
+			const t = e.target;
+			if (!(t instanceof Node)) return;
+			if (popupSource?.contains(t)) return;
+			const tip = document.getElementById(PILL_POPUP_ID);
+			if (tip?.contains(t)) return;
+			hidePillPopup();
+		};
+		const id = window.setTimeout(() => {
+			window.addEventListener('pointerdown', onPointerDown, true);
+		}, 0);
+		return () => {
+			window.clearTimeout(id);
+			window.removeEventListener('pointerdown', onPointerDown, true);
 		};
 	});
 
@@ -509,11 +580,12 @@
 							{#if item.kind === 'tx'}
 								<button
 									type="button"
-									class="pointer-events-auto flex items-center justify-between gap-2 border-b border-border py-2.5 text-left last:border-b-0"
-									onpointerenter={(e) => showPillPopup(e.currentTarget, transactionPillRows(item.t))}
+									class="pointer-events-auto flex select-none items-center justify-between gap-2 border-b border-border py-2.5 text-left last:border-b-0 [-webkit-touch-callout:none]"
+									onpointerenter={(e) => onPillPointerEnter(e.currentTarget, transactionPillRows(item.t))}
 									onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
-									onfocus={(e) => showPillPopup(e.currentTarget, transactionPillRows(item.t))}
-									onblur={hidePillPopup}
+									onfocus={(e) => onPillFocus(e.currentTarget, transactionPillRows(item.t))}
+									onblur={onPillBlur}
+									onclick={(e) => onPillClick(e, transactionPillRows(item.t))}
 								>
 									<div class="min-w-0 flex-1">
 										<div class="truncate text-sm font-medium">
@@ -540,16 +612,16 @@
 								{@const sc = item.o.scheduled.color}
 								<button
 									type="button"
-									class="pointer-events-auto relative my-1.5 flex items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2.5 pl-3.5 text-left"
+									class="pointer-events-auto relative my-1.5 flex select-none items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2.5 pl-3.5 text-left [-webkit-touch-callout:none]"
 									style="border-color: {sc ?? 'color-mix(in oklab, var(--color-primary) 60%, transparent)'}; background: {softFill(
 										sc
 									) ??
 										'color-mix(in oklab, var(--color-primary) 10%, transparent)'}"
-									onclick={() => openScheduledEdit(item.o.scheduled)}
-									onpointerenter={(e) => showPillPopup(e.currentTarget, scheduledPillRows(item.o.scheduled))}
+									onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled))}
+									onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 									onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
-									onfocus={(e) => showPillPopup(e.currentTarget, scheduledPillRows(item.o.scheduled))}
-									onblur={hidePillPopup}
+									onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
+									onblur={onPillBlur}
 								>
 									<span
 										class="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-r"
@@ -616,11 +688,12 @@
 									{#if item.kind === 'tx'}
 										<button
 											type="button"
-											class="pointer-events-auto flex items-center justify-between gap-2 border-b border-border py-2.5 text-left last:border-b-0"
-											onpointerenter={(e) => showPillPopup(e.currentTarget, transactionPillRows(item.t))}
+											class="pointer-events-auto flex select-none items-center justify-between gap-2 border-b border-border py-2.5 text-left last:border-b-0 [-webkit-touch-callout:none]"
+											onpointerenter={(e) => onPillPointerEnter(e.currentTarget, transactionPillRows(item.t))}
 											onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
-											onfocus={(e) => showPillPopup(e.currentTarget, transactionPillRows(item.t))}
-											onblur={hidePillPopup}
+											onfocus={(e) => onPillFocus(e.currentTarget, transactionPillRows(item.t))}
+											onblur={onPillBlur}
+											onclick={(e) => onPillClick(e, transactionPillRows(item.t))}
 										>
 											<div class="min-w-0 flex-1">
 												<div class="truncate text-sm font-medium">
@@ -647,17 +720,16 @@
 										{@const sc = item.o.scheduled.color}
 										<button
 											type="button"
-											class="pointer-events-auto relative my-1.5 flex items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2.5 pl-3.5 text-left"
+											class="pointer-events-auto relative my-1.5 flex select-none items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2.5 pl-3.5 text-left [-webkit-touch-callout:none]"
 											style="border-color: {sc ?? 'color-mix(in oklab, var(--color-primary) 60%, transparent)'}; background: {softFill(
 												sc
 											) ??
 												'color-mix(in oklab, var(--color-primary) 10%, transparent)'}"
-											onclick={() => openScheduledEdit(item.o.scheduled)}
-											onpointerenter={(e) =>
-												showPillPopup(e.currentTarget, scheduledPillRows(item.o.scheduled))}
+											onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled))}
+											onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 											onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
-											onfocus={(e) => showPillPopup(e.currentTarget, scheduledPillRows(item.o.scheduled))}
-											onblur={hidePillPopup}
+											onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
+											onblur={onPillBlur}
 										>
 											<span
 												class="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-r"
@@ -739,12 +811,13 @@
 								{#if item.kind === 'tx'}
 									<button
 										type="button"
-										class="pointer-events-auto flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-left text-xs"
+										class="pointer-events-auto flex select-none items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-left text-xs [-webkit-touch-callout:none]"
 										style="border-left: 3px solid {item.t.color ?? item.t.category_color ?? 'transparent'}"
-										onpointerenter={(e) => showPillPopup(e.currentTarget, transactionPillRows(item.t))}
+										onpointerenter={(e) => onPillPointerEnter(e.currentTarget, transactionPillRows(item.t))}
 										onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
-										onfocus={(e) => showPillPopup(e.currentTarget, transactionPillRows(item.t))}
-										onblur={hidePillPopup}
+										onfocus={(e) => onPillFocus(e.currentTarget, transactionPillRows(item.t))}
+										onblur={onPillBlur}
+										onclick={(e) => onPillClick(e, transactionPillRows(item.t))}
 									>
 										<span class="truncate">{item.t.merchant ?? item.t.category_name ?? 'Transaction'}</span>
 										<span class="ml-auto shrink-0 font-medium {item.t.amount_cents > 0 ? 'text-success' : ''}">
@@ -754,18 +827,18 @@
 								{:else}
 									<button
 										type="button"
-										class="pointer-events-auto flex cursor-pointer items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-left text-xs {item
+										class="pointer-events-auto flex cursor-pointer select-none items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-left text-xs [-webkit-touch-callout:none] {item
 											.o.scheduled.color
 											? ''
 											: 'border-primary/60 bg-primary/10'}"
 										style={item.o.scheduled.color
 											? `border-color: ${item.o.scheduled.color}; background: ${item.o.scheduled.color}1a`
 											: undefined}
-										onclick={() => openScheduledEdit(item.o.scheduled)}
-										onpointerenter={(e) => showPillPopup(e.currentTarget, scheduledPillRows(item.o.scheduled))}
+										onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled))}
+										onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 										onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
-										onfocus={(e) => showPillPopup(e.currentTarget, scheduledPillRows(item.o.scheduled))}
-										onblur={hidePillPopup}
+										onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
+										onblur={onPillBlur}
 									>
 										{#if item.o.scheduled.repeat_interval}
 											<svg

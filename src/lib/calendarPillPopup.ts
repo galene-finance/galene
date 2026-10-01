@@ -93,3 +93,19 @@ export function popupPosition(
 	const top = spaceBelow < height ? Math.max(margin, rect.top - height - gap) : rect.bottom + gap;
 	return { top, left };
 }
+
+
+/** Prefer sticky tap-to-toggle when the primary pointer has no hover (touch). */
+export function pillPopupUsesTapToggle(hoverNone: boolean): boolean {
+	return hoverNone;
+}
+
+/** After a tap on `tapped` while `openSource` is the sticky popup anchor. */
+export function nextPillTapAction(
+	openSource: { isSameNode?(other: Node | null): boolean } | null,
+	tapped: Node,
+	isOpen: boolean
+): 'show' | 'hide' {
+	if (isOpen && openSource != null && openSource.isSameNode?.(tapped)) return 'hide';
+	return 'show';
+}

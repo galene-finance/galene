@@ -2,10 +2,11 @@
 # truth), commits and pushes it, then tags the commit vX.Y (major.minor).
 #
 # The tag push triggers the Docker workflow, which publishes
-#   ghcr.io/<owner>/<repo>:app-<ver> / :mcp-<ver>
+#   ghcr.io/<owner>/<repo>:app-<ver>
 # with the same version baked into the app (Settings → About, GET /version)
-# and stamped as an OCI label. The main push also refreshes :app-latest /
-# :mcp-latest with the new version.
+# and stamped as an OCI label. The main push also refreshes :app-latest
+# with the new version. No `:mcp-*` image is published — MCP is in the app
+# (Settings → API, `/mcp` on the app port, default off).
 #
 # Usage: Actions → Release → Run workflow → enter a version (e.g. 0.2).
 # Two-part only — three-part versions like 0.2.0 are rejected.

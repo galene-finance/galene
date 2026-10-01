@@ -1,7 +1,7 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { createGaleneServer } from './tools.ts';
 
-const MCP_PATH = '/mcp';
+export const MCP_PATH = '/mcp';
 
 export function bearerToken(header: string | null): string | null {
 	if (!header || !header.startsWith('Bearer ')) return null;

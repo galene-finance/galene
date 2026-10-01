@@ -7,8 +7,8 @@ Galene ships from one `Dockerfile` (base `oven/bun:1.4.0`, Debian 13, non-root u
 
 | Image | What it is |
 | --- | --- |
-| `galene:app` | The web app — Bun.serve on port 3000, SQLite in `/app/data`, plus `mcp-bundle.js`. Enable MCP HTTP in Settings → API (**default off**). |
-| `galene:mcp` | Thin alias of the same MCP bundle (stdio / optional HTTP). Prefer the app image; kept for migration from older `:mcp-*` installs. |
+| `galene:app` | The web app — Bun.serve on port 3000, SQLite in `/app/data`, plus `mcp-bundle.js`. Enable MCP at `/mcp` in Settings → API (**default off**; same port). |
+| `galene:mcp` | Thin alias of the same MCP bundle (stdio / optional standalone HTTP). Prefer the app image `/mcp`; kept for migration from older `:mcp-*` installs. |
 
 Images contain only the build output and the Bun runtime — no `node_modules`, no source. The app is a **single replica**: it runs in-process schedulers (bank auto-sync, backups, notifications) and one SQLite file, so run one instance and put your TLS-terminating proxy in front if you want HTTPS ([Reverse proxy](/self-host/reverse-proxy/)). MCP details: [API & MCP](/features/api-mcp/).
 
@@ -43,7 +43,7 @@ volumes:
 
 ## Environment variables
 
-The compose file sets `GALENE_COOKIE_SECURE: "0"` for plain-HTTP self-hosting (LAN, Tailscale, WireGuard). Behind a TLS-terminating reverse proxy, set it to `"1"` — see [Reverse proxy](/self-host/reverse-proxy/). The full list, including `PORT`, `GALENE_DATA_DIR`, `GALENE_ENABLE_MCP`, and MCP bind overrides, is in [Environment variables](/reference/environment-variables/).
+The compose file sets `GALENE_COOKIE_SECURE: "0"` for plain-HTTP self-hosting (LAN, Tailscale, WireGuard). Behind a TLS-terminating reverse proxy, set it to `"1"` — see [Reverse proxy](/self-host/reverse-proxy/). The full list, including `PORT`, `GALENE_DATA_DIR`, and `GALENE_ENABLE_MCP`, is in [Environment variables](/reference/environment-variables/).
 
 ## Healthcheck
 

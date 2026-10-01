@@ -1,8 +1,9 @@
 # Galene — one build, two targets:
 #   --target app : the web app (Bun.serve, port 3000, SQLite in /app/data, backups in /app/backups).
-#                  Also ships mcp-bundle.js; enable the HTTP listener in Settings (default off).
-#   --target mcp : thin alias of the same MCP bundle (stdio / optional HTTP). Prefer the app
-#                  image for normal installs; kept for migration from :mcp-latest.
+#                  MCP HTTP is path-mounted at /mcp when enabled in Settings (default off).
+#                  Also ships mcp-bundle.js for stdio clients.
+#   --target mcp : thin alias of the same MCP bundle (stdio / optional standalone HTTP). Prefer
+#                  the app image for normal installs; kept for migration from :mcp-latest.
 #
 # Base images are pinned to the Bun version that generated bun.lock.
 #
@@ -73,12 +74,11 @@ ENV GALENE_DATA_DIR=/app/data \
     NODE_ENV=production
 
 EXPOSE 3000
-# MCP HTTP (Settings → API, default off). Publish only when MCP is enabled.
-EXPOSE 3001
 
 COPY --from=build --chown=galene:galene /app/build ./build
-# MCP bits (~214 KiB): Settings can spawn this; stdio clients can also
+# MCP bits (~214 KiB): stdio clients can
 # `docker run --rm -i --entrypoint bun <app-image> mcp-bundle.js`.
+# HTTP MCP is served by the app at /mcp when enabled in Settings (default off).
 COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-bundle.js ./mcp-bundle.js
 
 # Created in the image so a named volume initialized from them is owned by the
@@ -107,8 +107,8 @@ LABEL org.opencontainers.image.version="${APP_VERSION}" \
 
 WORKDIR /app
 
-# Same mcp-bundle.js as the app image. Stdio unless GALENE_MCP_PORT is set.
-# Prefer enabling MCP in the app (Settings → API) instead of a second container.
+# Same mcp-bundle.js as the app image. Stdio unless GALENE_MCP_PORT is set
+# (standalone HTTP only — prefer app /mcp instead of a second container).
 ENV GALENE_API_URL=http://localhost:3000
 
 COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-bundle.js ./mcp-bundle.js

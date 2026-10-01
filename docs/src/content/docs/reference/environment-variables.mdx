@@ -9,7 +9,7 @@ description: Every environment variable the app image reads (including optional 
 | --- | --- | --- |
 | `GALENE_DATA_DIR` | `/app/data` | Directory for the database file. Must be a mounted volume. |
 | `GALENE_DB_PATH` | `$GALENE_DATA_DIR/galene.db` | Full path to the SQLite database. |
-| `PORT` | `3000` | HTTP port the app listens on. |
+| `PORT` | `3000` | HTTP port the app listens on (UI, REST, and MCP `/mcp` when enabled). |
 | `NODE_ENV` | `production` (baked into the image) | Affects the session cookie's `Secure` flag by default. |
 | `GALENE_COOKIE_SECURE` | unset → follows `NODE_ENV` | `1`/`true`/`yes`/`on` sets the `Secure` flag; `0`/`false`/`no`/`off` clears it. |
 | `PROTOCOL_HEADER` | unset | Bun adapter: name of the header that carries the public scheme behind a TLS proxy. Set to `x-forwarded-proto` when TLS terminates upstream. |
@@ -24,19 +24,17 @@ description: Every environment variable the app image reads (including optional 
 | `GALENE_OIDC_CLIENT_ID` | unset | OIDC client id. Overrides Settings when non-empty. |
 | `GALENE_OIDC_CLIENT_SECRET` | unset | OIDC client secret. Overrides Settings when non-empty and is not shown back in the form. |
 | `GALENE_OIDC_SCOPES` | unset | Space-separated scopes. Overrides Settings when non-empty. Default in Settings is `openid profile email`. |
-| `GALENE_ENABLE_MCP` | unset | `1`/`0` overrides Settings → API MCP HTTP listener on/off. Unset uses the saved toggle (**default off**). When off, no MCP process listens. |
-| `GALENE_MCP_PORT` | unset → Settings (default `3001`) | Port for the MCP HTTP listener when enabled. Overrides the saved port when set. |
-| `GALENE_MCP_HOST` | unset → Settings (default `0.0.0.0`) | Bind address for the MCP HTTP listener when enabled. |
+| `GALENE_ENABLE_MCP` | unset | `1`/`0` overrides Settings → API MCP HTTP on/off. Unset uses the saved toggle (**default off**). When off, `/mcp` is not live. When on, MCP shares the app `PORT` (no separate MCP port). |
 
 ## MCP bundle (stdio or thin `:mcp-*` image)
 
-The same `mcp-bundle.js` ships inside the app image. A separate `:mcp-*` image remains a thin alias for migration. Prefer enabling MCP on the app (Settings → API) for HTTP; for stdio, launch the bundle from the app image or from source.
+The same `mcp-bundle.js` ships inside the app image. A separate `:mcp-*` image remains a thin alias for migration. Prefer enabling MCP on the app (Settings → API → `/mcp` on the app port) for HTTP; for stdio, launch the bundle from the app image or from source.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `GALENE_API_URL` | `http://localhost:3000` | Base URL of the Galene instance the MCP server calls. When the app spawns MCP itself, it sets this to `http://127.0.0.1:$PORT`. |
-| `GALENE_API_TOKEN` | — | API token from Settings → API. Required for **stdio**. Do **not** set it on the long-running HTTP process (or on the app when using Settings-managed HTTP MCP). |
-| `GALENE_MCP_PORT` | unset | Port for the long-running HTTP endpoint. Unset keeps stdio when launching the bundle alone. |
-| `GALENE_MCP_HOST` | `0.0.0.0` | Bind address when `GALENE_MCP_PORT` is set on a standalone MCP process. |
+| `GALENE_API_URL` | `http://localhost:3000` | Base URL of the Galene instance the MCP server calls. |
+| `GALENE_API_TOKEN` | — | API token from Settings → API. Required for **stdio**. Do **not** set it on the app when using Settings-managed HTTP MCP. |
+| `GALENE_MCP_PORT` | unset | Standalone bundle only: port for a long-running HTTP endpoint when launching the bundle alone. Unset keeps stdio. Prefer app `/mcp` instead. |
+| `GALENE_MCP_HOST` | `0.0.0.0` | Standalone bundle only: bind address when `GALENE_MCP_PORT` is set. |
 
 When to set `GALENE_COOKIE_SECURE` and the adapter proxy headers (`PROTOCOL_HEADER`, `HOST_HEADER`, …): [Reverse proxy](/self-host/reverse-proxy/). A non-empty `GALENE_OIDC_*` / `GALENE_ENABLE_MCP` variable overrides the matching Settings field; see [Single sign-on (OIDC)](/self-host/oidc/) and [API & MCP](/features/api-mcp/). Outside the container the default `GALENE_DATA_DIR` is `./data` — see [From source](/self-host/from-source/).

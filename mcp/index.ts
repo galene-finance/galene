@@ -3,8 +3,10 @@
  * Galene MCP server.
  *
  * Stdio (default): an MCP client launches this process. GALENE_API_TOKEN is required.
- * HTTP: set GALENE_MCP_PORT. The process stays up and reads the API token from
- * each request's Authorization header. Do not put the token in the environment.
+ * HTTP (standalone / thin `:mcp-*` image only): set GALENE_MCP_PORT. Prefer enabling
+ * MCP in the app (Settings → API) so clients use the same host:port as the UI at `/mcp`.
+ * The process stays up and reads the API token from each request's Authorization
+ * header. Do not put the token in the environment for HTTP mode.
  *
  * GALENE_API_URL is the Galene app (default http://localhost:3000).
  */

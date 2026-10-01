@@ -4,8 +4,8 @@ Galene ships from one [`Dockerfile`](Dockerfile). Normal installs use the **app*
 
 | Target | Image | What it is |
 | --- | --- | --- |
-| `app` | `galene:app` | The web app: Bun.serve on port **3000**, SQLite in `/app/data`, plus `mcp-bundle.js`. Enable MCP HTTP in Settings → API (**default off**). |
-| `mcp` | `galene:mcp` | Thin alias of the same MCP bundle (stdio / optional HTTP). Prefer the app image. |
+| `app` | `galene:app` | The web app: Bun.serve on port **3000**, SQLite in `/app/data`, plus `mcp-bundle.js`. Enable MCP at `/mcp` in Settings → API (**default off**; same port). |
+| `mcp` | `galene:mcp` | Thin alias of the same MCP bundle (stdio / optional standalone HTTP). Prefer the app image `/mcp`. |
 
 Both images:
 
@@ -46,10 +46,10 @@ FROM oven/bun:1.4.0-slim
 USER galene            # non-root, uid 10001
 WORKDIR /app
 ENV GALENE_DATA_DIR=/app/data  PORT=3000  NODE_ENV=production
-EXPOSE 3000 3001
+EXPOSE 3000
 HEALTHCHECK  GET /api/v1 → 401 means healthy
 CMD ["bun", "build/index.js"]
-# also ships ./mcp-bundle.js
+# also ships ./mcp-bundle.js (stdio); HTTP MCP is /mcp on PORT when enabled
 ```
 
 Notes:
@@ -57,7 +57,7 @@ Notes:
 - **No `VOLUME` instruction, on purpose.** The app has a startup check that **refuses to run if its data directory is not a mounted volume** (see [Data, volumes, backups](#data-volumes-and-backups)). A bare `docker run` without `-v` will not start — that is the point.
 - **Healthcheck:** `GET /api/v1` answers `401` (JSON) when the server is up and reachable; the container reports `healthy` on that. `docker ps` / `docker compose ps` shows the state.
 - **Shutdown:** the app's shutdown handler waits up to 30 s to finish in-flight work (WAL checkpoint, etc.); the compose file sets `stop_grace_period: 40s` to give it headroom before SIGKILL.
-- **MCP:** `mcp-bundle.js` is in the image. Settings → API → **Enable MCP HTTP listener** is **off by default** (no process / no port). When on, the app spawns the bundle on port **3001** (configurable). Publish `3001:3001` only when MCP is enabled. Stdio clients can launch the same bundle without the toggle.
+- **MCP:** Settings → API → **Enable MCP HTTP** is **off by default** (`/mcp` not live). When on, MCP is served on the **same port as the app** at `/mcp` (no second publish). `mcp-bundle.js` remains for stdio clients.
 
 ### `mcp` — thin alias (migration)
 
@@ -68,7 +68,7 @@ ENV GALENE_API_URL=http://localhost:3000
 CMD ["bun", "mcp-bundle.js"]
 ```
 
-Same bundle as the app image. Prefer enabling MCP on the app for HTTP, or `docker run --entrypoint bun <app-image> mcp-bundle.js` for stdio. `:mcp-*` tags stay published temporarily so older client configs keep working.
+Same bundle as the app image. Prefer enabling MCP on the app (`/mcp` on the app port) for HTTP, or `docker run --entrypoint bun <app-image> mcp-bundle.js` for stdio. `:mcp-*` tags stay published temporarily so older client configs keep working.
 
 Usage is covered in [MCP server usage](#mcp-server-usage).
 
@@ -156,10 +156,8 @@ MCP (Settings-managed HTTP on the app, or standalone / thin `:mcp-*`):
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `GALENE_ENABLE_MCP` | *(unset → Settings, default off)* | `1`/`0` overrides Settings → API MCP HTTP listener. |
-| `GALENE_MCP_PORT` | *(unset → Settings, default 3001)* | MCP HTTP listen port when enabled. |
-| `GALENE_MCP_HOST` | *(unset → Settings, default 0.0.0.0)* | MCP HTTP bind address when enabled. |
-| `GALENE_API_URL` | `http://localhost:3000` | Base URL for a standalone/stdio MCP process. App-spawned MCP uses `http://127.0.0.1:$PORT`. |
+| `GALENE_ENABLE_MCP` | *(unset → Settings, default off)* | `1`/`0` overrides Settings → API MCP HTTP (`/mcp` on the app port). |
+| `GALENE_API_URL` | `http://localhost:3000` | Base URL for a standalone/stdio MCP process (thin `:mcp-*` / client-launched bundle). |
 | `GALENE_API_TOKEN` | — | Required for **stdio**. Do not set on the app for Settings-managed HTTP MCP. |
 
 ### The `Secure` cookie flag and plain HTTP
@@ -233,13 +231,12 @@ The version (**major.minor** from `package.json`) plus the git commit and build 
 
 The app image includes the MCP bundle. Create an API token in Settings → **API** (shown once — copy it).
 
-### HTTP (recommended for always-on)
+### HTTP (same port as the app)
 
-1. As an administrator, open Settings → API and turn on **Enable MCP HTTP listener** (default **off** — upgrades never enable it).
-2. Publish port **3001** (or your chosen port) on the container if clients are outside it.
-3. Point the client at `http://<host>:<port>/mcp` with `Authorization: Bearer <token>` on each request. Do not put the token in the app environment.
+1. As an administrator, open Settings → API and turn on **Enable MCP HTTP** (default **off** — upgrades never enable it).
+2. Point the client at `http://<host>:<app-port>/mcp` (same host/port as the UI) with `Authorization: Bearer <token>` on each request. Do not put the token in the app environment. No second published port.
 
-Optional: `GALENE_ENABLE_MCP=1` forces the listener on; `GALENE_MCP_PORT` / `GALENE_MCP_HOST` override the bind.
+Optional: `GALENE_ENABLE_MCP=1` / `0` forces MCP HTTP on or off.
 
 ### Stdio (client launches the process)
 
@@ -265,9 +262,9 @@ Your MCP client launches the bundle for each session. From the **app** image:
 
 `-i` is required (stdio); `--rm` cleans up after each session. Use a `GALENE_API_URL` that is reachable from the MCP process. From a source checkout, `bun mcp/index.ts` with the same env works.
 
-### Migration from `:mcp-latest`
+### Migration from dual-port / `:mcp-latest`
 
-Switch clients to the app image (HTTP via Settings, or stdio entrypoint above). The `:mcp-*` tags remain a thin alias of the same bundle for a transition period.
+Switch HTTP clients to `http://<app-host>:<app-port>/mcp` after enabling MCP in Settings (drop any `3001` publish / `GALENE_MCP_PORT` on the app). Stdio: use the app image entrypoint above. The `:mcp-*` tags remain a thin alias of the same bundle for a transition period.
 
 ## Podman
 

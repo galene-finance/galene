@@ -8,7 +8,7 @@ Galene is self-hostable personal finance (SvelteKit + Bun + SQLite). Prefer smal
 
 - Never put personal computer names, hostnames, LAN IPs, home-lab topology, or private domains in GitHub issues, PRs, comments, or in-repo docs meant for the public.
 - Never put the maintainer’s given name in GitHub issues, PRs, comments, or public docs. Use “the maintainer” or omit.
-- Prefer generic labels: local build host, app host, reverse-proxy host, `:app-test`, production URL (or omit).
+- Prefer generic labels: local build host, app host, reverse-proxy host, `:test`, production URL (or omit).
 - Public product names (SimpleFIN, Plaid, Caddy, Authentik, etc.) and generic reverse-proxy examples are fine.
 
 ## Delivery flow — issue → PR → `test` → `main` → release
@@ -16,13 +16,13 @@ Galene is self-hostable personal finance (SvelteKit + Bun + SQLite). Prefer smal
 1. **Issue first.** Every change starts from a GitHub issue (create one from chat if needed). Include context, success criteria, constraints, and how to verify.
 2. **Feature branch** off `main`: `feat/issue-N-slug` or `fix/issue-N-slug`.
 3. **Docs check.** Before calling the work done, review `docs/` for anything the change makes wrong or incomplete. Update pages in the same PR when operators/users need to know; otherwise note `docs N/A` in the issue comment.
-4. **Open a PR into `test`** (preferred) or land on `test` only when explicitly asked. CI publishes:
-   - `ghcr.io/galene-finance/galene:app-test` (mutable; MCP HTTP is `/mcp` on the app when enabled in Settings, default off)
-   - `ghcr.io/galene-finance/galene:app-test-<sha>` (immutable)
-5. **Comment on the issue** in the same turn the work lands on `test`: short SHA + commit URL, what changed, docs note, how to verify on `:app-test`. Do **not** close the issue.
-6. **Human verifies** on `:app-test` (Settings → About / `GET /version` for the SHA). Approve by merging `test` → `main` (or asking for that ship).
-7. **Push/merge to `main`** refreshes `:app-latest`.
-8. **Releases only when asked:** Actions → Release → enter **major.minor** (e.g. `0.2`, not `0.2.0`). That bumps `package.json`, tags `vX.Y`, and publishes `:app-<ver>`. No `:mcp-*` image.
+4. **Open a PR into `test`** (preferred) or land on `test` only when explicitly asked. CI publishes (dual-publish during #157 cutover — both old and new):
+   - `ghcr.io/galene-finance/galene:test` (+ legacy `:app-test`) (mutable; MCP HTTP is `/mcp` on the app when enabled in Settings, default off)
+   - `ghcr.io/galene-finance/galene:test-<sha>` (+ legacy `:app-test-<sha>`) (immutable)
+5. **Comment on the issue** in the same turn the work lands on `test`: short SHA + commit URL, what changed, docs note, how to verify on `:test`. Do **not** close the issue.
+6. **Human verifies** on `:test` (Settings → About / `GET /version` for the SHA). Approve by merging `test` → `main` (or asking for that ship).
+7. **Push/merge to `main`** refreshes `:latest` (+ legacy `:app-latest` during cutover).
+8. **Releases only when asked:** Actions → Release → enter **major.minor** (e.g. `0.2`, not `0.2.0`). That bumps `package.json`, tags `vX.Y`, and publishes `:<ver>` (+ legacy `:app-<ver>` during cutover). No `:mcp-*` image.
 
 ### Working rules
 

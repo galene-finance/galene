@@ -7,7 +7,8 @@ services:
   galene:
     # Local build (default). To pull a prebuilt image from GitHub Container
     # Registry instead, comment out the `build:` block and set:
-    #   image: ghcr.io/<owner>/<repo>:app
+    #   image: ghcr.io/<owner>/<repo>:latest
+    # (During #157 cutover, :app-latest is still published as a legacy alias.)
     image: galene:app
     build:
       context: .

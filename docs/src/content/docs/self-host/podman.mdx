@@ -36,7 +36,7 @@ For a systemd-managed container, a quadlet unit is the cleanest path. For a root
 
 ```ini
 [Container]
-Image=ghcr.io/galene-finance/galene:app-latest
+Image=ghcr.io/galene-finance/galene:latest
 ContainerName=galene
 PublishPort=3000:3000
 Volume=galene_data:/app/data
@@ -72,7 +72,7 @@ Avoid `vfs` — it is very slow for the SQLite WAL workload. `overlay`/`overlay2
 **Public images pull anonymously** — no login:
 
 ```bash
-podman pull ghcr.io/galene-finance/galene:app-latest
+podman pull ghcr.io/galene-finance/galene:latest
 ```
 
 Only if pull fails (private package, org policy, rate limits, etc.) run `podman login ghcr.io` with a **classic** personal access token that has `read:packages`. Fine-grained tokens cannot authenticate to GHCR.

@@ -13,6 +13,7 @@
 	import { categoryPickerItems } from '$lib/categoryPicker';
 	import type { Account, Category, Tag, Transaction } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import { withPending } from '$lib/formPending';
 
 	const CREATE_VALUE = '__create__';
 
@@ -56,6 +57,8 @@
 	let tagSearch = $state('');
 	let tagNewName = $state('');
 	const tagCreate = $derived(tagValues.includes(CREATE_VALUE));
+
+	let saving = $state(false);
 
 	const accountItems = $derived(accounts.map((a) => ({ value: String(a.id), label: a.name })));
 	const categoryItems = $derived(categoryPickerItems(categories));
@@ -112,7 +115,9 @@
 		type = newType;
 	}
 
-	const handleSubmit: SubmitFunction = ({ formData }) => {
+	const handleSubmit: SubmitFunction = withPending(
+		(v) => (saving = v),
+		({ formData }) => {
 		formData.set('id', editing ? String(editing.id) : '');
 		formData.set('type', type);
 		formData.set('amount', amount);
@@ -149,16 +154,19 @@
 				onclose?.();
 			}
 		};
-	};
+		}
+	);
 </script>
 
 <Dialog
 	bind:open
 	size="lg"
+	busy={saving}
 	title={editing ? 'Edit transaction' : 'Add transaction'}
 	description={editing ? undefined : 'Record a one-time income or expense.'}
 >
-	<form method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4">
+	<form method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 		<div class="flex gap-2" role="radiogroup" aria-label="Transaction type">
 			<button
 				type="button"
@@ -257,6 +265,7 @@
 				<Button
 					type="button"
 					variant="secondary"
+					disabled={saving}
 					onclick={() => {
 						const cat = categories.find((c) => String(c.id) === categoryId);
 						onRememberPayee({
@@ -268,8 +277,9 @@
 					}}
 				>Remember this payee</Button>
 			{/if}
-			<Button variant="secondary" type="button" onclick={() => (open = false)}>Cancel</Button>
-			<Button type="submit">{editing ? 'Save changes' : 'Add transaction'}</Button>
+			<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
+			<Button type="submit" pending={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Add transaction'}</Button>
 		</div>
+		</fieldset>
 	</form>
 </Dialog>

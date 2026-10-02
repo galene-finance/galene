@@ -9,6 +9,7 @@
 	import { categoryPickerItems } from '$lib/categoryPicker';
 	import type { Category, Transaction } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import { withPending } from '$lib/formPending';
 
 	type SplitRow = {
 		categoryId: string;
@@ -89,7 +90,11 @@
 		(document.getElementById('split-amount-0') as HTMLInputElement | null)?.focus();
 	}
 
-	const handleSubmit: SubmitFunction = ({ formData }) => {
+	let saving = $state(false);
+
+	const handleSubmit: SubmitFunction = withPending(
+		(v) => (saving = v),
+		({ formData }) => {
 		if (!transaction) return;
 		formData.set('id', String(transaction.id));
 		formData.set('type', isExpense ? 'expense' : 'income');
@@ -112,7 +117,8 @@
 				showError = true;
 			}
 		};
-	};
+		}
+	);
 
 	function unsplit() {
 		(document.getElementById('split-unsplit-form') as HTMLFormElement | null)?.requestSubmit();
@@ -122,6 +128,7 @@
 <Dialog
 	bind:open
 	size="lg"
+	busy={saving}
 	title="Split transaction"
 	description={
 		transaction
@@ -136,7 +143,8 @@
 			<input type="hidden" name="unsplit" value="1" />
 		</form>
 	{/if}
-	<form method="POST" action="?/split" use:enhance={handleSubmit} class="flex flex-col gap-4">
+	<form method="POST" action="?/split" use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 		{#if transaction}
 			<div class="flex flex-col gap-2">
 				{#each rows as row, i (i)}
@@ -188,12 +196,13 @@
 
 		<div class="flex items-center gap-2">
 			{#if transaction?.splits && transaction.splits.length > 0}
-				<Button variant="destructive" type="button" class="mr-auto" onclick={unsplit}>
+				<Button variant="destructive" type="button" class="mr-auto" disabled={saving} onclick={unsplit}>
 					Unsplit
 				</Button>
 			{/if}
-			<Button variant="secondary" type="button" onclick={() => (open = false)}>Cancel</Button>
-			<Button type="submit">Save split</Button>
+			<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
+			<Button type="submit" pending={saving}>{saving ? 'Saving…' : 'Save split'}</Button>
 		</div>
+		</fieldset>
 	</form>
 </Dialog>

@@ -30,6 +30,7 @@ export default defineConfig({
           items: [
             { label: 'Docker & Compose', slug: 'self-host/docker' },
             { label: 'Podman (compose & quadlets)', slug: 'self-host/podman' },
+            { label: 'Public demo mode', slug: 'self-host/public-demo' },
             { label: 'From source', slug: 'self-host/from-source' },
             { label: 'Reverse proxy', slug: 'self-host/reverse-proxy' },
             { label: 'Single sign-on (OIDC)', slug: 'self-host/oidc' },

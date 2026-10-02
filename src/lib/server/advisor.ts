@@ -1,6 +1,7 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { db } from './db';
 import { hashToken, tokenHint, verifyToken } from './tokenHash';
+import { demoBlockedMessage, isDemoMode } from './demoMode';
 
 export type AdvisorKind = 'pack' | 'viewer';
 
@@ -150,6 +151,7 @@ export function createGrant(
 	userId: number,
 	input: CreateGrantInput
 ): { grant: AdvisorGrant; token: string } | { error: string } {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Advisor access'));
 	const label = input.label.trim();
 	if (!label || label.length > 80) return { error: 'Label is required (80 characters max).' };
 	if (input.kind !== 'pack' && input.kind !== 'viewer') return { error: 'Unknown grant type.' };

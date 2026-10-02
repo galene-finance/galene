@@ -21,6 +21,7 @@
 			mfa: { email: string } | null;
 			oidc: { enabled: boolean; mode: 'optional' | 'required'; providerLabel: string } | null;
 			localPassword: boolean;
+			demo?: boolean;
 		};
 	} = $props();
 
@@ -38,6 +39,19 @@
 </script>
 
 <Title title={data.setup ? 'Set up your account' : 'Sign in'} />
+
+{#if data.demo}
+	<div
+		class="mx-auto mt-4 max-w-md rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm"
+		role="status"
+	>
+		<strong class="font-medium">Public demo</strong>
+		— sign in with <code class="rounded bg-surface px-1">demo@test.com</code>
+		/
+		<code class="rounded bg-surface px-1">demopass1</code>.
+		Sample data resets on a schedule; bank sync and other outbound features are locked.
+	</div>
+{/if}
 
 <div class="flex min-h-screen flex-col items-center justify-center gap-6 p-4">
 	<div class="absolute right-4 top-4">

@@ -13,6 +13,7 @@ import { db } from './db';
 import { dbTime } from './sync';
 import { formatBytes } from '$lib/utils';
 import type { BackupFile, BackupSettings } from '$lib/types';
+import { demoBlockedMessage, isDemoMode } from './demoMode';
 
 export { formatBytes };
 
@@ -83,6 +84,7 @@ export function getBackupSettings(): BackupSettings {
 }
 
 export function saveBackupSettings(patch: Partial<BackupSettings>): BackupSettings {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Backups'));
 	const next = { ...getBackupSettings(), ...patch };
 	db()
 		.query(
@@ -234,6 +236,7 @@ export function trimBackups(destDir: string, keepDays: number): number {
  * configured folder, trims old copies, and records the outcome.
  */
 export function runBackupNow(): { ok: true; message: string } | { ok: false; error: string } {
+	if (isDemoMode()) return { ok: false, error: demoBlockedMessage('Backups') };
 	const settings = getBackupSettings();
 	if (!settings.destDir) return { ok: false, error: 'Set a backup folder first.' };
 	try {
@@ -259,6 +262,7 @@ const g = globalThis as unknown as { __galeneBackupScheduler?: boolean };
  * (backing off to an hour after a failure).
  */
 export function startBackupScheduler(): void {
+	if (isDemoMode()) return;
 	if (g.__galeneBackupScheduler) return;
 	g.__galeneBackupScheduler = true;
 	setInterval(() => {

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { db } from './db';
 import { hashToken, tokenHint, verifyToken } from './tokenHash';
 import type { User } from '$lib/types';
+import { demoBlockedMessage, isDemoMode } from './demoMode';
 
 /** Prefix so token lookups can be rejected before hitting the database. */
 export const API_TOKEN_PREFIX = 'galene_';
@@ -19,6 +20,7 @@ export interface ApiTokenInfo {
  * never written to the database.
  */
 export function createApiToken(userId: number, name: string): { info: ApiTokenInfo; token: string } {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('API tokens'));
 	const token = API_TOKEN_PREFIX + randomBytes(24).toString('hex');
 	const { hint, salt, hash } = hashToken(token);
 	const result = db()

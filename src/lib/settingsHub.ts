@@ -14,8 +14,9 @@ export type SettingsSection = {
 	cards: SettingsCard[];
 };
 
-export function settingsSections(isAdmin: boolean): SettingsSection[] {
-	return [
+export function settingsSections(isAdmin: boolean, opts?: { demo?: boolean }): SettingsSection[] {
+	const demo = Boolean(opts?.demo);
+	const sections: SettingsSection[] = [
 		{
 			id: 'you',
 			label: 'You & access',
@@ -142,7 +143,23 @@ export function settingsSections(isAdmin: boolean): SettingsSection[] {
 			]
 		}
 	];
+	if (!demo) return sections;
+	return sections
+		.map((section) => ({
+			...section,
+			cards: section.cards.filter((card) => !DEMO_HIDDEN.has(card.href))
+		}))
+		.filter((section) => section.cards.length > 0);
 }
+
+/** Settings cards locked on the public demo (GALENE_DEMO=1). */
+const DEMO_HIDDEN = new Set([
+	'/settings/sync',
+	'/settings/backups',
+	'/settings/api',
+	'/settings/advisor',
+	'/settings/users'
+]);
 
 function haystack(card: SettingsCard): string {
 	return `${card.title} ${card.desc} ${card.keywords}`.toLowerCase();

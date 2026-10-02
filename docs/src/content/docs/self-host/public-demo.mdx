@@ -1,0 +1,23 @@
+---
+title: Public demo mode
+description: GALENE_DEMO locks outbound features and bootstraps a shared demo login.
+---
+
+Set **`GALENE_DEMO=1`** on a dedicated instance (separate data volume from production) to run a public demo.
+
+## What it does
+
+- On first start with an empty users table, creates **`demo@test.com` / `demopass1`** (admin) and loads realistic sample accounts, transactions, budgets, and schedules.
+- **Locks** (both UI and API): bank sync, backups, API tokens / MCP HTTP, advisor access, SSO settings, and creating additional user accounts.
+- Skips the bank-sync and scheduled-backup loops.
+- Refuses Bearer API-token authentication.
+
+Two-factor (TOTP) on the demo account remains available; only SSO configuration is locked.
+
+## Hosting
+
+Operator files for Quadlet, a **6-hour UTC** data-reset timer, Caddy rate-limit example, and resource caps live in the app repo under [`deploy/demo/`](https://github.com/galene-finance/galene/tree/main/deploy/demo). Use a hostname such as `demo.example.com` with TLS in front; do not attach real Plaid, SMTP, or bank credentials.
+
+Until demo mode is published on `:latest`, operators may temporarily run the demo unit on `:test` for verification.
+
+Marketing-site “Demo” links are maintained separately from this app.

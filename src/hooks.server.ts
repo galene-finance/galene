@@ -7,22 +7,30 @@ import { startSyncScheduler } from '$lib/server/scheduler';
 import { startBackupScheduler } from '$lib/server/backup';
 import { assertDataDirOnVolume } from '$lib/server/db';
 import { db } from '$lib/server/db';
+import { ensureDemoBootstrap, isDemoMode } from '$lib/server/demoMode';
+import { guardDemoMode } from '$lib/server/demoGuard';
 import type { Handle } from '@sveltejs/kit';
 
 // Fail fast (before serving) if the data directory isn't on a persistent volume.
 assertDataDirOnVolume();
 
-// Starts the bank-sync auto-sync loop and the scheduled-backup loop, once per process.
-startSyncScheduler();
-startBackupScheduler();
+// Public demo: seed the shared login, and skip bank-sync / backup loops
+// (those features are locked; no real providers or backup destinations).
+ensureDemoBootstrap();
+if (!isDemoMode()) {
+	startSyncScheduler();
+	startBackupScheduler();
+}
 
 export const handle: Handle = async ({ event, resolve }) => {
+	const demo = isDemoMode();
 	const token = event.cookies.get('galene_session');
 	let user = null;
 	event.locals.viewer = null;
 	// Viewer magic-link sessions share the session cookie name but live in
 	// their own table. Check them first so a viewer is never treated as owner.
-	if (token) {
+	// Demo mode locks advisor access — ignore viewer sessions entirely.
+	if (token && !demo) {
 		const viewer = getViewerByToken(token);
 		if (viewer) {
 			const owner = db()
@@ -49,7 +57,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 	// API clients (curl, scripts, the MCP server) authenticate with a
 	// bearer token instead of the session cookie. Tokens are owner-scoped.
-	if (!user) {
+	// Demo mode locks API tokens — do not accept Bearer auth.
+	if (!user && !demo) {
 		const auth = event.request.headers.get('authorization');
 		if (auth?.startsWith('Bearer ')) {
 			const apiUser = getUserByApiToken(auth.slice('Bearer '.length).trim());
@@ -71,6 +80,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	forbidViewerMutation(event);
 	guardViewerPage(event);
+	guardDemoMode(event);
 
 	return resolve(event);
 };

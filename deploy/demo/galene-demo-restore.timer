@@ -1,0 +1,12 @@
+# Every 6 hours UTC (default proposal for ADO-37).
+
+[Unit]
+Description=Reset Galene public demo data every 6 hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00 UTC
+Persistent=true
+Unit=galene-demo-restore.service
+
+[Install]
+WantedBy=timers.target

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { db } from './db';
 import { appVersion } from '../version';
+import { isDemoMode } from './demoMode';
 
 /**
  * Household MCP HTTP (ADO-36).
@@ -60,6 +61,9 @@ export function ensureMcpRow(): ConfigRow {
 }
 
 export function loadMcpConfig(): McpConfig {
+	if (isDemoMode()) {
+		return { enabled: false, enabledFromEnv: true };
+	}
 	const row = ensureMcpRow();
 	const enabledEnv = envBool('GALENE_ENABLE_MCP');
 	return {
@@ -77,6 +81,7 @@ export interface McpSettingsInput {
 }
 
 export function saveMcpSettings(input: McpSettingsInput): { ok: true } | { ok: false; error: string } {
+	if (isDemoMode()) return { ok: false, error: 'MCP is disabled on the public demo.' };
 	ensureMcpRow();
 	db()
 		.query(

@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { db } from './db';
+import { demoBlockedMessage, isDemoMode } from './demoMode';
 
 /**
  * Household app-native OIDC (issue #98). Authentik (or any generic OIDC IdP)
@@ -146,6 +147,7 @@ export interface OidcSettingsInput {
 }
 
 export function saveOidcSettings(input: OidcSettingsInput): { ok: true } | { ok: false; error: string } {
+	if (isDemoMode()) return { ok: false, error: demoBlockedMessage('Single sign-on') };
 	const current = loadOidcConfig();
 	// Environment values win at read time. The database copy is still updated so
 	// a later unset env falls back to what an admin saved here.

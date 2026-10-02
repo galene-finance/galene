@@ -1,6 +1,7 @@
 import { hashPassword } from './auth';
 import { db } from './db';
 import { seedDemoData } from './demoData';
+import { demoBlockedMessage, isDemoMode } from './demoMode';
 import { ensureDefaultTransferCategories } from './finance';
 
 export interface UserRow {
@@ -55,7 +56,12 @@ export function createUser(input: {
 	password: string;
 	isAdmin: boolean;
 	demoData: boolean;
+	/** Internal: allow the one-time demo bootstrap under GALENE_DEMO=1. */
+	allowDemoBootstrap?: boolean;
 }): { ok: true; userId: number } | { ok: false; error: string } {
+	if (isDemoMode() && !input.allowDemoBootstrap) {
+		return { ok: false, error: demoBlockedMessage('User account creation') };
+	}
 	const name = input.name.trim();
 	const email = input.email.trim().toLowerCase();
 	if (!name) return { ok: false, error: 'Enter a name.' };

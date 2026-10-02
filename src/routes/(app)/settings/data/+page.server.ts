@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { dataCounts, deleteAllData, deleteDataType, getDataType } from '$lib/server/data';
+import { demoBlockedMessage, isDemoMode } from '$lib/server/demoMode';
 import type { User } from '$lib/types';
 
 export function load({ locals, depends }) {
@@ -8,7 +9,8 @@ export function load({ locals, depends }) {
 	if (!locals.user) redirect(303, '/login');
 	return {
 		user: { name: locals.user.name, email: locals.user.email },
-		counts: dataCounts(locals.user.id)
+		counts: dataCounts(locals.user.id),
+		demo: isDemoMode()
 	};
 }
 
@@ -26,6 +28,7 @@ function confirmError(user: User, raw: string): string | null {
 
 export const actions = {
 	delete: async ({ request, locals }) => {
+		if (isDemoMode()) return { error: demoBlockedMessage('Data deletion') };
 		const user = locals.user!;
 		const form = await request.formData();
 		const type = getDataType(String(form.get('type') ?? ''));
@@ -37,6 +40,7 @@ export const actions = {
 	},
 
 	'delete-all': async ({ request, locals }) => {
+		if (isDemoMode()) return { error: demoBlockedMessage('Data deletion') };
 		const user = locals.user!;
 		const form = await request.formData();
 		const err = confirmError(user, String(form.get('confirm') ?? ''));

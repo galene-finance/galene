@@ -4,6 +4,7 @@
 	import Field from '$lib/components/ui/Field.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import Title from '$lib/components/Title.svelte';
+	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
 	import type { ApiTokenInfo } from '$lib/server/apiTokens';
 	import { copyText } from '$lib/clipboard';
 	import { watchFormToast } from '$lib/formToast.svelte';
@@ -117,7 +118,13 @@
 	>
 	<h1 class="text-2xl font-semibold tracking-tight">API</h1>
 
-	<section class="rounded-lg border border-border bg-surface">
+	
+	<DemoReadonlyBanner demo={Boolean(data.demo)} feature="API tokens and MCP" />
+
+	<div data-demo-readonly-shell inert={data.demo || undefined} class={data.demo ? 'pointer-events-none opacity-60' : undefined}>
+
+
+<section class="rounded-lg border border-border bg-surface">
 		<div class="border-b border-border px-4 py-3">
 			<h2 class="font-medium">API tokens</h2>
 			<p class="text-sm text-muted-foreground">
@@ -282,4 +289,6 @@
 			</ul>
 		</div>
 	</section>
+
+	</div>
 </div>

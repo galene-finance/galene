@@ -4,6 +4,7 @@ import { MFA_CHALLENGE_MAX_AGE, hashPassword, verifyPassword } from '../auth';
 import { db } from '../db';
 import { hashToken, tokenHint, verifyToken } from '../tokenHash';
 import { generateTotpSecret, otpauthUri, verifyTotp } from './totp';
+import { demoBlockedMessage, isDemoMode } from '../demoMode';
 
 /**
  * TOTP two-factor (issue #30). Method-agnostic on purpose: the `type`
@@ -50,6 +51,7 @@ function getEnabledTotpSecret(userId: number): string | null {
 
 /** True if the user has an enabled TOTP method (gates the login second step). */
 export function hasEnabledTotp(userId: number): boolean {
+	if (isDemoMode()) return false;
 	return getEnabledTotpSecret(userId) !== null;
 }
 
@@ -68,6 +70,7 @@ export async function beginTotpEnroll(accountName: string): Promise<{
 	otpauthUrl: string;
 	qrDataUrl: string;
 }> {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Two-factor authentication'));
 	const secret = generateTotpSecret();
 	return {
 		secret,
@@ -93,6 +96,7 @@ export function confirmTotpEnroll(
 	secret: string,
 	code: string
 ): { ok: true; backupCodes: string[] } | { ok: false; error: string } {
+	if (isDemoMode()) return { ok: false, error: demoBlockedMessage('Two-factor authentication') };
 	const normalized = secret.trim().toUpperCase();
 	if (!/^[A-Z2-7]{16,64}$/.test(normalized)) {
 		return { ok: false, error: 'Enter the secret exactly as shown.' };
@@ -146,6 +150,7 @@ function useBackupCode(userId: number, code: string): boolean {
  * (the backup code path keeps a lost phone from locking the user out).
  */
 export function disableTotp(userId: number, password: string, code: string): { ok: true } | { ok: false; error: string } {
+	if (isDemoMode()) return { ok: false, error: demoBlockedMessage('Two-factor authentication') };
 	const user = db()
 		.query('SELECT password_hash FROM users WHERE id = ?')
 		.get(userId) as { password_hash: string } | undefined;

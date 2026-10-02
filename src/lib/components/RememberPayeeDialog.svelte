@@ -4,6 +4,7 @@
 	import Dialog from './ui/Dialog.svelte';
 	import type { Transaction } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import { withPending } from '$lib/formPending';
 
 	let {
 		open = $bindable(false),
@@ -22,30 +23,36 @@
 	} = $props();
 
 	let applyExisting = $state(false);
+	let saving = $state(false);
 
 	$effect(() => {
 		if (open) applyExisting = false;
 	});
 
-	const handleSubmit: SubmitFunction = () => {
-		return async ({ result, update }) => {
-			await update();
-			if (result.type === 'success' && !(result.data as { error?: string } | undefined)?.error) {
-				open = false;
-				onclose?.();
-			}
-		};
-	};
+	const handleSubmit: SubmitFunction = withPending(
+		(v) => (saving = v),
+		() => {
+			return async ({ result, update }) => {
+				await update();
+				if (result.type === 'success' && !(result.data as { error?: string } | undefined)?.error) {
+					open = false;
+					onclose?.();
+				}
+			};
+		}
+	);
 </script>
 
 <Dialog
 	bind:open
 	size="md"
+	busy={saving}
 	title="Remember this payee?"
 	description="Future imports and uncategorized transactions whose merchant matches will get this category. Already-categorized rows stay unchanged unless you opt in below."
 >
 	{#if transaction}
-		<form method="POST" {action} use:enhance={handleSubmit} class="flex flex-col gap-4">
+		<form method="POST" {action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+			<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 			<input type="hidden" name="id" value={transaction.id} />
 			<input type="hidden" name="merchant" value={transaction.merchant ?? ''} />
 			<input type="hidden" name="category_id" value={transaction.category_id ?? ''} />
@@ -80,9 +87,10 @@
 				<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
 			{/if}
 			<div class="flex justify-end gap-2">
-				<Button type="button" variant="secondary" onclick={() => (open = false)}>Cancel</Button>
-				<Button type="submit">Remember payee</Button>
+				<Button type="button" variant="secondary" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
+				<Button type="submit" pending={saving}>{saving ? 'Saving…' : 'Remember payee'}</Button>
 			</div>
+			</fieldset>
 		</form>
 	{/if}
 </Dialog>

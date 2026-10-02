@@ -10,6 +10,7 @@
 	import type { Account, CategorizationRule, Category, RuleCondition, RuleField, RuleOp } from '$lib/types';
 	import { centsToDollars } from '$lib/utils';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import { withPending } from '$lib/formPending';
 
 	const CREATE_VALUE = '__create__';
 
@@ -73,6 +74,7 @@
 	let categoryNewName = $state('');
 	let conditions = $state<DialogCondition[]>([{ field: 'merchant', op: 'contains', value: '' }]);
 	let applyExisting = $state(false);
+	let saving = $state(false);
 
 	const categoryItems = $derived(categoryPickerItems(categories));
 	const accountItems = $derived(accounts.map((a) => ({ value: String(a.id), label: a.name })));
@@ -131,7 +133,9 @@
 		conditions.splice(i, 1);
 	}
 
-	const handleSubmit: SubmitFunction = ({ formData }) => {
+	const handleSubmit: SubmitFunction = withPending(
+		(v) => (saving = v),
+		({ formData }) => {
 		formData.set('id', editing ? String(editing.id) : '');
 		formData.set('type', type);
 		formData.set('name', name);
@@ -157,16 +161,19 @@
 				onclose?.();
 			}
 		};
-	};
+		}
+	);
 </script>
 
 <Dialog
 	bind:open
 	size="lg"
+	busy={saving}
 	title={editing ? 'Edit categorization rule' : 'New categorization rule'}
 	description="Matching transactions are auto-assigned this category when they come in without one."
 >
-	<form method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4">
+	<form method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 		<Field label="Rule name">
 			<Input type="text" bind:value={name} placeholder='e.g. "Whole Foods → Groceries"' required />
 		</Field>
@@ -281,8 +288,9 @@
 		{/if}
 
 		<div class="flex justify-end gap-2">
-			<Button variant="secondary" type="button" onclick={() => (open = false)}>Cancel</Button>
-			<Button type="submit">{editing ? 'Save changes' : 'Create rule'}</Button>
+			<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
+			<Button type="submit" pending={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create rule'}</Button>
 		</div>
+		</fieldset>
 	</form>
 </Dialog>

@@ -6,14 +6,17 @@ import { closeDbForTests, db, migrate } from './db';
 import {
 	DEMO_EMAIL,
 	DEMO_PASSWORD,
+	clearDemoMfaFactors,
 	ensureDemoBootstrap,
 	isDemoMode,
 	demoBlockedMessage
 } from './demoMode';
-import { canPublicSignup, createUser, listUsers } from './users';
+import { canPublicSignup, createUser, deleteUser, listUsers } from './users';
 import { createApiToken } from './apiTokens';
 import { saveOidcSettings } from './oidc';
 import { isMcpEnabled } from './mcp';
+import { deleteAllData, deleteDataType } from './data';
+import { beginTotpEnroll, confirmTotpEnroll, hasEnabledTotp } from './mfa/mfa';
 
 let dir: string;
 const saved: Record<string, string | undefined> = {};
@@ -128,5 +131,69 @@ describe('demoBlockedMessage', () => {
 	test('mentions demo', () => {
 		expect(demoBlockedMessage('Bank sync')).toContain('public demo');
 		expect(DEMO_PASSWORD.length).toBeGreaterThanOrEqual(8);
+	});
+});
+
+describe('clearDemoMfaFactors', () => {
+	test('strips MFA after bootstrap when demo on', () => {
+		setEnv('GALENE_DEMO', '1');
+		ensureDemoBootstrap();
+		const id = listUsers()[0]!.id;
+		db()
+			.query(
+				"INSERT INTO user_mfa_methods (user_id, type, label, secret, enabled, confirmed_at) VALUES (?, 'totp', 'x', 'JBSWY3DPEHPK3PXP', 1, datetime('now'))"
+			)
+			.run(id);
+		expect(
+			(db().query('SELECT COUNT(*) AS c FROM user_mfa_methods WHERE user_id = ?').get(id) as { c: number }).c
+		).toBe(1);
+		ensureDemoBootstrap();
+		expect(
+			(db().query('SELECT COUNT(*) AS c FROM user_mfa_methods WHERE user_id = ?').get(id) as { c: number }).c
+		).toBe(0);
+	});
+
+	test('no-op when demo off', () => {
+		setEnv('GALENE_DEMO', undefined);
+		clearDemoMfaFactors();
+	});
+});
+
+describe('demo destructive locks', () => {
+	test('data wipe refused in demo', () => {
+		setEnv('GALENE_DEMO', '1');
+		ensureDemoBootstrap();
+		const id = listUsers()[0]!.id;
+		expect(() => deleteAllData(id)).toThrow(/disabled/);
+		expect(() => deleteDataType(id, 'transactions')).toThrow(/disabled/);
+	});
+
+	test('TOTP enroll refused in demo', async () => {
+		setEnv('GALENE_DEMO', '1');
+		ensureDemoBootstrap();
+		const id = listUsers()[0]!.id;
+		expect(hasEnabledTotp(id)).toBe(false);
+		await expect(beginTotpEnroll('demo@test.com')).rejects.toThrow(/disabled/);
+		expect(confirmTotpEnroll(id, 'JBSWY3DPEHPK3PXP', '000000').ok).toBe(false);
+	});
+
+	test('deleteUser refused in demo', () => {
+		setEnv('GALENE_DEMO', '1');
+		ensureDemoBootstrap();
+		const adminId = listUsers()[0]!.id;
+		// allowDemoBootstrap bypasses the create lock so we can exercise delete.
+		const other = createUser({
+			name: 'Other',
+			email: 'other@test.com',
+			password: 'password1',
+			isAdmin: false,
+			demoData: false,
+			allowDemoBootstrap: true
+		});
+		expect(other.ok).toBe(true);
+		if (!other.ok) return;
+		const result = deleteUser(adminId, other.userId);
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error).toContain('disabled');
 	});
 });

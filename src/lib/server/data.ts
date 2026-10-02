@@ -1,4 +1,5 @@
 import { db } from './db';
+import { demoBlockedMessage, isDemoMode } from './demoMode';
 import { DATA_TYPES, type DataTypeInfo, type DeletableDataType } from '$lib/types';
 
 export { DATA_TYPES, type DataTypeInfo, type DeletableDataType };
@@ -32,6 +33,7 @@ export function dataCounts(userId: number): Record<DeletableDataType, number> {
  * ON DELETE CASCADE / SET NULL rules, so each type is a single statement.
  */
 export function deleteDataType(userId: number, type: DeletableDataType): void {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Data deletion'));
 	const table = type === 'rules' ? 'categorization_rules' : type;
 	db().query(`DELETE FROM ${table} WHERE user_id = ?`).run(userId);
 }
@@ -42,6 +44,7 @@ export function deleteDataType(userId: number, type: DeletableDataType): void {
  * children before parents, so no statement hits a dangling reference.
  */
 export function deleteAllData(userId: number): void {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Data deletion'));
 	const d = db();
 	d.run('BEGIN');
 	try {

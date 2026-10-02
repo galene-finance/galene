@@ -137,7 +137,7 @@ Then in the UI: Settings → Backups → Folder → `/app/backups` → Save fold
 | `ADDRESS_HEADER` | *(unset)* | Optional Bun adapter: client IP header (e.g. `x-forwarded-for`) for logging / rate limits. |
 | `XFF_DEPTH` | `1` | Optional Bun adapter: which hop in `X-Forwarded-For` is the client when `ADDRESS_HEADER=x-forwarded-for`. |
 | `GALENE_ALLOW_EPHEMERAL_DATA` | *(unset)* | `1` disables the startup volume check. Only for throwaway/test containers. |
-| `GALENE_DEMO` | *(unset)* | `1` enables **public demo mode**: locks bank sync, backups, API tokens/MCP, advisor access, SSO settings, and new account creation (UI + API). Bootstraps `demo@test.com` / `demopass1` with seed data when the DB has no users. See `deploy/demo/`. |
+| `GALENE_DEMO` | *(unset)* | `1` enables **public demo mode**: Settings for bank sync, backups, API/MCP, advisor, users, SSO, 2FA, and Data wipe stay visible as read-only; mutating APIs are refused. Bootstraps `demo@test.com` / `demopass1` with seed data (MFA cleared on every boot). See `deploy/demo/`. |
 
 MCP (Settings-managed HTTP on the app, or stdio from the app image):
 
@@ -337,7 +337,8 @@ Then in the compose file, comment out the `build:` block and set `image: ghcr.io
 For a shared public demo host (separate volume from production):
 
 - Set **`GALENE_DEMO=1`**. On an empty database the app creates `demo@test.com` / `demopass1` (admin) and loads realistic sample data.
-- Locked (UI + API): bank sync, backups, API tokens / MCP, advisor access, SSO settings, user account creation.
+- Locked (visible read-only UI + refused mutating APIs): bank sync, backups, API tokens / MCP, advisor access, SSO settings, user create/delete/admin/password, 2FA enroll/use, and Data wipe / bulk delete. Individual sample-data edits stay allowed.
+- MFA factors are cleared on every boot so a restore snapshot cannot lock the shared login.
 - Do **not** put real Plaid / SMTP / bank / OIDC secrets on the demo instance.
 - Host recipe (Quadlet, 6h UTC seed reset timer, Caddy rate-limit snippet, resource caps): **`deploy/demo/`**.
 

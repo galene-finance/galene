@@ -41,5 +41,5 @@ Galene is self-hostable personal finance (SvelteKit + Bun + SQLite). Prefer smal
 
 ## Public demo
 
-`GALENE_DEMO=1` locks bank sync, backups, API tokens/MCP, advisor access, SSO settings, and user creation (UI + API) and bootstraps `demo@test.com` / `demopass1`. Host recipe: `deploy/demo/`. Do not put real bank/Plaid/SMTP secrets on demo. Marketing Demo links are Brand-owned — do not change the marketing site from app work.
+`GALENE_DEMO=1` locks bank sync, backups, API tokens/MCP, advisor access, SSO, user create/delete, 2FA enroll/use, and Data wipe (UI stays visible as **Demo — read only**; mutating APIs return 403). Bootstraps `demo@test.com` / `demopass1` and clears MFA factors on every boot/restore. Host recipe: `deploy/demo/`. Do not put real bank/Plaid/SMTP secrets on demo. Marketing Demo links are Brand-owned — do not change the marketing site from app work.
 

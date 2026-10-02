@@ -14,8 +14,9 @@ export type SettingsSection = {
 	cards: SettingsCard[];
 };
 
-export function settingsSections(isAdmin: boolean, opts?: { demo?: boolean }): SettingsSection[] {
-	const demo = Boolean(opts?.demo);
+export function settingsSections(isAdmin: boolean, _opts?: { demo?: boolean }): SettingsSection[] {
+	// `demo` is accepted for call-site compatibility; cards stay visible in
+	// demo mode (ADO-38/39 UX: read-only pages, not hidden hub cards).
 	const sections: SettingsSection[] = [
 		{
 			id: 'you',
@@ -143,23 +144,8 @@ export function settingsSections(isAdmin: boolean, opts?: { demo?: boolean }): S
 			]
 		}
 	];
-	if (!demo) return sections;
-	return sections
-		.map((section) => ({
-			...section,
-			cards: section.cards.filter((card) => !DEMO_HIDDEN.has(card.href))
-		}))
-		.filter((section) => section.cards.length > 0);
+	return sections;
 }
-
-/** Settings cards locked on the public demo (GALENE_DEMO=1). */
-const DEMO_HIDDEN = new Set([
-	'/settings/sync',
-	'/settings/backups',
-	'/settings/api',
-	'/settings/advisor',
-	'/settings/users'
-]);
 
 function haystack(card: SettingsCard): string {
 	return `${card.title} ${card.desc} ${card.keywords}`.toLowerCase();

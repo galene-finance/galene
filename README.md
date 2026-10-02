@@ -7,6 +7,10 @@
 <p align="center">
   <a href="https://docs.galene.finance/">Docs</a>
   ·
+  <a href="https://demo.galene.finance">Live demo</a>
+  ·
+  <a href="https://galene.finance">Website</a>
+  ·
   <a href="https://github.com/galene-finance/galene/releases">Releases</a>
   ·
   <a href="https://github.com/galene-finance/galene/issues/new/choose">Submit an issue</a>

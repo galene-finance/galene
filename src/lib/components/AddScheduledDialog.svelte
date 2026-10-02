@@ -15,6 +15,7 @@
 	import { categoryPickerItems } from '$lib/categoryPicker';
 	import type { Account, Category, RepeatUnit, Scheduled, Tag } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
+	import { withPending } from '$lib/formPending';
 
 	const CREATE_VALUE = '__create__';
 
@@ -80,6 +81,8 @@
 	let tagSearch = $state('');
 	let tagNewName = $state('');
 	const tagCreate = $derived(tagValues.includes(CREATE_VALUE));
+
+	let saving = $state(false);
 
 	const accountItems = $derived(accounts.map((a) => ({ value: String(a.id), label: a.name })));
 	const categoryItems = $derived(categoryPickerItems(categories));
@@ -166,7 +169,9 @@
 		type = newType;
 	}
 
-	const handleSubmit: SubmitFunction = ({ formData }) => {
+	const handleSubmit: SubmitFunction = withPending(
+		(v) => (saving = v),
+		({ formData }) => {
 		formData.set('id', editing ? String(editing.id) : '');
 		formData.set('type', type);
 		formData.set('name', name);
@@ -206,12 +211,14 @@
 				onclose?.();
 			}
 		};
-	};
+		}
+	);
 </script>
 
 <Dialog
 	bind:open
 	size="lg"
+	busy={saving}
 	title={editing ? 'Edit scheduled expectation' : 'New scheduled expectation'}
 	description={
 		editing
@@ -224,7 +231,8 @@
 			<input type="hidden" name="id" value={editing.id} />
 		</form>
 	{/if}
-	<form method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4">
+	<form method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 		{#each Object.entries(extraHidden) as [k, v] (k)}
 			<input type="hidden" name={k} value={v} />
 		{/each}
@@ -379,13 +387,15 @@
 					variant="destructive"
 					type="button"
 					class="mr-auto"
+					disabled={saving}
 					onclick={() => (document.getElementById('sched-delete-form') as HTMLFormElement | null)?.requestSubmit()}
 				>
 					Delete
 				</Button>
 			{/if}
-			<Button variant="secondary" type="button" onclick={() => (open = false)}>Cancel</Button>
-			<Button type="submit">{editing ? 'Save changes' : 'Add expectation'}</Button>
+			<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
+			<Button type="submit" pending={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Add expectation'}</Button>
 		</div>
+		</fieldset>
 	</form>
 </Dialog>

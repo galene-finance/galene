@@ -7,6 +7,7 @@
 		title,
 		description,
 		size = 'md',
+		busy = false,
 		class: className = '',
 		onOpenAutoFocus,
 		onCloseAutoFocus,
@@ -16,6 +17,8 @@
 		title?: string;
 		description?: string;
 		size?: 'sm' | 'md' | 'lg';
+		/** When true, block escape / overlay / close while a save is in flight. */
+		busy?: boolean;
 		class?: string;
 		onOpenAutoFocus?: (e: Event) => void;
 		onCloseAutoFocus?: (e: Event) => void;
@@ -32,6 +35,9 @@
 			class="fixed left-1/2 top-1/2 z-50 max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-border bg-surface p-5 shadow-xl {sizes[size]} {className}"
 			{onOpenAutoFocus}
 			{onCloseAutoFocus}
+			interactOutsideBehavior={busy ? 'ignore' : 'close'}
+			escapeKeydownBehavior={busy ? 'ignore' : 'close'}
+			aria-busy={busy ? 'true' : undefined}
 		>
 			{#if title}
 				<BitsDialog.Title class="pr-8 text-lg font-semibold">{title}</BitsDialog.Title>
@@ -42,14 +48,25 @@
 			<div class="mt-4">
 				{@render children()}
 			</div>
-			<BitsDialog.Close
-				class="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-				aria-label="Close"
-			>
-				<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<path d="M18 6 6 18M6 6l12 12" />
-				</svg>
-			</BitsDialog.Close>
+			{#if !busy}
+				<BitsDialog.Close
+					class="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+					aria-label="Close"
+				>
+					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M18 6 6 18M6 6l12 12" />
+					</svg>
+				</BitsDialog.Close>
+			{:else}
+				<span
+					class="absolute right-3 top-3 rounded-md p-1 text-muted-foreground opacity-40"
+					aria-hidden="true"
+				>
+					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M18 6 6 18M6 6l12 12" />
+					</svg>
+				</span>
+			{/if}
 		</BitsDialog.Content>
 	</BitsDialog.Portal>
 </BitsDialog.Root>

@@ -22,7 +22,7 @@ The included `docker-compose.yml` builds the `app` target from the repo's `Docke
 To use a published image instead of building locally, comment out the `build:` block and set:
 
 ```yaml
-image: ghcr.io/galene-finance/galene:app-latest
+image: ghcr.io/galene-finance/galene:latest
 ```
 
 The same compose file works with `podman-compose` — see [Podman](/self-host/podman/).
@@ -64,12 +64,12 @@ The database migrates automatically at startup (versioned `PRAGMA user_version` 
 
 ## Pulling the published images
 
-Images are published to GitHub Container Registry: `:app-latest` for `main`, `:app-<ver>` for releases, and `:app-test` / `:app-test-<sha>` for the `test` branch. No `:mcp-*` tags.
+Images are published to GitHub Container Registry: `:latest` / `:main` for `main`, `:<ver>` for releases, and `:test` / `:test-<sha>` for the `test` branch. During #157 cutover the workflow also publishes legacy `:app-*` aliases. No `:mcp-*` tags.
 
 **Public images pull anonymously** — no GitHub login or token:
 
 ```bash
-docker pull ghcr.io/galene-finance/galene:app-latest
+docker pull ghcr.io/galene-finance/galene:latest
 ```
 
 Then set `image:` in the compose file as in the quick start.
@@ -78,7 +78,7 @@ Only if pull fails (private package, org policy, rate limits, etc.) log in with 
 
 ```bash
 echo "<PAT>" | docker login ghcr.io --username <github-user> --password-stdin
-docker pull ghcr.io/galene-finance/galene:app-latest
+docker pull ghcr.io/galene-finance/galene:latest
 ```
 
 ## Troubleshooting

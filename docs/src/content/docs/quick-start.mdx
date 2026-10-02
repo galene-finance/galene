@@ -14,7 +14,7 @@ docker compose up -d
 # open http://localhost:3000
 ```
 
-The included `docker-compose.yml` builds the `app` target from the repo's `Dockerfile`, runs it on port **3000**, and mounts the database on a named volume. To use a published image instead, set `image: ghcr.io/galene-finance/galene:app-latest` in the compose file.
+The included `docker-compose.yml` builds the `app` target from the repo's `Dockerfile`, runs it on port **3000**, and mounts the database on a named volume. To use a published image instead, set `image: ghcr.io/galene-finance/galene:latest` in the compose file (legacy `:app-latest` still published during #157 cutover).
 
 :::note
 The first account on a server is always the **admin**. Optionally load demo data on signup.

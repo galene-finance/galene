@@ -27,10 +27,10 @@ That's it. The included [`docker-compose.yml`](docker-compose.yml) builds the `a
 To use a prebuilt image (e.g. from GHCR) instead of building locally, comment out the `build:` block in the compose file and set:
 
 ```yaml
-image: ghcr.io/<owner>/<repo>:app-latest
+image: ghcr.io/<owner>/<repo>:latest
 ```
 
-To try a pre-release build before it reaches `main`, use `:app-test` (the latest build of the `test` branch) — see [Testing a build before it reaches `main`](#testing-a-build-before-it-reaches-main).
+To try a pre-release build before it reaches `main`, use `:test` (the latest build of the `test` branch) — see [Testing a build before it reaches `main`](#testing-a-build-before-it-reaches-main). During the #157 cutover, legacy `:app-latest` / `:app-test` aliases are still published.
 
 The same file works with **`podman-compose`** (see [Podman](#podman)).
 
@@ -208,8 +208,8 @@ The version (**major.minor** from `package.json`) plus the git commit and build 
 
 - **In the app** — Settings → **About** (version, commit linked to GitHub, build date, check-for-updates link). Also shown on the login page.
 - **HTTP** — `curl -s http://localhost:3000/version` → `{"name":"galene","version":"0.1","commit":"…","built_at":"…"}` (no authentication needed).
-- **Image labels** — `docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}} {{index .Config.Labels "org.opencontainers.image.revision"}}' ghcr.io/<owner>/<repo>:app-latest`
-- **Image tags** — `app-<ver>` for releases, `app-latest` for `main`, `app-test` / `app-test-<sha>` for the `test` branch (for branch builds the baked-in version is the one in `package.json` at that commit). No `:mcp-*` tags.
+- **Image labels** — `docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}} {{index .Config.Labels "org.opencontainers.image.revision"}}' ghcr.io/<owner>/<repo>:latest`
+- **Image tags** — `<ver>` for releases, `latest` / `main` for `main`, `test` / `test-<sha>` for the `test` branch (for branch builds the baked-in version is the one in `package.json` at that commit). During #157 cutover the workflow also publishes legacy `app-*` aliases (`app-latest`, `app-test`, `app-<ver>`, …). No `:mcp-*` tags.
 
 ---
 
@@ -238,7 +238,7 @@ Your MCP client launches the bundle for each session. From the **app** image:
         "-e", "GALENE_API_URL=http://host.docker.internal:3000",
         "-e", "GALENE_API_TOKEN=<paste your token here>",
         "--entrypoint", "bun",
-        "ghcr.io/<owner>/<repo>:app-latest",
+        "ghcr.io/<owner>/<repo>:latest",
         "mcp-bundle.js"
       ]
     }
@@ -250,7 +250,7 @@ Your MCP client launches the bundle for each session. From the **app** image:
 
 ### Migration from dual-port / `:mcp-*`
 
-The `:mcp-*` image is **no longer published**. Switch to `:app-*`, enable MCP in Settings (default **off**), point HTTP clients at `http://<app-host>:<app-port>/mcp`, and drop any `3001` publish / `GALENE_MCP_PORT` / `:mcp-*` compose service. Stdio: use the app image entrypoint above.
+The `:mcp-*` image is **no longer published**. Switch to the app image (`:latest` / `:test`; legacy `:app-*` still published during cutover), enable MCP in Settings (default **off**), point HTTP clients at `http://<app-host>:<app-port>/mcp`, and drop any `3001` publish / `GALENE_MCP_PORT` / `:mcp-*` compose service. Stdio: use the app image entrypoint above.
 
 ## Podman
 
@@ -262,7 +262,7 @@ Everything else in this guide applies to Podman as-is, plus:
 - **SELinux (Fedora/RHEL):** append `:z` (shared) or `:Z` (private) to **bind mounts** — e.g. `-v /path/on/host:/app/data:z`. Named volumes are relabeled by Podman automatically and need no suffix.
 - **Compose:** use [`podman-compose`](https://github.com/containers/podman-compose) with the same `docker-compose.yml`, or convert to [Quadlet](https://docs.podman.io/en/latest_quadlet.html) container files.
 - **Storage driver:** avoid `vfs` — it is very slow for the SQLite WAL workload. `overlay`/`overlay2` (default) is what you want.
-- **Pulling from GHCR:** `podman login ghcr.io` with a **classic personal access token** that has `read:packages` (fine-grained tokens cannot access GHCR). Then `podman pull ghcr.io/<owner>/<repo>:app-latest`.
+- **Pulling from GHCR:** `podman login ghcr.io` with a **classic personal access token** that has `read:packages` (fine-grained tokens cannot access GHCR). Then `podman pull ghcr.io/<owner>/<repo>:latest`.
 
 ---
 
@@ -271,10 +271,10 @@ Everything else in this guide applies to Podman as-is, plus:
 The repo includes [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml), which publishes both images to **GHCR** — designed for your **private beta repo** (images "live in GitHub" before the repo goes public):
 
 - **Triggers:** push to `main` or `test`, any `v*` tag, and manual runs (workflow_dispatch).
-- **Tags produced:**
-  - `ghcr.io/<owner>/<repo>:app-<ver>` — where `<ver>` is the tag without the `v` (e.g. `v1.2.3` → `1.2.3`), or the branch name for branch pushes
-  - plus `:app-latest` on `main`
-  - plus `:app-test-<sha>` (immutable, one per commit) on `test`
+- **Tags produced** (dual-publish during #157 cutover — unprefixed + legacy `app-*`):
+  - `ghcr.io/<owner>/<repo>:<ver>` (+ `:app-<ver>`) — where `<ver>` is the tag without the `v` (e.g. `v0.4` → `0.4`), or the branch name for branch pushes
+  - plus `:latest` / `:main` (+ `:app-latest` / `:app-main`) on `main`
+  - plus `:test-<sha>` (+ `:app-test-<sha>`) (immutable, one per commit) on `test`
 - **Releases:** the separate [`.github/workflows/release.yml`](.github/workflows/release.yml) (Actions → **Release**) is how you cut one: enter a version, it bumps `package.json`, commits, and tags `v<ver>` — the tag then lands here. The version is baked into the app (Settings → About, `GET /version`) and stamped as the `org.opencontainers.image.version` label, so the image tag, the app, and `package.json` always agree.
 - **Auth:** the workflow uses the built-in `GITHUB_TOKEN` with `packages: write`, which can publish to the **workflow's own repository** — no secrets to configure for the beta repo.
 - **Architecture:** multi-arch — **`linux/amd64` + `linux/arm64`**. The workflow builds both platforms (buildx + QEMU), so amd64 and Apple Silicon / arm64 hosts each pull a native image. The base `oven/bun` images are published for both architectures.
@@ -283,9 +283,9 @@ The repo includes [`.github/workflows/docker-publish.yml`](.github/workflows/doc
 ### Testing a build before it reaches `main`
 
 1. Push your work to the `test` branch — `git push origin HEAD:test`, or merge a PR into it.
-2. The Docker workflow publishes `:app-test` (always the latest `test` build) plus an immutable `:app-test-<sha>` for that exact commit.
-3. On your server, point the compose file at `image: ghcr.io/<owner>/<repo>:app-test` (or the `-<sha>` tag to pin a specific build), then `docker compose pull && docker compose up -d`.
-4. When it checks out, merge `test` into `main`. The `main` push refreshes `:app-latest`; switch the compose file back to `:app-latest` and pull again.
+2. The Docker workflow publishes `:test` (always the latest `test` build) plus an immutable `:test-<sha>` for that exact commit (and legacy `:app-test` / `:app-test-<sha>` during cutover).
+3. On your server, point the compose file at `image: ghcr.io/<owner>/<repo>:test` (or the `-<sha>` tag to pin a specific build), then `docker compose pull && docker compose up -d`. Hosts still on `:app-test` keep working until they cut over.
+4. When it checks out, merge `test` into `main`. The `main` push refreshes `:latest` (+ `:app-latest`); switch the compose file back to `:latest` and pull again.
 
 One wrinkle: a `test` build bakes in the `package.json` version at that commit — the last *released* version until the next release. The commit SHA (Settings → About, `GET /version`, the image's `org.opencontainers.image.revision` label) is what distinguishes one test build from another.
 
@@ -296,16 +296,14 @@ GHCR requires a token; use a **classic** personal access token (fine-grained tok
 ```bash
 # Docker
 echo "<PAT>" | docker login ghcr.io --username <github-user> --password-stdin
-docker pull ghcr.io/<owner>/<repo>:app-latest
-docker pull ghcr.io/<owner>/<repo>:app-latest
-# Optional migration alias:
+docker pull ghcr.io/<owner>/<repo>:latest
 
 # Podman
 podman login ghcr.io   # enter <github-user> and the PAT
-podman pull ghcr.io/<owner>/<repo>:app-latest
+podman pull ghcr.io/<owner>/<repo>:latest
 ```
 
-Then in the compose file, comment out the `build:` block and set `image: ghcr.io/<owner>/<repo>:app-latest`.
+Then in the compose file, comment out the `build:` block and set `image: ghcr.io/<owner>/<repo>:latest`. During #157 cutover, `:app-latest` remains a published alias.
 
 ---
 

@@ -21,7 +21,7 @@ Unauthenticated requests get a JSON `401`.
 
 ## MCP in the app image
 
-The app image (`:app-latest` / `:app-test`) includes the MCP bundle (`mcp-bundle.js`, ~214 KiB) for stdio clients. There is **no** separate `:mcp-*` image. HTTP MCP is served by the app itself at `/mcp` — no second port.
+The app image (`:latest` / `:test`; legacy `:app-*` during cutover) includes the MCP bundle (`mcp-bundle.js`, ~214 KiB) for stdio clients. There is **no** separate `:mcp-*` image. HTTP MCP is served by the app itself at `/mcp` — no second port.
 
 1. Create an API token (Settings → API).
 2. **HTTP (same port as the app):** an administrator turns on **Enable MCP HTTP** under Settings → API (default off). Off means `/mcp` is not live. On serves MCP at `http://<host>:<app-port>/mcp`. Each client sends `Authorization: Bearer <token>` per request. Do not set `GALENE_API_TOKEN` on the app process for this mode.
@@ -55,7 +55,7 @@ docker run --rm -i \
   -e GALENE_API_URL=http://host.docker.internal:3000 \
   -e GALENE_API_TOKEN=galene_… \
   --entrypoint bun \
-  ghcr.io/galene-finance/galene:app-latest \
+  ghcr.io/galene-finance/galene:latest \
   mcp-bundle.js
 ```
 
@@ -84,7 +84,7 @@ Use the same host and port as the app (only port **3000** in compose). Use plain
 
 The separate `:mcp-*` image is **no longer published**. Operators who ran MCP on a separate port (ADO-35 default **3001**) or a `:mcp-*` container should:
 
-1. Pull a current `:app-*` image (replace any `:mcp-*` compose service).
+1. Pull a current app image (`:latest` / `:test`; replace any `:mcp-*` compose service).
 2. Enable MCP in Settings → API (or set `GALENE_ENABLE_MCP=1`). Default remains **off**.
 3. Point HTTP clients at `http://<app-host>:<app-port>/mcp` (same origin as the UI). No second published port.
 4. For stdio-only clients, launch `mcp-bundle.js` from the **app** image (`docker run --entrypoint bun <app-image> mcp-bundle.js`) or `mcp/index.ts` from a source checkout.

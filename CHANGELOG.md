@@ -8,7 +8,8 @@ Release), which commits it and tags `vX.Y`.
 ## [Unreleased]
 
 - MCP HTTP is served on the **app port** at `/mcp` when enabled in Settings → API (**default off**); no separate MCP port.
-- **MCP image removed:** no `:mcp-*` tags are published. Use `:app-*`, enable MCP in Settings (same port). Stdio: `docker run --entrypoint bun <app-image> mcp-bundle.js`.
+- **MCP image removed:** no `:mcp-*` tags are published. Use the app image (`:latest` / `:test`), enable MCP in Settings (same port). Stdio: `docker run --entrypoint bun <app-image> mcp-bundle.js`.
+- **GHCR tag rename (#157):** image tags drop the `app-` prefix (`:latest`, `:test`, `:test-<sha>`, `:<ver>`). During cutover the Docker workflow dual-publishes legacy `:app-*` aliases so existing host pull refs keep working.
 - In-process `/mcp` loads Bun-built `mcp-handler.js` (avoids Vite SSR bundling the MCP SDK).
 - Docs: README Highlights and the docs introduction name shipped capabilities (advisor access, settings hub, installable app, theme persist, transaction filters, trends drill-down, HTTP MCP, CSV export, account-menu version).
 

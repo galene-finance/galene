@@ -1,3 +1,4 @@
+import { isDemoMode } from '$lib/server/demoMode';
 import { redirect } from '@sveltejs/kit';
 import { getTags } from '$lib/server/finance';
 import { listNotifications, unreadCount } from '$lib/server/notifications';
@@ -13,6 +14,7 @@ export function load({ locals, depends }) {
 	const viewer = locals.user.role === 'viewer';
 	return {
 		user: locals.user,
+		demo: isDemoMode(),
 		viewer,
 		accounts: scopedAccounts(userId, scope),
 		categories: scopedCategories(userId, scope),

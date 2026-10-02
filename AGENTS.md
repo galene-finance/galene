@@ -38,3 +38,8 @@ Galene is self-hostable personal finance (SvelteKit + Bun + SQLite). Prefer smal
 - SQLite **ignores** `PRAGMA foreign_keys = OFF` inside an open transaction. Use the migration `afterFkOff` hook (runs after COMMIT, with FKs off) for parent-table rebuilds.
 - Before bumping `user_version`, migrate asserts categorized txn / split / rule counts did not fall.
 - Recommend operators take a **Settings → Backups** copy before upgrading images that include schema migrations.
+
+## Public demo
+
+`GALENE_DEMO=1` locks bank sync, backups, API tokens/MCP, advisor access, SSO settings, and user creation (UI + API) and bootstraps `demo@test.com` / `demopass1`. Host recipe: `deploy/demo/`. Do not put real bank/Plaid/SMTP secrets on demo. Marketing Demo links are Brand-owned — do not change the marketing site from app work.
+

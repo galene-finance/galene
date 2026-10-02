@@ -1,0 +1,36 @@
+# Example front for demo.galene.finance (TLS terminator / rate limits).
+# Adapt to the host's reverse-proxy pattern (dedicated Caddy, Pangolin, etc.).
+# Upstream is the Quadlet PublishPort (default 5174 → container 3000).
+#
+# Requires a Caddy build with the rate_limit plugin, or equivalent limits in
+# another layer (fail2ban, Cloudflare, etc.). App-side loginThrottle still applies.
+
+demo.galene.finance {
+	encode gzip
+
+	# Basic bot / abuse controls — tune after observing traffic.
+	rate_limit {
+		zone demo_auth {
+			match { path /login* /auth/* }
+			key    { remote_host }
+			events 20
+			window 1m
+		}
+		zone demo_all {
+			key    { remote_host }
+			events 120
+			window 1m
+		}
+	}
+
+	header {
+		# Discourage indexing of the shared demo.
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	reverse_proxy 127.0.0.1:5174 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up Host {host}
+	}
+}

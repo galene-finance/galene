@@ -45,3 +45,18 @@ describe('settingsSections admin gate', () => {
 		expect(userHrefs).toContain('/settings/advisor');
 	});
 });
+
+describe('settingsSections demo gate', () => {
+	test('demo mode hides locked cards', () => {
+		const hrefs = settingsSections(true, { demo: true })
+			.flatMap((s) => s.cards)
+			.map((c) => c.href);
+		expect(hrefs).not.toContain('/settings/sync');
+		expect(hrefs).not.toContain('/settings/backups');
+		expect(hrefs).not.toContain('/settings/api');
+		expect(hrefs).not.toContain('/settings/advisor');
+		expect(hrefs).not.toContain('/settings/users');
+		expect(hrefs).toContain('/settings/accounts');
+		expect(hrefs).toContain('/settings/security');
+	});
+});

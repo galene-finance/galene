@@ -137,6 +137,7 @@ Then in the UI: Settings → Backups → Folder → `/app/backups` → Save fold
 | `ADDRESS_HEADER` | *(unset)* | Optional Bun adapter: client IP header (e.g. `x-forwarded-for`) for logging / rate limits. |
 | `XFF_DEPTH` | `1` | Optional Bun adapter: which hop in `X-Forwarded-For` is the client when `ADDRESS_HEADER=x-forwarded-for`. |
 | `GALENE_ALLOW_EPHEMERAL_DATA` | *(unset)* | `1` disables the startup volume check. Only for throwaway/test containers. |
+| `GALENE_DEMO` | *(unset)* | `1` enables **public demo mode**: locks bank sync, backups, API tokens/MCP, advisor access, SSO settings, and new account creation (UI + API). Bootstraps `demo@test.com` / `demopass1` with seed data when the DB has no users. See `deploy/demo/`. |
 
 MCP (Settings-managed HTTP on the app, or stdio from the app image):
 
@@ -330,3 +331,15 @@ Then in the compose file, comment out the `build:` block and set `image: ghcr.io
 | `podman pull ghcr.io/…` asks for credentials / fails with a fine-grained token | Use a **classic** PAT with `read:packages`; fine-grained tokens cannot access GHCR. |
 | MCP client can't reach Galene | `GALENE_API_URL` must be reachable **from the MCP container**: `http://localhost:3000` only works when the client and the app share a host (use the mapped port, e.g. `http://localhost:3103`). From another machine, use the server's address. |
 | MCP process exits instantly with "GALENE_API_TOKEN is required" | The client config is missing the `GALENE_API_TOKEN` env entry. Create a token in Settings → API. |
+
+## Public demo (`GALENE_DEMO=1`)
+
+For a shared public demo host (separate volume from production):
+
+- Set **`GALENE_DEMO=1`**. On an empty database the app creates `demo@test.com` / `demopass1` (admin) and loads realistic sample data.
+- Locked (UI + API): bank sync, backups, API tokens / MCP, advisor access, SSO settings, user account creation.
+- Do **not** put real Plaid / SMTP / bank / OIDC secrets on the demo instance.
+- Host recipe (Quadlet, 6h UTC seed reset timer, Caddy rate-limit snippet, resource caps): **`deploy/demo/`**.
+
+Marketing Demo links on the product website are owned separately — do not change the marketing repo from app deploys.
+

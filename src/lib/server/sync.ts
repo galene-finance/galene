@@ -4,6 +4,7 @@ import { getProvider } from './providers';
 import { applyCategorizationRules } from './finance';
 import { notifySyncFailed, notifySyncRecovered } from './notifications';
 import type { Connection, LinkedAccount, SyncSummary } from '$lib/types';
+import { demoBlockedMessage, isDemoMode } from './demoMode';
 
 interface ConnectionRow {
 	id: number;
@@ -94,6 +95,7 @@ function getConnection(userId: number, provider: string): ConnectionRow | null {
  * access URL), that is what gets stored.
  */
 export async function connect(userId: number, providerId: string, credentials: Record<string, string>): Promise<void> {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
 	const provider = getProvider(providerId);
 	if (!provider) throw new Error('Unknown provider.');
 	// Hand the provider the credentials it already stores (if any) so it can
@@ -143,6 +145,7 @@ export function disconnect(userId: number, providerId: string) {
  * so re-syncing adds new items and updates changed ones without duplicating.
  */
 export async function syncNow(userId: number, providerId: string): Promise<SyncSummary | { error: string }> {
+	if (isDemoMode()) return { error: demoBlockedMessage('Bank sync') };
 	const conn = getConnection(userId, providerId);
 	if (!conn) return { error: 'Connect to the provider first.' };
 	const provider = getProvider(providerId)!;

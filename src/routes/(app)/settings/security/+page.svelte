@@ -5,6 +5,7 @@
 	import Field from '$lib/components/ui/Field.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import Title from '$lib/components/Title.svelte';
+	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
 	import { copyText } from '$lib/clipboard';
 	import { toast, toastFormResult } from '$lib/toasts';
 
@@ -27,6 +28,7 @@
 			totp: { confirmedAt: string | null } | null;
 			backupCodes: { total: number; unused: number };
 			isAdmin: boolean;
+			demo?: boolean;
 			oidc: {
 				enabled: boolean;
 				mode: 'optional' | 'required';
@@ -123,6 +125,8 @@
 	>
 	<h1 class="text-2xl font-semibold tracking-tight">Security</h1>
 
+	<DemoReadonlyBanner demo={Boolean(data.demo)} feature="Two-factor authentication and single sign-on" />
+
 	<section class="rounded-lg border border-border bg-surface">
 		<div class="border-b border-border px-4 py-3">
 			<h2 class="font-medium">Two-factor authentication</h2>
@@ -131,7 +135,12 @@
 			</p>
 		</div>
 		<div class="p-4">
-			{#if form?.qrDataUrl}
+			{#if data.demo}
+				<p class="text-sm">
+					Two-factor is {data.totp ? 'on' : 'off'} on this account. Enrollment and changes are disabled on
+					the public demo so the shared login stays usable.
+				</p>
+			{:else if form?.qrDataUrl}
 				<!-- Enrolling: the secret and QR are shown only here, until confirmed. -->
 				<div class="mb-4 flex flex-col gap-4 sm:flex-row">
 					<img
@@ -232,6 +241,7 @@
 				</p>
 			</div>
 			<form method="POST" action="?/save-oidc" use:enhance={() => ({ update }) => update({ reset: false })} class="flex flex-col gap-4 p-4">
+				<fieldset class="contents" disabled={Boolean(data.demo)}>
 				<label class="flex items-center justify-between gap-3 text-sm">
 					<span>Show Continue with SSO on the sign-in page</span>
 					<input type="checkbox" name="enabled" value="1" bind:checked={oidcEnabled} class="size-4 accent-primary" />
@@ -319,6 +329,7 @@
 						A set GALENE_OIDC_* variable overrides the matching field here.
 					{/if}
 				</p>
+				</fieldset>
 			</form>
 		</section>
 	{/if}

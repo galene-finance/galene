@@ -6,6 +6,7 @@
 	import Input from '$lib/components/ui/Input.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
 	import Title from '$lib/components/Title.svelte';
+	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
 	import { watchFormToast } from '$lib/formToast.svelte';
 	import { formatBytes } from '$lib/utils';
 	import type { BackupFile, BackupSettings } from '$lib/types';
@@ -86,7 +87,13 @@
 		>← Back to Settings</a
 	>
 	<h1 class="text-2xl font-semibold tracking-tight">Backups</h1>
-	<p class="mt-2 max-w-2xl text-sm text-muted-foreground">
+	
+	<DemoReadonlyBanner demo={Boolean(data.demo)} feature="Backups" />
+
+	<div data-demo-readonly-shell inert={data.demo || undefined} class={data.demo ? 'pointer-events-none opacity-60' : undefined}>
+
+
+<p class="mt-2 max-w-2xl text-sm text-muted-foreground">
 		Take a backup before upgrading the app image when schema migrations may run. If category links
 		were lost after an upgrade, restore the database file from a pre-upgrade backup — Galene does
 		not invent a silent repair. See the self-host Backups docs.
@@ -249,4 +256,6 @@
 			{/if}
 		</div>
 	</section>
+
+	</div>
 </div>

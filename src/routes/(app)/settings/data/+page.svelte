@@ -7,6 +7,7 @@
 	import Field from '$lib/components/ui/Field.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import Title from '$lib/components/Title.svelte';
+	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
 	import { watchFormToast } from '$lib/formToast.svelte';
 	import { DATA_TYPES, type DataTypeInfo, type DeletableDataType } from '$lib/types';
 
@@ -18,6 +19,7 @@
 		data: {
 			user: { name: string; email: string };
 			counts: Record<DeletableDataType, number>;
+			demo?: boolean;
 		};
 	} = $props();
 
@@ -32,6 +34,7 @@
 	const matches = $derived(confirm.trim() === data.user.name);
 
 	function openDelete(t: DataTypeInfo | 'all') {
+		if (data.demo) return;
 		pending = t;
 		confirm = '';
 		dialogError = '';
@@ -85,6 +88,8 @@
 	>
 	<h1 class="text-2xl font-semibold tracking-tight">Data</h1>
 
+	<DemoReadonlyBanner demo={Boolean(data.demo)} feature="Data deletion" />
+
 	<section class="rounded-lg border border-border bg-surface">
 		<div class="border-b border-border px-4 py-3">
 			<h2 class="font-medium">Your data</h2>
@@ -109,7 +114,8 @@
 							{/if}
 							<button
 								type="button"
-								class="text-sm text-destructive hover:underline"
+								class="text-sm text-destructive hover:underline disabled:pointer-events-none disabled:opacity-50"
+								disabled={Boolean(data.demo)}
 								onclick={() => openDelete(t)}
 							>
 								Delete
@@ -131,7 +137,7 @@
 			</p>
 		</div>
 		<div class="p-4">
-			<Button variant="destructive" onclick={() => openDelete('all')}>Delete all data</Button>
+			<Button variant="destructive" disabled={Boolean(data.demo)} onclick={() => openDelete('all')}>Delete all data</Button>
 		</div>
 	</section>
 </div>

@@ -4,6 +4,7 @@
 	import Field from '$lib/components/ui/Field.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import Title from '$lib/components/Title.svelte';
+	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
 	import { copyText } from '$lib/clipboard';
 	import { toast, toastFormResult } from '$lib/toasts';
 
@@ -52,7 +53,13 @@
 	<div>
 		<a href="/settings" class="text-sm text-muted-foreground hover:text-foreground">← Settings</a>
 		<h1 class="mt-2 text-2xl font-semibold tracking-tight">Advisor access</h1>
-		<p class="mt-1 text-sm text-muted-foreground">
+		
+	<DemoReadonlyBanner demo={Boolean(data.demo)} feature="Advisor access" />
+
+	<div data-demo-readonly-shell inert={data.demo || undefined} class={data.demo ? 'pointer-events-none opacity-60' : undefined}>
+
+
+<p class="mt-1 text-sm text-muted-foreground">
 			Generate a frozen accountant pack or invite a read-only viewer. Links expire and can be revoked.
 			Balances in a pack are the ledger through the end of the date range.
 		</p>
@@ -175,4 +182,6 @@
 			{/each}
 		</ul>
 	</section>
+
+	</div>
 </div>

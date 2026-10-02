@@ -7,6 +7,7 @@
 	import Input from '$lib/components/ui/Input.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
 	import Title from '$lib/components/Title.svelte';
+	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
 	import { openPlaidLink, preloadPlaidLink, type PlaidLinkHandler } from '$lib/plaidLink';
 	import AccountMapping from './AccountMapping.svelte';
 	import { mergedNote } from '$lib/utils';
@@ -160,7 +161,13 @@
 	>
 	<h1 class="text-2xl font-semibold tracking-tight">Bank sync</h1>
 
-	{#if (data.openSyncReviews ?? 0) > 0}
+	
+	<DemoReadonlyBanner demo={Boolean(data.demo)} feature="Bank sync" />
+
+	<div data-demo-readonly-shell inert={data.demo || undefined} class={data.demo ? 'pointer-events-none opacity-60' : undefined}>
+
+
+{#if (data.openSyncReviews ?? 0) > 0}
 		<div class="rounded-lg border border-border bg-surface px-4 py-3 text-sm">
 			<a href="/transactions/review" class="font-medium text-primary underline-offset-2 hover:underline">
 				{data.openSyncReviews} sync item{data.openSyncReviews === 1 ? '' : 's'} need review
@@ -438,4 +445,6 @@
 			</div>
 		</section>
 	{/each}
+
+	</div>
 </div>

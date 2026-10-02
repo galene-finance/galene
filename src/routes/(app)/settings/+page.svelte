@@ -23,8 +23,8 @@
 		role="status"
 	>
 		<strong class="font-medium">Public demo</strong>
-		— bank sync, backups, API tokens, advisor access, SSO settings, and new accounts are locked.
-		Data resets on a schedule.
+		— bank sync, backups, API, advisor, users, SSO, 2FA, and data wipe stay visible as
+		<strong class="font-medium">Demo — read only</strong>. Shared login and sample data reset on a schedule.
 	</div>
 {/if}
 

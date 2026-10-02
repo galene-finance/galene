@@ -7,6 +7,7 @@
 	import Field from '$lib/components/ui/Field.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import Title from '$lib/components/Title.svelte';
+	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
 	import { toast } from '$lib/toasts';
 	import type { UserRow } from '$lib/server/users';
 	import { formatDate } from '$lib/utils';
@@ -112,7 +113,13 @@
 	>
 	<h1 class="text-2xl font-semibold tracking-tight">Users</h1>
 
-	<section class="rounded-lg border border-border bg-surface">
+	
+	<DemoReadonlyBanner demo={Boolean(data.demo)} feature="User account changes" />
+
+	<div data-demo-readonly-shell inert={data.demo || undefined} class={data.demo ? 'pointer-events-none opacity-60' : undefined}>
+
+
+<section class="rounded-lg border border-border bg-surface">
 		<div class="border-b border-border px-4 py-3">
 			<h2 class="font-medium">Create an account</h2>
 			<p class="text-sm text-muted-foreground">New accounts sign in with the password you set here.</p>
@@ -222,6 +229,8 @@
 		</div>
 	</section>
 </div>
+
+	</div>
 
 <Dialog
 	bind:open={dialogOpen}

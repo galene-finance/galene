@@ -1,7 +1,10 @@
-import { error, redirect, type RequestEvent } from '@sveltejs/kit';
+import { error, type RequestEvent } from '@sveltejs/kit';
 import {
+	DEMO_LOCKED_DATA_ACTIONS,
+	DEMO_LOCKED_MFA_ACTIONS,
 	DEMO_LOCKED_OIDC_ACTIONS,
 	DEMO_LOCKED_SETTINGS,
+	DEMO_LOCKED_USER_ACTIONS,
 	demoBlockedMessage,
 	extractActionName,
 	isDemoMode,
@@ -16,26 +19,40 @@ export function refuseDemo(feature?: string): never {
 }
 
 /**
- * Bounce demo visitors away from locked Settings pages (GET). Mutations on
- * those routes (and SSO save/test) are refused with 403.
+ * Demo Settings pages stay visible (GET) as read-only. Mutations on locked
+ * routes, SSO/2FA actions, user mutations, Data wipes, and signup are 403.
  */
 export function guardDemoMode(event: RequestEvent): void {
 	if (!isDemoMode()) return;
 	const id = event.route.id ?? '';
 
-	if (DEMO_LOCKED_SETTINGS.has(id)) {
-		if (MUTATING.has(event.request.method)) {
-			refuseDemo(lockedFeatureLabel(id));
-		}
-		if (event.request.method === 'GET' || event.request.method === 'HEAD') {
-			redirect(303, '/settings');
-		}
+	if (DEMO_LOCKED_SETTINGS.has(id) && MUTATING.has(event.request.method)) {
+		refuseDemo(lockedFeatureLabel(id));
 	}
 
 	if (id === '/(app)/settings/security' && MUTATING.has(event.request.method)) {
 		const actionName = extractActionName(event.url);
 		if (DEMO_LOCKED_OIDC_ACTIONS.has(actionName)) {
 			refuseDemo('Single sign-on');
+		}
+		if (DEMO_LOCKED_MFA_ACTIONS.has(actionName)) {
+			refuseDemo('Two-factor authentication');
+		}
+	}
+
+	// Redundant with DEMO_LOCKED_SETTINGS for users/data, but keeps action-name
+	// checks explicit if a future route splits actions across pages.
+	if (id === '/(app)/settings/users' && MUTATING.has(event.request.method)) {
+		const actionName = extractActionName(event.url);
+		if (DEMO_LOCKED_USER_ACTIONS.has(actionName)) {
+			refuseDemo('User account changes');
+		}
+	}
+
+	if (id === '/(app)/settings/data' && MUTATING.has(event.request.method)) {
+		const actionName = extractActionName(event.url);
+		if (DEMO_LOCKED_DATA_ACTIONS.has(actionName)) {
+			refuseDemo('Data deletion');
 		}
 	}
 

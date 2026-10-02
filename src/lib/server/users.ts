@@ -97,6 +97,7 @@ export function setUserAdmin(
 	targetId: number,
 	isAdmin: boolean
 ): { ok: true } | { ok: false; error: string } {
+	if (isDemoMode()) return { ok: false, error: demoBlockedMessage('User account changes') };
 	const target = getUserRow(targetId);
 	if (!target) return { ok: false, error: 'User not found.' };
 	if (target.is_admin === (isAdmin ? 1 : 0)) return { ok: true };
@@ -114,6 +115,7 @@ export function setUserAdmin(
  * Self-deletion is blocked, and the last remaining admin can't be deleted.
  */
 export function deleteUser(actorId: number, targetId: number): { ok: true } | { ok: false; error: string } {
+	if (isDemoMode()) return { ok: false, error: demoBlockedMessage('User account changes') };
 	const target = getUserRow(targetId);
 	if (!target) return { ok: false, error: 'User not found.' };
 	if (targetId === actorId) return { ok: false, error: 'You can\u2019t delete your own account.' };
@@ -129,6 +131,7 @@ export function resetPassword(
 	targetId: number,
 	password: string
 ): { ok: true } | { ok: false; error: string } {
+	if (isDemoMode()) return { ok: false, error: demoBlockedMessage('User account changes') };
 	const target = getUserRow(targetId);
 	if (!target) return { ok: false, error: 'User not found.' };
 	if (password.length < 8) return { ok: false, error: 'Password must be at least 8 characters.' };

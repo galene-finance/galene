@@ -12,18 +12,21 @@ import { demoBlockedMessage, isDemoMode } from '$lib/server/demoMode';
 
 export function load({ locals, url }) {
 	const userId = locals.user!.id;
+	const demo = isDemoMode();
 	const totp = listMethods(userId).find((m) => m.type === 'totp' && m.enabled);
 	return {
 		totp: totp ? { confirmedAt: totp.confirmed_at } : null,
 		backupCodes: backupCodeCounts(userId),
 		isAdmin: locals.user!.is_admin === 1,
-		oidc: locals.user!.is_admin === 1 && !isDemoMode() ? oidcSettingsView(url.origin) : null,
-		demo: isDemoMode()
+		// Keep SSO settings visible in demo as read-only (ADO-38 UX).
+		oidc: locals.user!.is_admin === 1 ? oidcSettingsView(url.origin) : null,
+		demo
 	};
 }
 
 export const actions = {
 	begin: async ({ locals }) => {
+		if (isDemoMode()) return { error: demoBlockedMessage('Two-factor authentication') };
 		const user = getUserRow(locals.user!.id)!;
 		// The secret and QR are returned once, in this action result, and
 		// shown only while enrollment is unfinished.
@@ -31,6 +34,7 @@ export const actions = {
 	},
 
 	confirm: async ({ request, locals }) => {
+		if (isDemoMode()) return { error: demoBlockedMessage('Two-factor authentication') };
 		const form = await request.formData();
 		const secret = String(form.get('secret') ?? '');
 		const code = String(form.get('code') ?? '');
@@ -73,6 +77,7 @@ export const actions = {
 	},
 
 	disable: async ({ request, locals }) => {
+		if (isDemoMode()) return { error: demoBlockedMessage('Two-factor authentication') };
 		const form = await request.formData();
 		const password = String(form.get('password') ?? '');
 		const code = String(form.get('code') ?? '');

@@ -23,6 +23,7 @@ import { seedDemoData } from '$lib/server/demoData';
 import { ensureDefaultTransferCategories } from '$lib/server/finance';
 import { localPasswordEscape, publicOidcLogin } from '$lib/server/oidc';
 import { canPublicSignup } from '$lib/server/users';
+import { isDemoMode, demoBlockedMessage } from '$lib/server/demoMode';
 import { versionLabel } from '$lib/version';
 
 export function load({ locals, cookies, url }: { locals: App.Locals; cookies: { get: (name: string) => string | undefined }; url: URL }) {
@@ -32,7 +33,9 @@ export function load({ locals, cookies, url }: { locals: App.Locals; cookies: { 
 	const mfaToken = cookies.get(mfaCookieName());
 	const challenge = mfaToken ? getLoginChallenge(mfaToken) : null;
 	const oidc = publicOidcLogin();
-	const setup = canPublicSignup();
+	const demo = isDemoMode();
+	// Demo always has (or bootstraps) the shared account — never show signup.
+	const setup = demo ? false : canPublicSignup();
 	// Required SSO starts the same authorize request as Continue with SSO.
 	// Setup, a pending MFA step, and ?local=1 stay on this page.
 	if (
@@ -45,9 +48,10 @@ export function load({ locals, cookies, url }: { locals: App.Locals; cookies: { 
 	}
 	return {
 		setup,
+		demo,
 		version: versionLabel(),
 		mfa: challenge ? { email: challenge.email } : null,
-		oidc,
+		oidc: demo ? null : oidc,
 		localPassword: localPasswordEscape(url.searchParams.get('local'))
 	};
 }
@@ -59,6 +63,9 @@ export const actions = {
 		const name = String(form.get('name') ?? '').trim();
 		const email = String(form.get('email') ?? '').trim().toLowerCase();
 		const password = String(form.get('password') ?? '');
+		if (isDemoMode()) {
+			return { error: demoBlockedMessage('Account creation'), name, email };
+		}
 		// Signup is only open before the first account exists. The UI hides
 		// the form after setup, but the action enforces the same gate so a
 		// hand-crafted POST can't register more accounts.

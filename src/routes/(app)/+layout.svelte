@@ -17,6 +17,7 @@
 		notifications: AppNotification[];
 		notificationsUnread: number;
 		viewer?: boolean;
+		demo?: boolean;
 	};
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -54,6 +55,15 @@
 	/>
 
 	<main class="min-w-0 max-w-full flex-1 overflow-x-clip p-4 md:p-6">
+		{#if data.demo}
+			<div
+				class="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-foreground"
+				role="status"
+			>
+				<strong class="font-medium">Public demo</strong>
+				— shared sample data; bank sync, backups, API tokens, advisor access, SSO, and new accounts are locked. Resets on a schedule.
+			</div>
+		{/if}
 		{@render children()}
 	</main>
 

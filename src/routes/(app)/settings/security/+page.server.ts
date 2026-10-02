@@ -8,6 +8,7 @@ import {
 } from '$lib/server/mfa/mfa';
 import { oidcSettingsView, saveOidcSettings, testOidcConnection, type OidcMode } from '$lib/server/oidc';
 import { getUserRow } from '$lib/server/users';
+import { demoBlockedMessage, isDemoMode } from '$lib/server/demoMode';
 
 export function load({ locals, url }) {
 	const userId = locals.user!.id;
@@ -16,7 +17,8 @@ export function load({ locals, url }) {
 		totp: totp ? { confirmedAt: totp.confirmed_at } : null,
 		backupCodes: backupCodeCounts(userId),
 		isAdmin: locals.user!.is_admin === 1,
-		oidc: locals.user!.is_admin === 1 ? oidcSettingsView(url.origin) : null
+		oidc: locals.user!.is_admin === 1 && !isDemoMode() ? oidcSettingsView(url.origin) : null,
+		demo: isDemoMode()
 	};
 }
 
@@ -46,6 +48,7 @@ export const actions = {
 	},
 
 	'save-oidc': async ({ request, locals }) => {
+		if (isDemoMode()) return { oidcError: demoBlockedMessage('Single sign-on') };
 		if (locals.user!.is_admin !== 1) return { error: 'Only an administrator can change single sign-on.' };
 		const form = await request.formData();
 		const mode = String(form.get('mode') ?? 'optional') === 'required' ? 'required' : 'optional';
@@ -62,6 +65,7 @@ export const actions = {
 	},
 
 	'test-oidc': async ({ locals }) => {
+		if (isDemoMode()) return { oidcError: demoBlockedMessage('Single sign-on') };
 		if (locals.user!.is_admin !== 1) return { error: 'Only an administrator can test single sign-on.' };
 		const result = await testOidcConnection();
 		if (!result.ok) return { oidcError: result.error };

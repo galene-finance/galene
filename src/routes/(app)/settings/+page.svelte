@@ -5,15 +5,28 @@
 	let {
 		data
 	}: {
-		data: { isAdmin: boolean };
+		data: { isAdmin: boolean; demo?: boolean };
 	} = $props();
 
 	let query = $state('');
 
-	const sections = $derived(filterSettingsSections(settingsSections(data.isAdmin), query));
+	const sections = $derived(
+		filterSettingsSections(settingsSections(data.isAdmin, { demo: data.demo }), query)
+	);
 </script>
 
 <Title title="Settings" />
+
+{#if data.demo}
+	<div
+		class="mx-auto mb-4 min-w-0 max-w-3xl rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-foreground 2xl:max-w-5xl"
+		role="status"
+	>
+		<strong class="font-medium">Public demo</strong>
+		— bank sync, backups, API tokens, advisor access, SSO settings, and new accounts are locked.
+		Data resets on a schedule.
+	</div>
+{/if}
 
 <div class="mx-auto flex min-w-0 max-w-3xl flex-col gap-6 2xl:max-w-5xl">
 	<div class="flex flex-wrap items-end justify-between gap-4">

@@ -1,0 +1,14 @@
+# Oneshot: wipe demo SQLite files so the next container start re-bootstraps
+# the shared demo login + seed data (GALENE_DEMO=1 → ensureDemoBootstrap).
+# Prefer this over copying a binary seed into git.
+#
+# Install next to the container unit, then enable the timer.
+
+[Unit]
+Description=Reset Galene public demo data to seed
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Stop → wipe → start. Uses systemctl --user when installed as a user unit.
+ExecStart=/bin/bash /usr/local/lib/galene/demo-restore.sh

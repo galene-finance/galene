@@ -1,0 +1,36 @@
+# Quadlet unit for the public Galene demo (ADO-37).
+# Install on the app host as e.g. ~/.config/containers/systemd/galene-demo.container
+# then: systemctl --user daemon-reload && systemctl --user enable --now galene-demo
+#
+# Uses a SEPARATE data directory from production (/opt/galene). Do not point
+# Volume at the prod data path.
+#
+# Image target: :latest (keeps up with main releases via AutoUpdate=registry).
+# Until demo mode ships on main, operators may temporarily set Image=...:test
+# for QA; switch back to :latest after the maintainer merges to main.
+
+[Unit]
+Description=Galene public demo
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/galene-finance/galene:latest
+AutoUpdate=registry
+ContainerName=galene-demo
+# Host port distinct from prod (prod historically publishes 5173→3000).
+PublishPort=5174:3000
+Volume=/opt/galene-demo:/app/data:U
+Environment=GALENE_DEMO=1
+Environment=GALENE_COOKIE_SECURE=1
+Environment=PROTOCOL_HEADER=x-forwarded-proto
+Environment=HOST_HEADER=host
+# No Plaid / SMTP / bank secrets — leave unset.
+# Resource caps so a noisy demo cannot starve prod / marketing.
+PodmanArgs=--memory=512m --memory-swap=512m --cpus=1.0 --pids-limit=256
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

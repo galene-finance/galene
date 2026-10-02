@@ -1,7 +1,8 @@
 import { redirect } from '@sveltejs/kit';
+import { isDemoMode } from '$lib/server/demoMode';
 
 export function load({ locals }) {
-	return { isAdmin: Boolean(locals.user?.is_admin) };
+	return { isAdmin: Boolean(locals.user?.is_admin), demo: isDemoMode() };
 }
 
 // Read-only page: a stray POST (e.g. a refresh re-POSTing a stale history

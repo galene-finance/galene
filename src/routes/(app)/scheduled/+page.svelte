@@ -3,6 +3,7 @@
 	import Title from '$lib/components/Title.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import { formatRepeat } from '$lib/calendarPillPopup';
+	import { softFill } from '$lib/calendarMobile';
 	import { watchFormToast } from '$lib/formToast.svelte';
 	import { formatDate, formatMoney, todayISO } from '$lib/utils';
 	import type { Account, Category, Scheduled, Tag } from '$lib/types';
@@ -46,6 +47,13 @@
 		return formatRepeat(s.repeat_interval, s.repeat_unit) ?? 'One time';
 	}
 
+	/** Same tint Calendar uses on a colored schedule item. No color keeps the card surface. */
+	function cardStyle(color: string | null | undefined): string | undefined {
+		if (!color) return undefined;
+		const fill = softFill(color);
+		return fill ? `border-color: ${color}; background: ${fill}` : `border-color: ${color}`;
+	}
+
 	watchFormToast(() => form);
 </script>
 
@@ -60,48 +68,63 @@
 		<Button type="button" onclick={openNewScheduled}>+ New scheduled</Button>
 	</div>
 
-	<section class="rounded-lg border border-border bg-surface">
-		<div class="border-b border-border px-4 py-3">
-			<h2 class="font-medium">Scheduled</h2>
+	{#if data.rows.length === 0}
+		<div class="rounded-lg border border-dashed border-border bg-surface p-10 text-center">
 			<p class="text-sm text-muted-foreground">
-				Bills and income you expect. Open a row to edit that series.
+				No schedules yet. Add one to see it here and on the calendar.
 			</p>
 		</div>
-		<div class="p-4">
-			{#if data.rows.length === 0}
-				<p class="py-4 text-center text-sm text-muted-foreground">
-					No schedules yet. Add one to see it here and on the calendar.
-				</p>
-			{:else}
-				<ul class="divide-y divide-border">
-					{#each data.rows as row (row.scheduled.id)}
-						<li>
-							<button
-								type="button"
-								class="flex w-full flex-wrap items-center gap-x-4 gap-y-1 py-2.5 text-left transition-colors hover:bg-muted/60"
-								onclick={() => openScheduledEdit(row)}
-							>
-								<span class="min-w-0 flex-1 basis-40">
-									<span class="block truncate text-sm font-medium">{row.scheduled.name}</span>
-									<span class="block truncate text-xs text-muted-foreground">
-										{cadence(row.scheduled)}
-										·
-										{row.nextDate ? formatDate(row.nextDate) : 'No upcoming date'}
-									</span>
-								</span>
-								<span class="min-w-0 flex-1 basis-32 truncate text-xs text-muted-foreground">
-									{row.scheduled.account_name ?? 'No account'}
-									·
-									{row.scheduled.category_name ?? 'No category'}
-								</span>
-								<span class="shrink-0 text-sm font-medium">{formatMoney(row.scheduled.amount_cents)}</span>
-							</button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-	</section>
+	{:else}
+		<ul class="flex flex-col gap-3">
+			{#each data.rows as row (row.scheduled.id)}
+				<li>
+					<button
+						type="button"
+						class="w-full rounded-xl border p-4 text-left transition-colors {row.scheduled.color
+							? ''
+							: 'border-border bg-surface hover:bg-muted/40'}"
+						style={cardStyle(row.scheduled.color)}
+						onclick={() => openScheduledEdit(row)}
+					>
+						<div class="flex items-start justify-between gap-3">
+							<span class="min-w-0 truncate text-[0.95rem] font-semibold tracking-tight">
+								{row.scheduled.name}
+							</span>
+							<span class="shrink-0 text-sm font-medium">{formatMoney(row.scheduled.amount_cents)}</span>
+						</div>
+						<dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+							<div class="min-w-0">
+								<dt class="text-xs text-muted-foreground">Frequency</dt>
+								<dd class="truncate">{cadence(row.scheduled)}</dd>
+							</div>
+							<div class="min-w-0">
+								<dt class="text-xs text-muted-foreground">Next occurrence</dt>
+								<dd class="truncate">{row.nextDate ? formatDate(row.nextDate) : 'No upcoming date'}</dd>
+							</div>
+							<div class="min-w-0">
+								<dt class="text-xs text-muted-foreground">Start date</dt>
+								<dd class="truncate">{formatDate(row.scheduled.start_date)}</dd>
+							</div>
+							<div class="min-w-0">
+								<dt class="text-xs text-muted-foreground">End date</dt>
+								<dd class="truncate">
+									{row.scheduled.until_date ? formatDate(row.scheduled.until_date) : 'Open-ended'}
+								</dd>
+							</div>
+							<div class="min-w-0">
+								<dt class="text-xs text-muted-foreground">Category</dt>
+								<dd class="truncate">{row.scheduled.category_name ?? 'No category'}</dd>
+							</div>
+							<div class="min-w-0">
+								<dt class="text-xs text-muted-foreground">Account</dt>
+								<dd class="truncate">{row.scheduled.account_name ?? 'No account'}</dd>
+							</div>
+						</dl>
+					</button>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 </div>
 
 <AddScheduledDialog

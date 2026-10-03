@@ -3,7 +3,7 @@ import {
 	categoryAmountInPeriod,
 	currentPeriodBounds,
 	getBudgets,
-	getOccurrences,
+	expandScheduled,
 	getScheduled
 } from './finance';
 import { formatMoney } from '$lib/utils';
@@ -200,16 +200,17 @@ export function generateComputedAlerts(userId: number, ref: Date = new Date()): 
 	const today = todayISO(ref);
 	const windowEnd = addDaysISO(today, 3);
 	for (const s of getScheduled(userId)) {
-		if (s.forecast_behavior !== 'bill') continue;
-		for (const occ of getOccurrences(s, today, windowEnd)) {
-			const key = `bill:${s.id}:${occ}`;
+		for (const occ of expandScheduled(s, today, windowEnd)) {
+			const view = occ.scheduled;
+			if (view.forecast_behavior !== 'bill') continue;
+			const key = `bill:${view.id}:${occ.date}`;
 			activeBillKeys.push(key);
-			const when = humanDate(occ, ref);
+			const when = humanDate(occ.date, ref);
 			upsertNotification(
 				userId,
 				'bill_upcoming',
-				`Bill due ${when}: ${s.name}`,
-				`${formatMoney(s.amount_cents)}${s.account_name ? ` from ${s.account_name}` : ''}.`,
+				`Bill due ${when}: ${view.name}`,
+				`${formatMoney(view.amount_cents)}${view.account_name ? ` from ${view.account_name}` : ''}.`,
 				'/calendar',
 				key
 			);

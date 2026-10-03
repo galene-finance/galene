@@ -2,7 +2,7 @@ import {
 	deleteScheduled,
 	getAccounts,
 	getCategories,
-	getOccurrences,
+	expandScheduled,
 	getScheduled,
 	monthBounds,
 	getSetting,
@@ -26,9 +26,7 @@ export function load({ locals, url }) {
 
 	const transactions = getTransactionsInPeriod(userId, from, to);
 	const scheduled = getScheduled(userId);
-	const occurrences = scheduled.flatMap((s) =>
-		getOccurrences(s, from, to).map((date) => ({ scheduled: s, date }))
-	);
+	const occurrences = scheduled.flatMap((s) => expandScheduled(s, from, to));
 	const hideActuals = getSetting(userId, 'hide_actuals') === '1';
 	const weekStartsOn = getSetting(userId, 'week_starts_on') === 'monday' ? 'monday' : 'sunday';
 
@@ -57,7 +55,11 @@ export const actions = {
 	'save-scheduled': async ({ request, locals }) => {
 		const { input, error } = scheduledInputFromForm(locals.user!.id, await request.formData());
 		if (error || !input) return { error };
-		saveScheduled(locals.user!.id, input);
+		try {
+			saveScheduled(locals.user!.id, input);
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : 'Could not save.' };
+		}
 		return { ok: true };
 	},
 

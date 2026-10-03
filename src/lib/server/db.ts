@@ -821,6 +821,58 @@ CREATE TABLE IF NOT EXISTS mcp_config (
 	updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `
+},
+{
+	// Schedule edit scopes. Occurrences stay derived from the series (not copied
+	// into transactions). A revision replaces the series on and after a date;
+	// an exception replaces a single occurrence.
+	sql: `
+CREATE TABLE IF NOT EXISTS scheduled_revisions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	scheduled_id INTEGER NOT NULL REFERENCES scheduled(id) ON DELETE CASCADE,
+	effective_date TEXT NOT NULL,
+	name TEXT NOT NULL,
+	account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+	category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+	amount_cents INTEGER NOT NULL,
+	repeat_interval INTEGER,
+	repeat_unit TEXT CHECK (repeat_unit IN ('day','week','month','year')),
+	until_date TEXT,
+	forecast_behavior TEXT NOT NULL DEFAULT 'bill' CHECK (forecast_behavior IN ('bill','spread')),
+	color TEXT,
+	notes TEXT,
+	UNIQUE (scheduled_id, effective_date)
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_revisions_sched ON scheduled_revisions(scheduled_id);
+
+CREATE TABLE IF NOT EXISTS scheduled_revision_tags (
+	revision_id INTEGER NOT NULL REFERENCES scheduled_revisions(id) ON DELETE CASCADE,
+	tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+	PRIMARY KEY (revision_id, tag_id)
+);
+
+CREATE TABLE IF NOT EXISTS scheduled_exceptions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	scheduled_id INTEGER NOT NULL REFERENCES scheduled(id) ON DELETE CASCADE,
+	occurrence_date TEXT NOT NULL,
+	display_date TEXT NOT NULL,
+	name TEXT NOT NULL,
+	account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+	category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+	amount_cents INTEGER NOT NULL,
+	forecast_behavior TEXT NOT NULL DEFAULT 'bill' CHECK (forecast_behavior IN ('bill','spread')),
+	color TEXT,
+	notes TEXT,
+	UNIQUE (scheduled_id, occurrence_date)
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_exceptions_sched ON scheduled_exceptions(scheduled_id);
+
+CREATE TABLE IF NOT EXISTS scheduled_exception_tags (
+	exception_id INTEGER NOT NULL REFERENCES scheduled_exceptions(id) ON DELETE CASCADE,
+	tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+	PRIMARY KEY (exception_id, tag_id)
+);
+`
 }
 ];
 

@@ -80,7 +80,7 @@
 		day: number;
 		inMonth: boolean;
 		transactions: Transaction[];
-		occurrences: { scheduled: Scheduled }[];
+		occurrences: { scheduled: Scheduled; date: string }[];
 	};
 
 	function buildCells(): Cell[] {
@@ -90,10 +90,10 @@
 			list.push(t);
 			txMap.set(t.date, list);
 		}
-		const occMap = new Map<string, { scheduled: Scheduled }[]>();
+		const occMap = new Map<string, { scheduled: Scheduled; date: string }[]>();
 		for (const o of data.occurrences) {
 			const list = occMap.get(o.date) ?? [];
-			list.push({ scheduled: o.scheduled });
+			list.push({ scheduled: o.scheduled, date: o.date });
 			occMap.set(o.date, list);
 		}
 		const total = Math.ceil((startOffset + daysInMonth) / 7) * 7;
@@ -206,12 +206,14 @@
 	// --- Dialogs ---
 	let scheduledOpen = $state(false);
 	let scheduledEditing = $state<Scheduled | null>(null);
+	let scheduledOccurrence = $state<string | null>(null);
 	let scheduledPrefill = $state<string | null>(null);
 	let txOpen = $state(false);
 
 	function openScheduledFor(date: string) {
 		hidePillPopup();
 		scheduledEditing = null;
+		scheduledOccurrence = null;
 		scheduledPrefill = date;
 		scheduledOpen = true;
 	}
@@ -219,19 +221,22 @@
 	function openNewScheduled() {
 		hidePillPopup();
 		scheduledEditing = null;
+		scheduledOccurrence = null;
 		scheduledPrefill = todayISO();
 		scheduledOpen = true;
 	}
 
-	function openScheduledEdit(s: Scheduled) {
+	function openScheduledEdit(s: Scheduled, date: string) {
 		hidePillPopup();
 		scheduledEditing = s;
+		scheduledOccurrence = date;
 		scheduledPrefill = null;
 		scheduledOpen = true;
 	}
 
 	function closeScheduled() {
 		scheduledEditing = null;
+		scheduledOccurrence = null;
 		scheduledPrefill = null;
 	}
 
@@ -617,7 +622,7 @@
 										sc
 									) ??
 										'color-mix(in oklab, var(--color-primary) 10%, transparent)'}"
-									onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled))}
+									onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled, item.o.date))}
 									onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 									onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
 									onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
@@ -725,7 +730,7 @@
 												sc
 											) ??
 												'color-mix(in oklab, var(--color-primary) 10%, transparent)'}"
-											onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled))}
+											onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled, item.o.date))}
 											onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 											onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
 											onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
@@ -834,7 +839,7 @@
 										style={item.o.scheduled.color
 											? `border-color: ${item.o.scheduled.color}; background: ${item.o.scheduled.color}1a`
 											: undefined}
-										onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled))}
+										onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled, item.o.date))}
 										onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 										onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
 										onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
@@ -907,6 +912,7 @@
 <AddScheduledDialog
 	bind:open={scheduledOpen}
 	editing={scheduledEditing}
+	occurrenceDate={scheduledOccurrence}
 	prefillDate={scheduledPrefill}
 	accounts={data.accounts}
 	categories={data.categories}

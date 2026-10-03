@@ -15,7 +15,7 @@ import {
 	getAccounts,
 	getBudgets,
 	getCategories,
-	getOccurrences,
+	expandScheduled,
 	getScheduled,
 	getSetting,
 	getTransactions,
@@ -128,23 +128,24 @@ function upcomingData(userId: number, f: DashboardFilters): DashboardWidgetData 
 	const end = addDaysISO(today, days - 1);
 	const byDate = new Map<string, { id: number; name: string; amountCents: number; color: string | null; accountName: string | null; categoryName: string | null }[]>();
 	for (const s of getScheduled(userId)) {
-		if (f.accountIds && f.accountIds.length) {
-			if (s.account_id === null || !f.accountIds.includes(s.account_id)) continue;
-		}
-		if (f.categoryIds && f.categoryIds.length) {
-			if (s.category_id === null || !f.categoryIds.includes(s.category_id)) continue;
-		}
-		for (const date of getOccurrences(s, today, end)) {
-			const list = byDate.get(date) ?? [];
+		for (const occ of expandScheduled(s, today, end)) {
+			const view = occ.scheduled;
+			if (f.accountIds && f.accountIds.length) {
+				if (view.account_id === null || !f.accountIds.includes(view.account_id)) continue;
+			}
+			if (f.categoryIds && f.categoryIds.length) {
+				if (view.category_id === null || !f.categoryIds.includes(view.category_id)) continue;
+			}
+			const list = byDate.get(occ.date) ?? [];
 			list.push({
-				id: s.id,
-				name: s.name,
-				amountCents: s.amount_cents,
-				color: s.color,
-				accountName: s.account_name ?? null,
-				categoryName: s.category_name ?? null
+				id: view.id,
+				name: view.name,
+				amountCents: view.amount_cents,
+				color: view.color,
+				accountName: view.account_name ?? null,
+				categoryName: view.category_name ?? null
 			});
-			byDate.set(date, list);
+			byDate.set(occ.date, list);
 		}
 	}
 	const daysOut = [...byDate.keys()].sort().map((date) => ({

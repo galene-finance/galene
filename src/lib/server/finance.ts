@@ -14,7 +14,10 @@ import type {
 	ForecastBehavior,
 	RepeatUnit,
 	RuleCondition,
+	ScheduleEditScope,
 	Scheduled,
+	ScheduledException,
+	ScheduledRevision,
 	Tag,
 	Transaction,
 	TransactionSplit
@@ -260,6 +263,14 @@ export function deleteAccount(userId: number, id: number, reassignTo: number) {
 			`UPDATE scheduled SET account_id = ?
 			 WHERE user_id = ? AND account_id = ?`
 		).run(reassignTo, userId, id);
+		d.query(
+			`UPDATE scheduled_revisions SET account_id = ?
+			 WHERE account_id = ? AND scheduled_id IN (SELECT id FROM scheduled WHERE user_id = ?)`
+		).run(reassignTo, id, userId);
+		d.query(
+			`UPDATE scheduled_exceptions SET account_id = ?
+			 WHERE account_id = ? AND scheduled_id IN (SELECT id FROM scheduled WHERE user_id = ?)`
+		).run(reassignTo, id, userId);
 
 		const result = d.query('DELETE FROM accounts WHERE id = ? AND user_id = ?').run(id, userId);
 		if (result.changes === 0) throw new Error('Account could not be deleted.');
@@ -396,6 +407,16 @@ export function deleteCategory(userId: number, id: number, reassignTo: number | 
 			`UPDATE scheduled SET category_id = ?
 			 WHERE user_id = ? AND category_id IN (${placeholders})`
 		).run(reassignTo, userId, ...ids);
+		d.query(
+			`UPDATE scheduled_revisions SET category_id = ?
+			 WHERE category_id IN (${placeholders})
+			   AND scheduled_id IN (SELECT id FROM scheduled WHERE user_id = ?)`
+		).run(reassignTo, ...ids, userId);
+		d.query(
+			`UPDATE scheduled_exceptions SET category_id = ?
+			 WHERE category_id IN (${placeholders})
+			   AND scheduled_id IN (SELECT id FROM scheduled WHERE user_id = ?)`
+		).run(reassignTo, ...ids, userId);
 
 		// Children cascade via parent_id; budgets/rules for removed ids cascade too.
 		const result = d.query('DELETE FROM categories WHERE id = ? AND user_id = ?').run(id, userId);
@@ -464,6 +485,24 @@ export function deleteTag(userId: number, id: number) {
 			`DELETE FROM scheduled_tags
 			 WHERE tag_id = ?
 			   AND scheduled_id IN (SELECT id FROM scheduled WHERE user_id = ?)`
+		).run(id, userId);
+		d.query(
+			`DELETE FROM scheduled_revision_tags
+			 WHERE tag_id = ?
+			   AND revision_id IN (
+			     SELECT r.id FROM scheduled_revisions r
+			     JOIN scheduled s ON s.id = r.scheduled_id
+			     WHERE s.user_id = ?
+			   )`
+		).run(id, userId);
+		d.query(
+			`DELETE FROM scheduled_exception_tags
+			 WHERE tag_id = ?
+			   AND exception_id IN (
+			     SELECT e.id FROM scheduled_exceptions e
+			     JOIN scheduled s ON s.id = e.scheduled_id
+			     WHERE s.user_id = ?
+			   )`
 		).run(id, userId);
 
 		const result = d.query('DELETE FROM tags WHERE id = ? AND user_id = ?').run(id, userId);
@@ -1046,22 +1085,187 @@ function addInterval(iso: string, interval: number, unit: RepeatUnit): string {
 	}
 }
 
-/** All occurrence dates of a scheduled expectation within [from, to] (inclusive). */
-export function getOccurrences(s: Scheduled, from: string, to: string): string[] {
+export interface ScheduledOccurrence {
+	date: string;
+	/** Series id is preserved. Fields are the ones in effect on `date`. */
+	scheduled: Scheduled;
+}
+
+interface SeriesSegment {
+	anchor: string;
+	segmentStart: string;
+	/** Inclusive last day this segment may emit. Null means open-ended. */
+	segmentEnd: string | null;
+	name: string;
+	account_id: number | null;
+	category_id: number | null;
+	amount_cents: number;
+	repeat_interval: number | null;
+	repeat_unit: RepeatUnit | null;
+	until_date: string | null;
+	forecast_behavior: ForecastBehavior;
+	color: string | null;
+	notes: string | null;
+	account_name: string | null;
+	category_name: string | null;
+	tags: string[];
+	tag_ids: number[];
+}
+
+function segmentFromSeries(s: Scheduled): SeriesSegment {
+	return {
+		anchor: s.start_date,
+		segmentStart: s.start_date,
+		segmentEnd: s.until_date,
+		name: s.name,
+		account_id: s.account_id,
+		category_id: s.category_id,
+		amount_cents: s.amount_cents,
+		repeat_interval: s.repeat_interval,
+		repeat_unit: s.repeat_unit,
+		until_date: s.until_date,
+		forecast_behavior: s.forecast_behavior,
+		color: s.color,
+		notes: s.notes ?? null,
+		account_name: s.account_name ?? null,
+		category_name: s.category_name ?? null,
+		tags: s.tags ?? [],
+		tag_ids: s.tag_ids ?? []
+	};
+}
+
+function segmentFromRevision(rev: ScheduledRevision): SeriesSegment {
+	return {
+		anchor: rev.effective_date,
+		segmentStart: rev.effective_date,
+		segmentEnd: rev.until_date,
+		name: rev.name,
+		account_id: rev.account_id,
+		category_id: rev.category_id,
+		amount_cents: rev.amount_cents,
+		repeat_interval: rev.repeat_interval,
+		repeat_unit: rev.repeat_unit,
+		until_date: rev.until_date,
+		forecast_behavior: rev.forecast_behavior,
+		color: rev.color,
+		notes: rev.notes,
+		account_name: rev.account_name ?? null,
+		category_name: rev.category_name ?? null,
+		tags: rev.tags ?? [],
+		tag_ids: rev.tag_ids ?? []
+	};
+}
+
+/** Base series, then each revision cuts the previous segment the day before it starts. */
+function seriesSegments(s: Scheduled): SeriesSegment[] {
+	const revisions = [...(s.revisions ?? [])].sort(
+		(a, b) => a.effective_date.localeCompare(b.effective_date) || a.id - b.id
+	);
+	let current = segmentFromSeries(s);
+	if (revisions.length === 0) return [current];
+	const out: SeriesSegment[] = [];
+	for (const rev of revisions) {
+		if (rev.effective_date <= current.segmentStart) {
+			current = segmentFromRevision(rev);
+			continue;
+		}
+		const cut = addInterval(rev.effective_date, -1, 'day');
+		const end = current.segmentEnd && current.segmentEnd < cut ? current.segmentEnd : cut;
+		if (end >= current.segmentStart) out.push({ ...current, segmentEnd: end });
+		current = segmentFromRevision(rev);
+	}
+	out.push(current);
+	return out;
+}
+
+function datesInSegment(seg: SeriesSegment, to: string): string[] {
 	const out: string[] = [];
-	if (s.start_date > to) return out;
-	if (!s.repeat_interval || !s.repeat_unit || s.repeat_interval < 1) {
-		if (s.start_date >= from && s.start_date <= to) out.push(s.start_date);
+	const interval = seg.repeat_interval;
+	const unit = seg.repeat_unit;
+	if (!interval || !unit || interval < 1) {
+		if (seg.anchor <= to && seg.anchor >= seg.segmentStart && (seg.segmentEnd == null || seg.anchor <= seg.segmentEnd)) {
+			out.push(seg.anchor);
+		}
 		return out;
 	}
-	let cur = s.start_date;
+	let cur = seg.anchor;
 	for (let i = 0; i < 2000; i++) {
+		if (seg.segmentEnd && cur > seg.segmentEnd) break;
 		if (cur > to) break;
-		if (cur >= from) out.push(cur);
-		if (s.until_date && cur > s.until_date) break;
-		cur = addInterval(cur, s.repeat_interval, s.repeat_unit);
+		if (cur >= seg.segmentStart) out.push(cur);
+		cur = addInterval(cur, interval, unit);
 	}
 	return out;
+}
+
+function viewFromSegment(base: Scheduled, seg: SeriesSegment): Scheduled {
+	return {
+		...base,
+		name: seg.name,
+		account_id: seg.account_id,
+		category_id: seg.category_id,
+		amount_cents: seg.amount_cents,
+		repeat_interval: seg.repeat_interval,
+		repeat_unit: seg.repeat_unit,
+		until_date: seg.until_date,
+		forecast_behavior: seg.forecast_behavior,
+		color: seg.color,
+		notes: seg.notes,
+		account_name: seg.account_id === base.account_id ? base.account_name : seg.account_name,
+		category_name: seg.category_id === base.category_id ? base.category_name : seg.category_name,
+		tags: seg.tags,
+		tag_ids: seg.tag_ids,
+		revisions: undefined,
+		exceptions: undefined
+	};
+}
+
+function viewFromException(base: Scheduled, ex: ScheduledException, seg: SeriesSegment): Scheduled {
+	const view = viewFromSegment(base, seg);
+	return {
+		...view,
+		name: ex.name,
+		account_id: ex.account_id,
+		category_id: ex.category_id,
+		amount_cents: ex.amount_cents,
+		forecast_behavior: ex.forecast_behavior,
+		color: ex.color,
+		notes: ex.notes,
+		account_name: ex.account_id === base.account_id ? base.account_name : (ex.account_name ?? null),
+		category_name: ex.category_id === base.category_id ? base.category_name : (ex.category_name ?? null),
+		tags: ex.tags ?? view.tags,
+		tag_ids: ex.tag_ids ?? view.tag_ids
+	};
+}
+
+/**
+ * Occurrence dates in [from, to] with the fields in effect that day.
+ * Revisions apply on and after their effective date. An exception replaces one date.
+ * `until_date` is inclusive and does not emit the following interval.
+ */
+export function expandScheduled(s: Scheduled, from: string, to: string): ScheduledOccurrence[] {
+	if (s.start_date > to && !(s.revisions ?? []).some((r) => r.effective_date <= to)) return [];
+	const exceptions = new Map((s.exceptions ?? []).map((ex) => [ex.occurrence_date, ex]));
+	const byDate = new Map<string, Scheduled>();
+	for (const seg of seriesSegments(s)) {
+		for (const date of datesInSegment(seg, to)) {
+			const ex = exceptions.get(date);
+			if (ex) {
+				if (ex.display_date <= to) byDate.set(ex.display_date, viewFromException(s, ex, seg));
+			} else {
+				byDate.set(date, viewFromSegment(s, seg));
+			}
+		}
+	}
+	return [...byDate.entries()]
+		.filter(([date]) => date >= from && date <= to)
+		.sort((a, b) => a[0].localeCompare(b[0]))
+		.map(([date, scheduled]) => ({ date, scheduled }));
+}
+
+/** All occurrence dates of a scheduled expectation within [from, to] (inclusive). */
+export function getOccurrences(s: Scheduled, from: string, to: string): string[] {
+	return expandScheduled(s, from, to).map((o) => o.date);
 }
 
 // ---------------------------------------------------------------------------
@@ -1182,6 +1386,10 @@ export interface ScheduledInput {
 	untilDate: string | null;
 	forecastBehavior: ForecastBehavior;
 	tags: number[];
+	/** Set when editing an existing series. Omitted on create. */
+	editScope?: ScheduleEditScope;
+	/** Occurrence the edit was opened from. Required for once / following / new when it is not the start. */
+	occurrenceDate?: string | null;
 }
 
 export function getScheduled(userId: number): Scheduled[] {
@@ -1197,7 +1405,7 @@ export function getScheduled(userId: number): Scheduled[] {
 			 ORDER BY s.start_date, s.id`
 		)
 		.all(userId) as Scheduled[];
-	return attachScheduledTags(userId, rows);
+	return attachScheduledExceptions(userId, attachScheduledRevisions(userId, attachScheduledTags(userId, rows)));
 }
 
 function attachScheduledTags(userId: number, rows: Scheduled[]): Scheduled[] {
@@ -1224,6 +1432,117 @@ function attachScheduledTags(userId: number, rows: Scheduled[]): Scheduled[] {
 		row.tag_ids = list.map((t) => t.id);
 	}
 	return rows;
+}
+
+function attachScheduledRevisions(userId: number, rows: Scheduled[]): Scheduled[] {
+	if (rows.length === 0) return rows;
+	const ids = rows.map((r) => r.id);
+	const revRows = db()
+		.query(
+			`SELECT r.id, r.scheduled_id, r.effective_date, r.name, r.account_id, r.category_id, r.amount_cents,
+			        r.repeat_interval, r.repeat_unit, r.until_date, r.forecast_behavior, r.color, r.notes,
+			        a.name AS account_name, c.name AS category_name
+			 FROM scheduled_revisions r
+			 LEFT JOIN accounts a ON a.id = r.account_id
+			 LEFT JOIN categories c ON c.id = r.category_id
+			 WHERE r.scheduled_id IN (${ids.map(() => '?').join(',')})
+			   AND r.scheduled_id IN (SELECT id FROM scheduled WHERE user_id = ?)
+			 ORDER BY r.effective_date, r.id`
+		)
+		.all(...ids, userId) as (ScheduledRevision & { scheduled_id: number })[];
+	const bySched = new Map<number, ScheduledRevision[]>();
+	for (const row of revRows) {
+		const list = bySched.get(row.scheduled_id) ?? [];
+		list.push(row);
+		bySched.set(row.scheduled_id, list);
+	}
+	attachChildTags(
+		userId,
+		revRows.map((r) => r.id),
+		'scheduled_revision_tags',
+		'revision_id',
+		(id, tags, tagIds) => {
+			for (const list of bySched.values()) {
+				const rev = list.find((r) => r.id === id);
+				if (rev) {
+					rev.tags = tags;
+					rev.tag_ids = tagIds;
+				}
+			}
+		}
+	);
+	for (const row of rows) row.revisions = bySched.get(row.id) ?? [];
+	return rows;
+}
+
+function attachScheduledExceptions(userId: number, rows: Scheduled[]): Scheduled[] {
+	if (rows.length === 0) return rows;
+	const ids = rows.map((r) => r.id);
+	const exRows = db()
+		.query(
+			`SELECT e.id, e.scheduled_id, e.occurrence_date, e.display_date, e.name, e.account_id, e.category_id,
+			        e.amount_cents, e.forecast_behavior, e.color, e.notes,
+			        a.name AS account_name, c.name AS category_name
+			 FROM scheduled_exceptions e
+			 LEFT JOIN accounts a ON a.id = e.account_id
+			 LEFT JOIN categories c ON c.id = e.category_id
+			 WHERE e.scheduled_id IN (${ids.map(() => '?').join(',')})
+			   AND e.scheduled_id IN (SELECT id FROM scheduled WHERE user_id = ?)
+			 ORDER BY e.occurrence_date, e.id`
+		)
+		.all(...ids, userId) as (ScheduledException & { scheduled_id: number })[];
+	const bySched = new Map<number, ScheduledException[]>();
+	for (const row of exRows) {
+		const list = bySched.get(row.scheduled_id) ?? [];
+		list.push(row);
+		bySched.set(row.scheduled_id, list);
+	}
+	attachChildTags(
+		userId,
+		exRows.map((r) => r.id),
+		'scheduled_exception_tags',
+		'exception_id',
+		(id, tags, tagIds) => {
+			for (const list of bySched.values()) {
+				const ex = list.find((r) => r.id === id);
+				if (ex) {
+					ex.tags = tags;
+					ex.tag_ids = tagIds;
+				}
+			}
+		}
+	);
+	for (const row of rows) row.exceptions = bySched.get(row.id) ?? [];
+	return rows;
+}
+
+function attachChildTags(
+	userId: number,
+	ids: number[],
+	table: 'scheduled_revision_tags' | 'scheduled_exception_tags',
+	idCol: 'revision_id' | 'exception_id',
+	apply: (id: number, tags: string[], tagIds: number[]) => void
+) {
+	if (ids.length === 0) return;
+	const tagRows = db()
+		.query(
+			`SELECT j.${idCol} AS parent_id, tg.id, tg.name
+			 FROM ${table} j
+			 JOIN tags tg ON tg.id = j.tag_id
+			 WHERE j.${idCol} IN (${ids.map(() => '?').join(',')}) AND tg.user_id = ?
+			 ORDER BY tg.name`
+		)
+		.all(...ids, userId) as { parent_id: number; id: number; name: string }[];
+	const byId = new Map<number, { name: string; id: number }[]>();
+	for (const row of tagRows) {
+		const list = byId.get(row.parent_id) ?? [];
+		list.push({ name: row.name, id: row.id });
+		byId.set(row.parent_id, list);
+	}
+	for (const id of ids) {
+		const list = byId.get(id) ?? [];
+		apply(id, list.map((t) => t.name), list.map((t) => t.id));
+	}
 }
 
 /**
@@ -1274,6 +1593,19 @@ export function scheduledInputFromForm(userId: number, form: FormData): { input?
 	const tagNew = String(form.get('tag_new') ?? '').trim();
 	if (tagNew) tagIds.push(getOrCreateTag(userId, tagNew));
 
+	let editScope: ScheduleEditScope | undefined;
+	let occurrenceDate: string | null = null;
+	if (id) {
+		const raw = String(form.get('edit_scope') ?? '').trim();
+		if (raw !== 'once' && raw !== 'following' && raw !== 'all' && raw !== 'new') {
+			return { error: 'Choose how to apply this change.' };
+		}
+		editScope = raw;
+		const occ = String(form.get('occurrence_date') ?? '').trim();
+		if (occ && !/^\d{4}-\d{2}-\d{2}$/.test(occ)) return { error: 'Enter a valid occurrence date.' };
+		occurrenceDate = occ || null;
+	}
+
 	return {
 		input: {
 			id: id ?? undefined,
@@ -1290,12 +1622,23 @@ export function scheduledInputFromForm(userId: number, form: FormData): { input?
 			repeatUnit,
 			untilDate,
 			forecastBehavior,
-			tags: tagIds
+			tags: tagIds,
+			editScope,
+			occurrenceDate
 		}
 	};
 }
 
 export function saveScheduled(userId: number, input: ScheduledInput) {
+	if (input.id && input.editScope) {
+		applyScheduledEdit(userId, input.id, input);
+		return;
+	}
+	input.id = persistScheduled(userId, input);
+	setScheduledTags(userId, input.id, input.tags);
+}
+
+function persistScheduled(userId: number, input: ScheduledInput): number {
 	const repeatInterval = input.repeats && input.repeatUnit ? input.repeatInterval ?? 1 : null;
 	const repeatUnit = input.repeats && input.repeatUnit ? input.repeatUnit : null;
 	if (input.id) {
@@ -1321,6 +1664,7 @@ export function saveScheduled(userId: number, input: ScheduledInput) {
 				input.id,
 				userId
 			);
+		return input.id;
 	} else {
 		const result = db()
 			.query(
@@ -1343,10 +1687,125 @@ export function saveScheduled(userId: number, input: ScheduledInput) {
 				input.color ?? null,
 				input.notes ?? null
 			);
-		input.id = Number(result.lastInsertRowid);
+		return Number(result.lastInsertRowid);
 	}
-	setScheduledTags(userId, input.id!, input.tags);
 }
+
+function repeatFields(input: ScheduledInput): { repeatInterval: number | null; repeatUnit: RepeatUnit | null; untilDate: string | null } {
+	const repeats = input.repeats && input.repeatUnit;
+	return {
+		repeatInterval: repeats ? input.repeatInterval ?? 1 : null,
+		repeatUnit: repeats ? input.repeatUnit : null,
+		untilDate: repeats ? input.untilDate : null
+	};
+}
+
+function applyScheduledEdit(userId: number, id: number, input: ScheduledInput) {
+	const existing = getScheduled(userId).find((s) => s.id === id);
+	if (!existing) throw new Error('Scheduled expectation not found.');
+	const scope = input.editScope;
+	if (!scope) throw new Error('Choose how to apply this change.');
+	const anchor = input.occurrenceDate ?? existing.start_date;
+	const known = new Set(expandScheduled(existing, existing.start_date, '9999-12-31').map((o) => o.date));
+	if (!known.has(anchor)) throw new Error('That date is not part of this schedule.');
+
+	const d = db();
+	d.run('BEGIN');
+	try {
+		if (scope === 'all' || (scope === 'following' && anchor <= existing.start_date)) {
+			persistScheduled(userId, { ...input, id, editScope: undefined });
+			setScheduledTags(userId, id, input.tags);
+			d.query('DELETE FROM scheduled_revisions WHERE scheduled_id = ?').run(id);
+			d.query('DELETE FROM scheduled_exceptions WHERE scheduled_id = ?').run(id);
+		} else if (scope === 'once') {
+			const display = input.startDate !== existing.start_date ? input.startDate : anchor;
+			d.query('DELETE FROM scheduled_exceptions WHERE scheduled_id = ? AND occurrence_date = ?').run(id, anchor);
+			const inserted = d
+				.query(
+					`INSERT INTO scheduled_exceptions
+					 (scheduled_id, occurrence_date, display_date, name, account_id, category_id, amount_cents, forecast_behavior, color, notes)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				)
+				.run(
+					id,
+					anchor,
+					display,
+					input.name,
+					input.account,
+					input.category,
+					input.amountCents,
+					input.forecastBehavior,
+					input.color ?? null,
+					input.notes ?? null
+				);
+			setChildTags(userId, 'scheduled_exception_tags', 'exception_id', Number(inserted.lastInsertRowid), input.tags);
+		} else if (scope === 'following') {
+			d.query('DELETE FROM scheduled_revisions WHERE scheduled_id = ? AND effective_date >= ?').run(id, anchor);
+			d.query('DELETE FROM scheduled_exceptions WHERE scheduled_id = ? AND occurrence_date >= ?').run(id, anchor);
+			const repeat = repeatFields(input);
+			const inserted = d
+				.query(
+					`INSERT INTO scheduled_revisions
+					 (scheduled_id, effective_date, name, account_id, category_id, amount_cents,
+					  repeat_interval, repeat_unit, until_date, forecast_behavior, color, notes)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				)
+				.run(
+					id,
+					anchor,
+					input.name,
+					input.account,
+					input.category,
+					input.amountCents,
+					repeat.repeatInterval,
+					repeat.repeatUnit,
+					repeat.untilDate,
+					input.forecastBehavior,
+					input.color ?? null,
+					input.notes ?? null
+				);
+			setChildTags(userId, 'scheduled_revision_tags', 'revision_id', Number(inserted.lastInsertRowid), input.tags);
+		} else if (scope === 'new') {
+			const end = addInterval(anchor, -1, 'day');
+			d.query(
+				`UPDATE scheduled
+				 SET until_date = CASE WHEN until_date IS NULL OR until_date > ? THEN ? ELSE until_date END
+				 WHERE id = ? AND user_id = ?`
+			).run(end, end, id, userId);
+			d.query('DELETE FROM scheduled_revisions WHERE scheduled_id = ? AND effective_date >= ?').run(id, anchor);
+			d.query('DELETE FROM scheduled_exceptions WHERE scheduled_id = ? AND occurrence_date >= ?').run(id, anchor);
+			const created = persistScheduled(userId, { ...input, id: undefined, startDate: anchor, editScope: undefined });
+			setScheduledTags(userId, created, input.tags);
+		}
+		d.run('COMMIT');
+	} catch (error) {
+		d.run('ROLLBACK');
+		throw error;
+	}
+}
+
+function setChildTags(
+	userId: number,
+	table: 'scheduled_revision_tags' | 'scheduled_exception_tags',
+	idCol: 'revision_id' | 'exception_id',
+	parentId: number,
+	tagIds: number[]
+) {
+	const valid = ownedTagIds(userId, tagIds);
+	db().query(`DELETE FROM ${table} WHERE ${idCol} = ?`).run(parentId);
+	for (const tagId of valid) {
+		db().query(`INSERT OR IGNORE INTO ${table} (${idCol}, tag_id) VALUES (?, ?)`).run(parentId, tagId);
+	}
+}
+
+function ownedTagIds(userId: number, tagIds: number[]): number[] {
+	if (tagIds.length === 0) return [];
+	const valid = db()
+		.query('SELECT id FROM tags WHERE user_id = ? AND id IN (' + tagIds.map(() => '?').join(',') + ')')
+		.all(userId, ...tagIds) as { id: number }[];
+	return valid.map((t) => t.id);
+}
+
 
 function setScheduledTags(userId: number, scheduledId: number, tagIds: number[]) {
 	const valid = db()
@@ -1767,15 +2226,16 @@ export function forecastPartsByCategory(
 		out.set(id, cur);
 	};
 	for (const s of getScheduled(userId)) {
-		if (accountIds && accountIds.length > 0) {
-			if (s.account_id == null || !accountIds.includes(s.account_id)) continue;
-		}
-		const cat = s.category_id != null ? catById.get(s.category_id) : undefined;
-		if (cat?.type === 'transfer' && !(s.category_id != null && includeTransferIds?.has(s.category_id))) {
-			continue;
-		}
-		for (const _date of getOccurrences(s, from, lastDay)) {
-			bump(s.category_id, s.amount_cents);
+		for (const occ of expandScheduled(s, from, lastDay)) {
+			const view = occ.scheduled;
+			if (accountIds && accountIds.length > 0) {
+				if (view.account_id == null || !accountIds.includes(view.account_id)) continue;
+			}
+			const cat = view.category_id != null ? catById.get(view.category_id) : undefined;
+			if (cat?.type === 'transfer' && !(view.category_id != null && includeTransferIds?.has(view.category_id))) {
+				continue;
+			}
+			bump(view.category_id, view.amount_cents);
 		}
 	}
 	return out;

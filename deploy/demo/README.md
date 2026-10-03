@@ -13,6 +13,8 @@ folder.
 | `galene-demo.container` | Quadlet unit (`GALENE_DEMO=1`, resource caps, `:latest`) |
 | `galene-demo-restore.timer` | Every **6 hours UTC** wipe/restore → re-bootstrap |
 
+The restore script deletes SQLite files with `podman unshare rm` (plain `rm` cannot unlink files owned by the container user) and starts the demo unit from an `EXIT` trap, including when the wipe fails. Reinstall `demo-restore.sh` on the app host after updating; merging git does not restart a running unit.
+
 ## Install (app host)
 
 ```bash

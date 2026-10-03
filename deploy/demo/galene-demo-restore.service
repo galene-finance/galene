@@ -10,5 +10,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-# Stop → wipe → start. Uses systemctl --user when installed as a user unit.
+# Stop → wipe (podman unshare rm) → start.
+# EXIT trap starts the unit even if the wipe fails.
+# Uses systemctl --user when installed as a user unit.
 ExecStart=/bin/bash /usr/local/lib/galene/demo-restore.sh

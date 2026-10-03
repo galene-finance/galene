@@ -6,7 +6,7 @@ import {
 	getAccounts,
 	getCashflowFilters,
 	getCategories,
-	getOccurrences,
+	expandScheduled,
 	getScheduled,
 	getTransactionsInPeriod,
 	lastDayOfMonth,
@@ -78,22 +78,22 @@ export function load({ locals, url }) {
 		return categoryAllowed(t.category_id);
 	});
 
-	const occurrences = getScheduled(userId)
-		.filter((s) => {
-			if (accountSet && (s.account_id == null || !accountSet.has(s.account_id))) return false;
-			return categoryAllowed(s.category_id);
-		})
-		.flatMap((s) =>
-			getOccurrences(s, rangeFrom, lastDayOfMonth(lastMonth)).map((date) => ({
-				id: s.id,
-				name: s.name,
+	const occurrences = getScheduled(userId).flatMap((s) =>
+		expandScheduled(s, rangeFrom, lastDayOfMonth(lastMonth))
+			.filter(({ scheduled: view }) => {
+				if (accountSet && (view.account_id == null || !accountSet.has(view.account_id))) return false;
+				return categoryAllowed(view.category_id);
+			})
+			.map(({ date, scheduled: view }) => ({
+				id: view.id,
+				name: view.name,
 				date,
-				amountCents: s.amount_cents,
-				behavior: s.forecast_behavior,
-				categoryId: s.category_id,
-				accountId: s.account_id
+				amountCents: view.amount_cents,
+				behavior: view.forecast_behavior,
+				categoryId: view.category_id,
+				accountId: view.account_id
 			}))
-		);
+	);
 
 	return {
 		from,

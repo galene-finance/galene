@@ -52,6 +52,7 @@ sw.addEventListener('fetch', (event) => {
 		url.pathname.startsWith('/cashflow') ||
 		url.pathname.startsWith('/dashboard') ||
 		url.pathname.startsWith('/calendar') ||
+		url.pathname.startsWith('/scheduled') ||
 		url.pathname.startsWith('/recurring') ||
 		url.pathname.startsWith('/trends') ||
 		url.pathname.startsWith('/notifications') ||

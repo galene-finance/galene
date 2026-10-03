@@ -408,6 +408,7 @@
 			</div>
 		</div>
 		<div class="flex flex-wrap items-center gap-3">
+			<a href="/scheduled" class="text-sm font-medium text-primary underline-offset-2 hover:underline">Scheduled</a>
 			<form method="POST" action="?/set-hide-actuals" class="flex items-center gap-2" bind:this={hideForm}>
 				<!-- Bits Checkbox is a type="button" element, so submit the form explicitly on change.
 				 The hidden input's checked state is set directly because Svelte may not have

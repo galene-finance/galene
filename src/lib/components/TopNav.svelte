@@ -44,6 +44,7 @@
 					{ href: '/transactions', label: 'Transactions' },
 					{ href: '/budget', label: 'Budget' },
 					{ href: '/calendar', label: 'Calendar' },
+					{ href: '/scheduled', label: 'Scheduled' },
 					{ href: '/cashflow', label: 'Cashflow' },
 					{ href: '/trends', label: 'Trends' },
 					{ href: '/settings', label: 'Settings' }

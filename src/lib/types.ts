@@ -101,6 +101,47 @@ export interface Budget {
 	category_color?: string | null;
 }
 
+/** How an edit of an existing schedule is applied. Occurrences are not stored as transactions. */
+export type ScheduleEditScope = 'once' | 'following' | 'all' | 'new';
+
+/** Fields that replace the series on and after `effective_date`. Earlier dates keep the base row. */
+export interface ScheduledRevision {
+	id: number;
+	effective_date: string;
+	name: string;
+	account_id: number | null;
+	category_id: number | null;
+	amount_cents: number;
+	repeat_interval: number | null;
+	repeat_unit: RepeatUnit | null;
+	until_date: string | null;
+	forecast_behavior: ForecastBehavior;
+	color: string | null;
+	notes: string | null;
+	account_name?: string | null;
+	category_name?: string | null;
+	tags?: string[];
+	tag_ids?: number[];
+}
+
+/** One occurrence replaced (or moved) without changing the rest of the series. */
+export interface ScheduledException {
+	id: number;
+	occurrence_date: string;
+	display_date: string;
+	name: string;
+	account_id: number | null;
+	category_id: number | null;
+	amount_cents: number;
+	forecast_behavior: ForecastBehavior;
+	color: string | null;
+	notes: string | null;
+	account_name?: string | null;
+	category_name?: string | null;
+	tags?: string[];
+	tag_ids?: number[];
+}
+
 export interface Scheduled {
 	id: number;
 	name: string;
@@ -118,6 +159,9 @@ export interface Scheduled {
 	category_name?: string | null;
 	tags?: string[];
 	tag_ids?: number[];
+	/** Loaded for expansion. Not a second recurrence engine. */
+	revisions?: ScheduledRevision[];
+	exceptions?: ScheduledException[];
 }
 
 export interface RecurringSuggestion {

@@ -11,7 +11,8 @@
 	import Input from './ui/Input.svelte';
 	import MultiCombobox from './ui/MultiCombobox.svelte';
 	import Select from './ui/Select.svelte';
-	import { todayISO } from '$lib/utils';
+	import { formatDate, formatMoney, parseAmountToCents, todayISO } from '$lib/utils';
+	import { formatRepeat } from '$lib/calendarPillPopup';
 	import { categoryPickerItems } from '$lib/categoryPicker';
 	import type { Account, Category, RepeatUnit, Scheduled, Tag } from '$lib/types';
 	import type { SubmitFunction } from '@sveltejs/kit';
@@ -22,6 +23,7 @@
 	let {
 		open = $bindable(false),
 		editing = null,
+		occurrenceDate = null,
 		prefillDate = null,
 		prefill = null,
 		accounts,
@@ -35,6 +37,8 @@
 	}: {
 		open?: boolean;
 		editing?: Scheduled | null;
+		/** Date of the occurrence being edited. Omit for a new schedule. */
+		occurrenceDate?: string | null;
 		prefillDate?: string | null;
 		/** Draft values when accepting a recurring suggestion (no id). */
 		prefill?: {
@@ -83,6 +87,19 @@
 	const tagCreate = $derived(tagValues.includes(CREATE_VALUE));
 
 	let saving = $state(false);
+	let scopeStep = $state(false);
+	let editScope = $state<'once' | 'following' | 'all' | 'new'>('following');
+	let formEl = $state<HTMLFormElement | null>(null);
+
+	const scopeContext = $derived.by(() => {
+		const cents = parseAmountToCents(amount);
+		const signed = cents == null ? null : type === 'expense' ? -Math.abs(cents) : Math.abs(cents);
+		const money = signed == null ? amount || '—' : formatMoney(signed);
+		const every = parseInt(repeatInterval, 10);
+		const cadence = repeats ? (formatRepeat(Number.isFinite(every) ? every : 1, repeatUnit) ?? 'Repeats') : 'One time';
+		const when = occurrenceDate || startDate;
+		return `${name.trim() || 'Untitled'} · ${money} · ${cadence} · ${formatDate(when)}`;
+	});
 
 	const accountItems = $derived(accounts.map((a) => ({ value: String(a.id), label: a.name })));
 	const categoryItems = $derived(categoryPickerItems(categories));
@@ -117,6 +134,10 @@
 	// entities created in this or another dialog appear without a manual refresh.
 	$effect(() => {
 		if (open) invalidateAll();
+	});
+
+	$effect(() => {
+		if (!open) scopeStep = false;
 	});
 
 	$effect(() => {
@@ -173,6 +194,8 @@
 		(v) => (saving = v),
 		({ formData }) => {
 		formData.set('id', editing ? String(editing.id) : '');
+		formData.set('edit_scope', editing ? editScope : '');
+		formData.set('occurrence_date', editing ? (occurrenceDate ?? '') : '');
 		formData.set('type', type);
 		formData.set('name', name);
 		formData.set('amount', amount);
@@ -207,6 +230,7 @@
 			await update();
 			// 'success' also covers actions that return an error object — only close when there is none.
 			if (result.type === 'redirect' || (result.type === 'success' && !result.data?.error)) {
+				scopeStep = false;
 				open = false;
 				onclose?.();
 			}
@@ -219,7 +243,7 @@
 	bind:open
 	size="lg"
 	busy={saving}
-	title={editing ? 'Edit scheduled expectation' : 'New scheduled expectation'}
+	title={scopeStep ? 'Edit scheduled transaction' : editing ? 'Edit scheduled expectation' : 'New scheduled expectation'}
 	description={
 		editing
 			? undefined
@@ -231,7 +255,7 @@
 			<input type="hidden" name="id" value={editing.id} />
 		</form>
 	{/if}
-	<form method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+	<form bind:this={formEl} method="POST" action={action} use:enhance={handleSubmit} class="{scopeStep ? 'hidden' : 'flex'} flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
 		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 		{#each Object.entries(extraHidden) as [k, v] (k)}
 			<input type="hidden" name={k} value={v} />
@@ -394,8 +418,41 @@
 				</Button>
 			{/if}
 			<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
-			<Button type="submit" pending={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Add expectation'}</Button>
+			{#if editing}
+				<Button type="button" pending={saving} onclick={() => { editScope = 'following'; scopeStep = true; }}>Save changes</Button>
+			{:else}
+				<Button type="submit" pending={saving}>{saving ? 'Saving…' : 'Add expectation'}</Button>
+			{/if}
 		</div>
 		</fieldset>
 	</form>
+	{#if scopeStep}
+		<p class="text-sm text-muted-foreground">{scopeContext}</p>
+		<p class="mt-3 text-sm font-medium">Apply this change to:</p>
+		<fieldset disabled={saving} class="m-0 mt-2 flex flex-col gap-2 border-0 p-0">
+			<label class="flex items-start gap-2 text-sm">
+				<input type="radio" name="schedule_edit_scope" value="once" bind:group={editScope} />
+				<span>Just this date (exception on that one occurrence; rest of the series unchanged)</span>
+			</label>
+			<label class="flex items-start gap-2 text-sm">
+				<input type="radio" name="schedule_edit_scope" value="following" bind:group={editScope} />
+				<span>This date and everything after (default)</span>
+			</label>
+			<label class="flex items-start gap-2 text-sm">
+				<input type="radio" name="schedule_edit_scope" value="all" bind:group={editScope} />
+				<span>The whole series, including the past</span>
+			</label>
+			<label class="flex items-start gap-2 text-sm">
+				<input type="radio" name="schedule_edit_scope" value="new" bind:group={editScope} />
+				<span>Keep the old series and start a new one from here (past stays as it was; new schedule from this date)</span>
+			</label>
+		</fieldset>
+		{#if form?.error}
+			<p class="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
+		{/if}
+		<div class="mt-4 flex items-center justify-end gap-2">
+			<Button variant="secondary" type="button" disabled={saving} onclick={() => (scopeStep = false)}>Cancel</Button>
+			<Button type="button" pending={saving} onclick={() => formEl?.requestSubmit()}>{saving ? 'Saving…' : 'Save'}</Button>
+		</div>
+	{/if}
 </Dialog>

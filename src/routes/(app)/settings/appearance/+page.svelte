@@ -23,7 +23,7 @@
 		form,
 		data
 	}: {
-		form: { error?: string | null; message?: string | null } | undefined;
+		form: { error?: string | null; message?: string | null; publishError?: string | null; rateLimited?: boolean } | undefined;
 		data: {
 			themes: Theme[];
 			selected: string;
@@ -303,6 +303,11 @@
 					>
 						<Button type="submit" variant="secondary" pending={publishing}>Publish</Button>
 					</form>
+					{#if form?.publishError}
+						<p class="text-sm {form.rateLimited ? 'text-warning' : 'text-destructive'}" role="status" data-testid="publish-error">
+							{form.publishError}
+						</p>
+					{/if}
 				{:else}
 					<p class="text-sm text-muted-foreground">Publishing is turned off on the public demo.</p>
 				{/if}

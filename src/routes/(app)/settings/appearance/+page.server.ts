@@ -10,6 +10,7 @@ import {
 import { parseThemePack, uniqueThemeName } from '$lib/theme-pack';
 import { isDemoMode } from '$lib/server/demoMode';
 import { publishCurrentTheme } from '$lib/server/themeGallery';
+import { publishThemeAction } from '$lib/server/themeGalleryAction';
 import { DEFAULT_THEME_SLUG, RADIUS_RE, isHexColor } from '$lib/themes';
 import { EMBLEM_ICON_KEY, ICONS, isValidBrandingIcon, normalizeBrandingIcon } from '$lib/icons';
 import type { ThemeColors } from '$lib/types';
@@ -130,9 +131,7 @@ export const actions = {
 	},
 
 	'publish-theme': async ({ locals }) => {
-		const result = await publishCurrentTheme(locals.user!.id);
-		if (!result.ok) return { error: result.error };
-		return { ok: true, message: result.message };
+		return publishThemeAction(() => publishCurrentTheme(locals.user!.id));
 	},
 
 	'save-week-start': async ({ request, locals }) => {

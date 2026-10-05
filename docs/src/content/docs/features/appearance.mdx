@@ -71,6 +71,14 @@ galene-theme-publish
 
 The gallery rejects a request with a missing or invalid signature, or a timestamp more than five minutes from its own clock, so keep the host clock in sync (NTP). Back up the database as usual: restoring it keeps the same instance key, while a fresh database makes a new one.
 
+### Duplicate colors
+
+The gallery rejects a publish whose colors exactly match a theme that is already listed, no matter the name or which instance sends it. Colors are compared after normalizing hex to lowercase; light and dark blocks are included when the pack has them. A duplicate is refused (HTTP 409) and Appearance shows a message such as:
+
+> These colors are already published as “Ocean”. You can't publish the same colors again.
+
+A duplicate refusal does not use up the hourly publish slot.
+
 ### One publish per hour
 
 The gallery allows **one successful publish per instance per hour**, counted per instance key. A publish the gallery declines does not use up the hour. The gallery enforces this limit, not the app. A second publish inside the hour is refused (HTTP 429) and Appearance shows a message such as:

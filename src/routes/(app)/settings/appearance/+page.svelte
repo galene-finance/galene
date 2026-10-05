@@ -23,7 +23,7 @@
 		form,
 		data
 	}: {
-		form: { error?: string | null; message?: string | null; publishError?: string | null; rateLimited?: boolean } | undefined;
+		form: { error?: string | null; message?: string | null; publishError?: string | null; rateLimited?: boolean; duplicateColors?: boolean } | undefined;
 		data: {
 			themes: Theme[];
 			selected: string;

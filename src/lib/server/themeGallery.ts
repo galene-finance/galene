@@ -62,12 +62,13 @@ function allowedGalleryUrl(raw: string): boolean {
 
 /**
  * `status` is the HTTP status the Appearance action should fail with:
- * 403 demo, 429 the gallery's hourly limit, 400 the gallery refused the
- * theme or the address, 502 the gallery could not be reached or failed.
+ * 403 demo, 409 duplicate colors, 429 the gallery's hourly limit, 400 the
+ * gallery refused the theme or the address, 502 the gallery could not be
+ * reached or failed.
  */
 export type PublishResult =
 	| { ok: true; message: string }
-	| { ok: false; status: 400 | 403 | 429 | 502; error: string; retryAfterSec?: number };
+	| { ok: false; status: 400 | 403 | 409 | 429 | 502; error: string; retryAfterSec?: number };
 
 export const RATE_LIMIT_MESSAGE = 'You can publish one theme per hour. Try again later.';
 
@@ -120,9 +121,9 @@ export async function publishThemePack(
 		return { ok: false, status: 502, error: 'Could not reach the theme gallery.' };
 	}
 	if (response.status === 201) return { ok: true, message: 'Published to the theme gallery.' };
-	let data: { error?: unknown; retryAfterSec?: unknown } | null = null;
+	let data: { error?: unknown; retryAfterSec?: unknown; code?: unknown } | null = null;
 	try {
-		data = (await response.json()) as { error?: unknown; retryAfterSec?: unknown };
+		data = (await response.json()) as { error?: unknown; retryAfterSec?: unknown; code?: unknown };
 	} catch {
 		data = null;
 	}
@@ -130,8 +131,23 @@ export async function publishThemePack(
 		const retryAfterSec = retryAfterSeconds(data, response.headers.get('retry-after'));
 		return { ok: false, status: 429, error: rateLimitMessage(retryAfterSec), retryAfterSec };
 	}
+	if (response.status === 409) {
+		const code = data && typeof data.code === 'string' ? data.code : '';
+		const detail =
+			data && typeof data.error === 'string' && /^[A-Za-z0-9 .,'():\u201c\u201d-]{1,200}$/.test(data.error)
+				? data.error
+				: '';
+		if (code === 'duplicate_colors' && detail) {
+			return { ok: false, status: 409, error: detail };
+		}
+		return {
+			ok: false,
+			status: 409,
+			error: detail || "These colors are already published. You can't publish the same colors again."
+		};
+	}
 	let detail = '';
-	if (data && typeof data.error === 'string' && /^[A-Za-z0-9 .,'():-]{1,160}$/.test(data.error)) detail = data.error;
+	if (data && typeof data.error === 'string' && /^[A-Za-z0-9 .,'():\u201c\u201d-]{1,200}$/.test(data.error)) detail = data.error;
 	const status = response.status >= 400 && response.status < 500 ? 400 : 502;
 	return { ok: false, status, error: detail || 'The theme gallery did not accept this theme.' };
 }

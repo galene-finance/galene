@@ -47,6 +47,21 @@ describe('publish-theme action', () => {
 		expect(data.retryAfterSec).toBe(3599);
 	});
 
+
+	test('gallery duplicate colors fails with 409 and the gallery message', async () => {
+		const msg = 'These colors are already published as “Ocean”. You can\'t publish the same colors again.';
+		const result = await publishThemeAction(async () => ({
+			ok: false,
+			status: 409,
+			error: msg
+		}));
+		expect('status' in result && result.status).toBe(409);
+		const data = (result as { data: { publishError: string; duplicateColors: boolean; rateLimited: boolean } }).data;
+		expect(data.publishError).toBe(msg);
+		expect(data.duplicateColors).toBe(true);
+		expect(data.rateLimited).toBe(false);
+	});
+
 	test('success stays a normal action result', async () => {
 		const result = await publishThemeAction(async () => ({ ok: true, message: 'Published to the theme gallery.' }));
 		expect(result).toEqual({ ok: true, message: 'Published to the theme gallery.' });

@@ -119,6 +119,33 @@ describe('theme gallery publish', () => {
 		expect(rateLimitMessage()).toBe('You can publish one theme per hour. Try again later.');
 	});
 
+
+	test('turns the gallery 409 duplicate_colors into the gallery message', async () => {
+		const msg = 'These colors are already published as “Ocean”. You can\'t publish the same colors again.';
+		const result = await publishThemePack('{}', {
+			url: gallery,
+			fetchImpl: async () =>
+				new Response(JSON.stringify({ error: msg, code: 'duplicate_colors', existingName: 'Ocean' }), {
+					status: 409
+				})
+		});
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.status).toBe(409);
+		expect(result.error).toBe(msg);
+	});
+
+	test('uses a fallback message when a 409 body is unreadable', async () => {
+		const result = await publishThemePack('{}', {
+			url: gallery,
+			fetchImpl: async () => new Response('<html>', { status: 409 })
+		});
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.status).toBe(409);
+		expect(result.error).toContain('already published');
+	});
+
 	test('maps other gallery refusals to 400 and outages to 502', async () => {
 		const refused = await publishThemePack('{}', {
 			url: gallery,

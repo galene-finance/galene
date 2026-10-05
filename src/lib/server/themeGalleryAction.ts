@@ -3,7 +3,7 @@ import type { PublishResult } from './themeGallery';
 
 /**
  * Appearance `publish-theme` action result. A refusal is a real HTTP failure:
- * 403 on the public demo, 429 when the gallery's hourly limit says no.
+ * 403 on the public demo, 409 when colors already exist, 429 when the gallery's hourly limit says no.
  * The gallery is the authoritative limit; the app does not keep its own.
  */
 export async function publishThemeAction(run: () => Promise<PublishResult>) {
@@ -13,6 +13,7 @@ export async function publishThemeAction(run: () => Promise<PublishResult>) {
 			error: result.error,
 			publishError: result.error,
 			rateLimited: result.status === 429,
+			duplicateColors: result.status === 409,
 			retryAfterSec: result.retryAfterSec ?? null
 		});
 	}

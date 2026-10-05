@@ -920,6 +920,18 @@ CREATE INDEX IF NOT EXISTS idx_webhooks_user ON webhooks(user_id);
 			);
 		}
 	}
+},
+{
+	// Instance signing key for the public theme gallery. One row. The private
+	// key never leaves this database; publishes send only a signature.
+	sql: `
+CREATE TABLE IF NOT EXISTS gallery_instance (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	public_key TEXT NOT NULL,
+	private_key TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`
 }
 ];
 

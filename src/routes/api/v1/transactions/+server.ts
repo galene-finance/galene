@@ -1,3 +1,4 @@
+import { handleWriteRequest } from '$lib/server/writeApi';
 import { apiUser, idList, json, unauthorized } from '$lib/server/api';
 import { parseEmptyFields } from '$lib/server/transactionFilters';
 import { scopedTransactions, viewerScope } from '$lib/server/scopeQuery';
@@ -36,4 +37,8 @@ export function GET(event) {
 		pageSize
 	}, viewerScope(event));
 	return json(200, result);
+}
+
+export function POST(event) {
+	return handleWriteRequest(event, 'transaction');
 }

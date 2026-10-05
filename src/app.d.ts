@@ -11,6 +11,8 @@ declare global {
 			user: User | null;
 			/** Set for a magic-link advisor session. Mutations must 403. */
 			viewer: { grantId: number; scope: GrantScope } | null;
+			/** Set when the request authenticated with an API token. Writes require scope write. */
+			apiToken: { id: number; scope: 'read' | 'write' } | null;
 		}
 	}
 }

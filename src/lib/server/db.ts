@@ -873,6 +873,65 @@ CREATE TABLE IF NOT EXISTS scheduled_exception_tags (
 	PRIMARY KEY (exception_id, tag_id)
 );
 `
+},
+{
+	// Phase: opt-in write API (ADO-18). Additive only. The scope column is added
+	// in `after` so a replay (the migrate fixture rewinds user_version) does not
+	// fail with "duplicate column". No parent-table rebuild.
+	sql: `
+CREATE TABLE IF NOT EXISTS write_api_config (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	enabled INTEGER NOT NULL DEFAULT 0,
+	updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS api_audit (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	token_id INTEGER REFERENCES api_tokens(id) ON DELETE SET NULL,
+	action TEXT NOT NULL,
+	resource TEXT NOT NULL,
+	resource_id INTEGER,
+	detail TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_api_audit_user ON api_audit(user_id, id);
+
+CREATE TABLE IF NOT EXISTS webhooks (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	name TEXT NOT NULL,
+	url TEXT NOT NULL,
+	secret TEXT NOT NULL,
+	secret_hint TEXT NOT NULL,
+	events TEXT NOT NULL,
+	filters TEXT NOT NULL DEFAULT '{}',
+	fields TEXT NOT NULL,
+	enabled INTEGER NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_webhooks_user ON webhooks(user_id);
+`,
+	after(database) {
+		const cols = database.query('PRAGMA table_info(api_tokens)').all() as { name: string }[];
+		if (!cols.some((col) => col.name === 'scope')) {
+			database.exec(
+				`ALTER TABLE api_tokens ADD COLUMN scope TEXT NOT NULL DEFAULT 'read' CHECK (scope IN ('read','write'))`
+			);
+		}
+	}
+},
+{
+	// Instance signing key for the public theme gallery. One row. The private
+	// key never leaves this database; publishes send only a signature.
+	sql: `
+CREATE TABLE IF NOT EXISTS gallery_instance (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	public_key TEXT NOT NULL,
+	private_key TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`
 }
 ];
 

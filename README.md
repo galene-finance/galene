@@ -35,6 +35,7 @@ It values **privacy by default** (your SQLite database on your host), **clarity 
 - Installable on a phone
 - Advisor access: a frozen Accountant Pack, or a read-only Viewer
 - Read-only API, and MCP over stdio or HTTP with an API token (MCP ships in the app image; HTTP at `/mcp` on the app port, off by default in Settings)
+- Opt-in write API and signed webhooks, off by default
 - Account menu shows the app version and commit
 - Docker, Podman, or from source
 

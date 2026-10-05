@@ -36,12 +36,13 @@ export const actions = {
 		const { input, error } = scheduledInputFromForm(locals.user!.id, form);
 		if (error || !input) return fail(400, { error: error ?? 'Could not save.' });
 		input.forecastBehavior = 'bill';
+		let id: number;
 		try {
-			saveScheduled(locals.user!.id, input);
+			id = saveScheduled(locals.user!.id, input);
 		} catch (e) {
 			return fail(400, { error: e instanceof Error ? e.message : 'Could not save.' });
 		}
 		if (dismissKey) dismissRecurringSuggestion(locals.user!.id, dismissKey);
-		return { ok: true, message: 'Scheduled expectation added.' };
+		return { ok: true, id, message: 'Scheduled expectation added.' };
 	}
 };

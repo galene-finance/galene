@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApiToken, resolveApiToken } from './apiTokens';
 import { closeDbForTests, db, migrate } from './db';
-import { saveAccount, saveCategory } from './finance';
+import { saveAccount, saveCategory, saveScheduled, saveTransaction } from './finance';
+import { flushDataChanges } from './webhookNotify';
 import { createUser } from './users';
 import {
 	createWebhook,
@@ -232,3 +233,98 @@ describe('webhooks', () => {
 		expect(listWebhooks(id)[0]).not.toHaveProperty('secret');
 	});
 });
+
+describe('app edits and new series id', () => {
+	test('an in-app transaction save sends one matching webhook', async () => {
+		const id = userId();
+		const acct = accountId(id);
+		const created = createWebhook(id, {
+			name: 'app',
+			url: 'https://example.com/hook',
+			events: ['transaction.created'],
+			filters: {},
+			fields: ['id', 'merchant']
+		});
+		expect(created.ok).toBe(true);
+		if (!created.ok) return;
+		const calls: { body: string }[] = [];
+		setWebhookTransportForTests(async (_url, init) => {
+			calls.push({ body: String(init.body) });
+			return new Response('ok');
+		});
+		saveTransaction(id, {
+			type: 'expense',
+			amountCents: 800,
+			date: '2026-10-04',
+			account: acct,
+			category: null,
+			merchant: 'Market',
+			notes: null,
+			color: null,
+			tags: []
+		});
+		await flushDataChanges();
+		expect(calls).toHaveLength(1);
+		const payload = JSON.parse(calls[0]!.body) as Record<string, unknown>;
+		expect(payload.merchant).toBe('Market');
+		expect(payload).not.toHaveProperty('amount_cents');
+	});
+
+	test('edit_scope new returns the new series id once', async () => {
+		const id = userId();
+		expect(saveWriteApiSettings(true).ok).toBe(true);
+		const { info } = createApiToken(id, 'writer', 'write');
+		const original = saveScheduled(id, {
+			name: 'Rent',
+			amountCents: -10000,
+			startDate: '2026-01-01',
+			account: null,
+			category: null,
+			notes: null,
+			color: null,
+			repeats: true,
+			repeatInterval: 1,
+			repeatUnit: 'month',
+			untilDate: null,
+			forecastBehavior: 'bill',
+			tags: []
+		});
+		await flushDataChanges();
+		const created = createWebhook(id, {
+			name: 'sched',
+			url: 'https://example.com/hook',
+			events: ['schedule.created'],
+			filters: {},
+			fields: ['id', 'name']
+		});
+		expect(created.ok).toBe(true);
+		const calls: { body: string }[] = [];
+		setWebhookTransportForTests(async (_url, init) => {
+			calls.push({ body: String(init.body) });
+			return new Response('ok');
+		});
+		const result = await executeWrite({
+			caller: { userId: id, token: { id: info.id, scope: 'write' } },
+			resource: 'schedule',
+			method: 'PATCH',
+			id: original,
+			body: {
+				name: 'Rent new',
+				amount_cents: -17500,
+				start_date: '2026-06-01',
+				repeat_unit: 'month',
+				repeat_interval: 1,
+				edit_scope: 'new',
+				occurrence_date: '2026-06-01'
+			}
+		});
+		expect(result.status).toBe(200);
+		const body = result.body as { id: number };
+		expect(body.id).not.toBe(original);
+		const rows = db().query('SELECT id, name FROM scheduled WHERE user_id = ?').all(id) as { id: number; name: string }[];
+		expect(rows.find((row) => row.name === 'Rent new')?.id).toBe(body.id);
+		expect(calls).toHaveLength(1);
+		expect(JSON.parse(calls[0]!.body).id).toBe(body.id);
+	});
+});
+

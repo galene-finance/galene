@@ -56,11 +56,11 @@ export const actions = {
 		const { input, error } = scheduledInputFromForm(locals.user!.id, await request.formData());
 		if (error || !input) return { error };
 		try {
-			saveScheduled(locals.user!.id, input);
+			const id = saveScheduled(locals.user!.id, input);
+			return { ok: true, id };
 		} catch (e) {
 			return { error: e instanceof Error ? e.message : 'Could not save.' };
 		}
-		return { ok: true };
 	},
 
 	'delete-scheduled': async ({ request, locals }) => {

@@ -333,8 +333,8 @@
 			<p class="text-sm text-muted-foreground">
 				Each webhook has its own HTTPS URL, event list, simple filters (account, category, amount), and payload
 				fields. Unselected fields are left out. Every request is HMAC-signed. There is no unsigned option. The
-				signing secret is shown once, here, and can be rotated. Webhooks run after a successful write-API change,
-				not after an edit in the app.
+				signing secret is shown once, here, and can be rotated. Webhooks run after a change from the write API or
+				from the app, once per save.
 			</p>
 		</div>
 		<div class="flex flex-col gap-4 p-4">

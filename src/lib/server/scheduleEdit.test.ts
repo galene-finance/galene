@@ -161,7 +161,7 @@ describe('schedule edit scopes', () => {
 		reset();
 		saveScheduled(uid(), baseInput());
 		const id = getScheduled(uid())[0].id;
-		saveScheduled(
+		const createdId = saveScheduled(
 			uid(),
 			baseInput({ id, name: 'Rent new', amountCents: -17500, editScope: 'new', occurrenceDate: '2026-06-01' })
 		);
@@ -169,6 +169,8 @@ describe('schedule edit scopes', () => {
 		expect(rows).toHaveLength(2);
 		const oldRow = rows.find((r) => r.id === id)!;
 		const created = rows.find((r) => r.id !== id)!;
+		expect(createdId).toBe(created.id);
+		expect(createdId).not.toBe(id);
 		expect(oldRow.until).toBe('2026-05-31');
 		expect(oldRow.dates.map((d) => d.date)).toEqual([
 			'2026-01-01',

@@ -1,13 +1,13 @@
 ---
 title: API & MCP
-description: The read-only REST API and the bundled MCP server.
+description: The REST API, opt-in writes, signed webhooks, and the bundled MCP server.
 ---
 
-Galene exposes its data two ways: a read-only JSON REST API, and an MCP (Model Context Protocol) server that wraps it for AI assistants. The MCP server talks stdio when a client launches it, or HTTP on the **same host and port as the app** at `/mcp` when an administrator enables it in Settings (default **off**).
+Galene exposes its data two ways: a JSON REST API (reads for every token; writes opt-in), and an MCP (Model Context Protocol) server that wraps the read API for AI assistants. The MCP server talks stdio when a client launches it, or HTTP on the **same host and port as the app** at `/mcp` when an administrator enables it in Settings (default **off**).
 
 ## REST API
 
-Nine read-only endpoints under `/api/v1`: summary, accounts, transactions, categories, tags, budgets, scheduled, cashflow, and notifications. All amounts are integer cents (negative = expense); dates are `YYYY-MM-DD`.
+Nine GET endpoints under `/api/v1` stay available to every token: summary, accounts, transactions, categories, tags, budgets, scheduled, cashflow, and notifications. Writes are a separate, opt-in surface described below. All amounts are integer cents (negative = expense); dates are `YYYY-MM-DD`.
 
 `GET /api/v1/accounts` returns each account’s `opening_balance_cents` and `opening_as_of` (null until set) plus ledger `balance_cents` computed as **opening + transactions on/after as-of** (opening is the balance *before* those transactions). After bank sync it may also include `provider_balance_cents` and `provider_balance_as_of` (null for manual accounts or until a sync reports a balance). `GET /api/v1/summary` `balanceCents` uses the ledger rule across all accounts.
 
@@ -18,6 +18,35 @@ curl -H "Authorization: Bearer galene_…" http://localhost:3000/api/v1/summary
 ```
 
 Unauthenticated requests get a JSON `401`.
+
+
+## Write API
+
+The write API is **off by default**. An administrator turns it on under Settings → API. Until then, `POST`, `PATCH`, and `DELETE` return `403`.
+
+A token must be created with **write** scope. A read token is rejected even when the toggle is on. Browser sessions are not a write credential. Writes cover the data the app already edits: transactions, categories, schedules, and the same accounts, tags, budgets, rules, and splits. There is no separate product object for the API.
+
+Every successful write is stored in an audit log (user, token, action, and the change). The public demo still blocks writes (`403`), the same as other demo locks. MCP tools are unchanged and stay read-only.
+
+Amounts are integer cents (negative = expense). Dates are `YYYY-MM-DD`.
+
+```bash
+curl -X POST -H "Authorization: Bearer galene_…" -H "Content-Type: application/json" \
+  -d '{"date":"2026-10-04","amount_cents":-500,"account_id":1,"merchant":"Cafe"}' \
+  http://localhost:3000/api/v1/transactions
+```
+
+`PATCH` and `DELETE` use the row id, for example `/api/v1/transactions/42`. Account delete requires `reassign_to`. Schedule updates accept `edit_scope` of `once`, `following`, `all`, or `new` when changing an existing series.
+
+## Webhooks
+
+Each user can add more than one webhook. A webhook has:
+
+- Its own **HTTPS** URL. Any other scheme is rejected. There is no unsigned option.
+- **Conditions**: an event type (`transaction.created`, `category.updated`, `schedule.deleted`, and the same pattern for account, tag, budget, and rule, plus `split.updated`) and optional filters `account_id`, `category_id`, `min_amount_cents`, and `max_amount_cents`. Filters are exact ids and an amount range. There is no scripting language.
+- A **field list** for the JSON body (`event`, `resource`, `action`, `id`, `name`, `amount_cents`, `date`, `account_id`, `category_id`, `merchant`, `notes`, `type`). Fields you do not select are omitted.
+
+Galene signs the raw body with the webhook's secret: header `X-Galene-Signature: sha256=<hex>`. The secret is shown **once** when you create the webhook and again when you rotate it. The list shows only a hint. Webhooks run after a successful write-API change, not after an edit made in the app UI.
 
 ## MCP in the app image
 

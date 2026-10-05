@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { getUserByToken, isSecureCookie } from '$lib/server/auth';
-import { getUserByApiToken } from '$lib/server/apiTokens';
+import { resolveApiToken } from '$lib/server/apiTokens';
 import { getViewerByToken } from '$lib/server/advisor';
 import { forbidViewerMutation, guardViewerPage } from '$lib/server/viewerGuard';
 import { startSyncScheduler } from '$lib/server/scheduler';
@@ -27,6 +27,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const token = event.cookies.get('galene_session');
 	let user = null;
 	event.locals.viewer = null;
+	event.locals.apiToken = null;
 	// Viewer magic-link sessions share the session cookie name but live in
 	// their own table. Check them first so a viewer is never treated as owner.
 	// Demo mode locks advisor access — ignore viewer sessions entirely.
@@ -61,8 +62,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (!user && !demo) {
 		const auth = event.request.headers.get('authorization');
 		if (auth?.startsWith('Bearer ')) {
-			const apiUser = getUserByApiToken(auth.slice('Bearer '.length).trim());
-			if (apiUser) user = { ...apiUser, role: 'owner' as const };
+			const resolved = resolveApiToken(auth.slice('Bearer '.length).trim());
+			if (resolved) {
+				user = { ...resolved.user, role: 'owner' as const };
+				event.locals.apiToken = { id: resolved.tokenId, scope: resolved.scope };
+			}
 		}
 	}
 	event.locals.user = user;

@@ -18,6 +18,8 @@ export function GET(event) {
 		name: 'galene-api',
 		version: '1',
 		amounts: 'All amounts are integer cents (negative = expense). Dates are YYYY-MM-DD.',
+		writes:
+			'Off by default. POST, PATCH, and DELETE on accounts, transactions, categories, tags, budgets, scheduled, and rules require the write API to be enabled and a token with write scope. Demo mode rejects writes.',
 		endpoints: ENDPOINTS
 	});
 }

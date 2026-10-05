@@ -1,3 +1,4 @@
+import { handleWriteRequest } from '$lib/server/writeApi';
 import { apiUser, json, unauthorized } from '$lib/server/api';
 import { budgetPeriodSpend, getBudgets } from '$lib/server/finance';
 
@@ -9,4 +10,8 @@ export function GET(event) {
 		return { ...b, spent_cents: spentCents, period_from: from, period_to: to };
 	});
 	return json(200, { budgets });
+}
+
+export function POST(event) {
+	return handleWriteRequest(event, 'budget');
 }

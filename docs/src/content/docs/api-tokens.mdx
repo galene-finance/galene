@@ -10,8 +10,9 @@ Tokens are how scripts, the MCP server, and other clients authenticate to Galene
 In **Settings → API**, the **API tokens** section lists your tokens and lets you create and delete them:
 
 1. Enter a **Name** — anything that helps you remember where the token is used (e.g. `laptop`, `claude`).
-2. Press **Create token**.
-3. Copy the token from the page. It starts with `galene_` and is **shown only once** — if you lose it, create a new one instead.
+2. Choose a **scope**. **Read** (the default) can call the read API and MCP. **Write** can change data, but only after an administrator turns the write API on (it is off by default). A read token is rejected for writes.
+3. Press **Create token**.
+4. Copy the token from the page. It starts with `galene_` and is **shown only once** — if you lose it, create a new one instead.
 
 To revoke a token, press **Delete** next to it. There is no separate revoke step; deleting is revoking.
 
@@ -58,3 +59,7 @@ HTTP MCP on the app (path `/mcp`) does not use that variable. Enable MCP in Sett
 
 - Tokens bypass two-factor authentication; the browser still asks for a TOTP code.
 - Galene stores only a salted hash of each token, so it cannot show a token again — that is why it is shown exactly once, at creation.
+
+## Scopes
+
+Each token is **read** or **write**. Existing tokens stay read. Read tokens, browser sessions, and the MCP server cannot call write endpoints. A write token receives `403` until an administrator enables the write API under Settings → API. The public demo rejects token creation and every write.

@@ -1,3 +1,4 @@
+import { handleWriteRequest } from '$lib/server/writeApi';
 import { apiUser, json, unauthorized } from '$lib/server/api';
 import { ACCOUNT_BALANCE_EXPR, accountBalanceAsOfExpr } from '$lib/server/finance';
 import { db } from '$lib/server/db';
@@ -56,4 +57,8 @@ export function GET(event) {
 			balance_cents: Math.round(r.balance_cents)
 		}))
 	});
+}
+
+export function POST(event) {
+	return handleWriteRequest(event, 'account');
 }

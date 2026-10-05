@@ -60,7 +60,35 @@ function allowedGalleryUrl(raw: string): boolean {
 	return url.protocol === 'http:' && local;
 }
 
-export type PublishResult = { ok: true; message: string } | { ok: false; error: string };
+/**
+ * `status` is the HTTP status the Appearance action should fail with:
+ * 403 demo, 429 the gallery's hourly limit, 400 the gallery refused the
+ * theme or the address, 502 the gallery could not be reached or failed.
+ */
+export type PublishResult =
+	| { ok: true; message: string }
+	| { ok: false; status: 400 | 403 | 429 | 502; error: string; retryAfterSec?: number };
+
+export const RATE_LIMIT_MESSAGE = 'You can publish one theme per hour. Try again later.';
+
+/** Whole seconds from the gallery's JSON `retryAfterSec`, else the Retry-After header. */
+function retryAfterSeconds(data: { retryAfterSec?: unknown } | null, header: string | null): number | undefined {
+	const fromBody = data?.retryAfterSec;
+	if (typeof fromBody === 'number' && Number.isFinite(fromBody) && fromBody > 0) return Math.ceil(fromBody);
+	if (header && /^\d{1,7}$/.test(header.trim())) {
+		const n = Number(header.trim());
+		if (n > 0) return n;
+	}
+	return undefined;
+}
+
+/** "You can publish one theme per hour. Try again in about 12 minutes." */
+export function rateLimitMessage(retryAfterSec?: number): string {
+	if (!retryAfterSec) return RATE_LIMIT_MESSAGE;
+	const minutes = Math.max(1, Math.ceil(retryAfterSec / 60));
+	const when = minutes === 1 ? 'about a minute' : `about ${minutes} minutes`;
+	return `You can publish one theme per hour. Try again in ${when}.`;
+}
 
 type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; redirect: 'error'; signal: AbortSignal }) => Promise<Response>;
 
@@ -69,7 +97,7 @@ export async function publishThemePack(
 	deps?: { fetchImpl?: FetchLike; url?: string; now?: () => number }
 ): Promise<PublishResult> {
 	const url = deps?.url ?? themeGalleryPublishUrl();
-	if (!allowedGalleryUrl(url)) return { ok: false, error: 'Theme gallery address is not allowed.' };
+	if (!allowedGalleryUrl(url)) return { ok: false, status: 400, error: 'Theme gallery address is not allowed.' };
 	const keys = ensureInstanceKey();
 	const timestamp = String(Math.floor((deps?.now ?? Date.now)() / 1000));
 	const signature = sign(null, publishMessage(timestamp, Buffer.from(body, 'utf8')), keys.privateKey).toString('base64url');
@@ -89,17 +117,23 @@ export async function publishThemePack(
 			signal: AbortSignal.timeout(10_000)
 		});
 	} catch {
-		return { ok: false, error: 'Could not reach the theme gallery.' };
+		return { ok: false, status: 502, error: 'Could not reach the theme gallery.' };
 	}
 	if (response.status === 201) return { ok: true, message: 'Published to the theme gallery.' };
-	let detail = '';
+	let data: { error?: unknown; retryAfterSec?: unknown } | null = null;
 	try {
-		const data = (await response.json()) as { error?: unknown };
-		if (typeof data.error === 'string' && /^[A-Za-z0-9 .,'():-]{1,160}$/.test(data.error)) detail = data.error;
+		data = (await response.json()) as { error?: unknown; retryAfterSec?: unknown };
 	} catch {
-		detail = '';
+		data = null;
 	}
-	return { ok: false, error: detail || 'The theme gallery did not accept this theme.' };
+	if (response.status === 429) {
+		const retryAfterSec = retryAfterSeconds(data, response.headers.get('retry-after'));
+		return { ok: false, status: 429, error: rateLimitMessage(retryAfterSec), retryAfterSec };
+	}
+	let detail = '';
+	if (data && typeof data.error === 'string' && /^[A-Za-z0-9 .,'():-]{1,160}$/.test(data.error)) detail = data.error;
+	const status = response.status >= 400 && response.status < 500 ? 400 : 502;
+	return { ok: false, status, error: detail || 'The theme gallery did not accept this theme.' };
 }
 
 function demoPublishBlocked(): string | null {
@@ -113,7 +147,7 @@ function demoPublishBlocked(): string | null {
 /** Publish the theme currently selected for this user. Demo mode never publishes. */
 export async function publishCurrentTheme(userId: number, deps?: { fetchImpl?: FetchLike; url?: string; now?: () => number }): Promise<PublishResult> {
 	const blocked = demoPublishBlocked();
-	if (blocked) return { ok: false, error: blocked };
+	if (blocked) return { ok: false, status: 403, error: blocked };
 	// Loaded only when publishing so unit tests can run without the Kit alias.
 	const { resolveTheme } = await import('./themes');
 	const theme = resolveTheme(userId);

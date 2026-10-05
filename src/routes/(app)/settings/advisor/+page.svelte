@@ -49,22 +49,19 @@
 
 <Title title="Advisor access" />
 
-<div class="mx-auto flex min-w-0 max-w-3xl flex-col gap-6">
+<div class="settings-stack mx-auto min-w-0 max-w-3xl">
 	<div>
 		<a href="/settings" class="text-sm text-muted-foreground hover:text-foreground">← Settings</a>
 		<h1 class="mt-2 text-2xl font-semibold tracking-tight">Advisor access</h1>
-		
-	<DemoReadonlyBanner demo={Boolean(data.demo)} feature="Advisor access" />
-
-	<div data-demo-readonly-shell inert={data.demo || undefined} class={data.demo ? 'pointer-events-none opacity-60' : undefined}>
-
-
-<p class="mt-1 text-sm text-muted-foreground">
+		<p class="mt-1 text-sm text-muted-foreground">
 			Generate a frozen accountant pack or invite a read-only viewer. Links expire and can be revoked.
 			Balances in a pack are the ledger through the end of the date range.
 		</p>
 	</div>
 
+	<DemoReadonlyBanner demo={Boolean(data.demo)} feature="Advisor access" />
+
+	<div data-demo-readonly-shell inert={data.demo || undefined} class={data.demo ? 'pointer-events-none opacity-60' : undefined}>
 	<form
 		method="POST"
 		action="?/create"

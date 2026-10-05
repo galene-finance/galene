@@ -62,3 +62,17 @@ body {
 	@apply bg-background text-foreground antialiased;
 }
 
+/*
+ * Settings pages: one vertical gap between adjacent sections (ADO-48).
+ * Every Settings sub-page puts `settings-stack` on its content container.
+ * The demo read-only shell wraps sections on some pages, so it stacks its
+ * children with the same gap instead of letting them touch.
+ */
+@layer components {
+	.settings-stack,
+	.settings-stack > [data-demo-readonly-shell] {
+		display: flex;
+		flex-direction: column;
+		gap: calc(var(--spacing) * 4);
+	}
+}

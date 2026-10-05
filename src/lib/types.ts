@@ -218,7 +218,8 @@ export interface AppNotification {
 	resolved_at: string | null;
 }
 
-export type RuleField = 'merchant' | 'amount' | 'account';
+/** Shared by auto-categorization rules and webhook When conditions. Rules ignore `category`. */
+export type RuleField = 'merchant' | 'amount' | 'account' | 'category';
 export type RuleOp = 'contains' | 'equals' | 'gt' | 'lt' | 'between';
 
 export interface RuleCondition {

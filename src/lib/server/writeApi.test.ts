@@ -12,9 +12,12 @@ import {
 	executeWrite,
 	httpsWebhookUrl,
 	isWriteApiEnabled,
+	legacyFiltersToConditions,
 	listWebhooks,
 	projectPayload,
 	rotateWebhookSecret,
+	updateWebhook,
+	webhookMatches,
 	saveWriteApiSettings,
 	setWebhookTransportForTests,
 	signWebhookBody,
@@ -231,6 +234,113 @@ describe('webhooks', () => {
 		if (!rotated.ok) return;
 		expect(rotated.secret).not.toBe(created.secret);
 		expect(listWebhooks(id)[0]).not.toHaveProperty('secret');
+	});
+
+	test('AND conditions match abs amount and merchant contains; empty When matches the event', async () => {
+		const id = userId();
+		const acct = accountId(id);
+		const created = createWebhook(id, {
+			name: 'kroger',
+			url: 'https://hooks.example.com/galene',
+			events: ['transaction.created', 'transaction.updated'],
+			filters: {
+				conditions: [
+					{ field: 'amount', op: 'gt', value: 2500 },
+					{ field: 'merchant', op: 'contains', value: 'Kroger' }
+				]
+			},
+			fields: ['id', 'merchant', 'amount_cents']
+		});
+		expect(created.ok).toBe(true);
+		if (!created.ok) return;
+		expect(created.webhook.filters.conditions).toEqual([
+			{ field: 'amount', op: 'gt', value: 2500 },
+			{ field: 'merchant', op: 'contains', value: 'Kroger' }
+		]);
+
+		const calls: { body: string }[] = [];
+		setWebhookTransportForTests(async (_url, init) => {
+			calls.push({ body: String(init.body) });
+			return new Response('ok');
+		});
+		saveTransaction(id, {
+			type: 'expense',
+			amountCents: 4000,
+			date: '2026-10-04',
+			account: acct,
+			category: null,
+			merchant: 'KROGER #12',
+			notes: null,
+			color: null,
+			tags: []
+		});
+		saveTransaction(id, {
+			type: 'expense',
+			amountCents: 1000,
+			date: '2026-10-04',
+			account: acct,
+			category: null,
+			merchant: 'Kroger',
+			notes: null,
+			color: null,
+			tags: []
+		});
+		await flushDataChanges();
+		expect(calls).toHaveLength(1);
+		expect(JSON.parse(calls[0]!.body).merchant).toBe('KROGER #12');
+
+		const updated = updateWebhook(id, created.webhook.id, {
+			name: 'kroger',
+			url: 'https://hooks.example.com/galene',
+			events: ['transaction.created'],
+			filters: { conditions: [] },
+			fields: ['id'],
+			enabled: true
+		});
+		expect(updated.ok).toBe(true);
+		calls.length = 0;
+		saveTransaction(id, {
+			type: 'expense',
+			amountCents: 100,
+			date: '2026-10-05',
+			account: acct,
+			category: null,
+			merchant: 'Other',
+			notes: null,
+			color: null,
+			tags: []
+		});
+		await flushDataChanges();
+		expect(calls).toHaveLength(1);
+	});
+
+	test('old flat filters still match signed inclusive bounds until rewritten', () => {
+		const legacy = {
+			account_id: 3,
+			category_id: 9,
+			min_amount_cents: -5000,
+			max_amount_cents: -1000
+		};
+		const event = {
+			event: 'transaction.created',
+			resource: 'transaction' as const,
+			action: 'created' as const,
+			id: 1,
+			account_id: 3,
+			category_id: 9,
+			amount_cents: -2500,
+			merchant: 'Kroger'
+		};
+		expect(webhookMatches(legacy, ['transaction.created'], event)).toBe(true);
+		expect(webhookMatches(legacy, ['transaction.created'], { ...event, amount_cents: -6000 })).toBe(false);
+		expect(webhookMatches({ ...legacy, account_id: 4 }, ['transaction.created'], event)).toBe(false);
+		expect(legacyFiltersToConditions(legacy)).toEqual([
+			{ field: 'account', op: 'equals', value: 3 },
+			{ field: 'category', op: 'equals', value: 9 },
+			{ field: 'amount', op: 'between', value: 1000, value2: 5000 }
+		]);
+		expect(webhookMatches({ conditions: [] }, ['transaction.updated'], event)).toBe(false);
+		expect(webhookMatches({ conditions: [] }, ['transaction.created'], event)).toBe(true);
 	});
 });
 

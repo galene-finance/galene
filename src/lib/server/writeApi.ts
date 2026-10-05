@@ -20,6 +20,7 @@ import {
 } from './finance';
 import type { ApiTokenScope } from './apiTokens';
 import { flushDataChanges, registerWebhookDeliver, type DataChangeEvent } from './webhookNotify';
+import { conditionMatches } from '../conditionMatch';
 import type { AccountType, CategoryType, ForecastBehavior, RepeatUnit, RuleCondition, RuleField, RuleOp } from '$lib/types';
 
 /**
@@ -68,11 +69,14 @@ export const WEBHOOK_FIELDS = [
 ] as const;
 export type WebhookField = (typeof WEBHOOK_FIELDS)[number];
 
+/** Legacy flat filters stored before ADO-50. Read-only; new writes use `conditions`. */
 export interface WebhookFilters {
 	account_id?: number;
 	category_id?: number;
 	min_amount_cents?: number;
 	max_amount_cents?: number;
+	/** Canonical When model. Empty array means the event alone is enough. */
+	conditions?: RuleCondition[];
 }
 
 export interface WebhookEvent {
@@ -703,20 +707,95 @@ export function httpsWebhookUrl(raw: string): string {
 	return url.toString();
 }
 
+const CONDITION_FIELDS = new Set<RuleField>(['merchant', 'amount', 'account', 'category']);
+const CONDITION_OPS: Record<RuleField, RuleOp[]> = {
+	merchant: ['contains', 'equals'],
+	amount: ['equals', 'gt', 'lt', 'between'],
+	account: ['equals'],
+	category: ['equals']
+};
+
+function normalizeCondition(raw: unknown, index: number): RuleCondition {
+	if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
+		throw new Error(`Condition ${index + 1} is invalid.`);
+	}
+	const src = raw as Record<string, unknown>;
+	const field = String(src.field ?? '') as RuleField;
+	if (!CONDITION_FIELDS.has(field)) throw new Error(`Condition ${index + 1} has an unknown field.`);
+	const op = String(src.op ?? '') as RuleOp;
+	if (!CONDITION_OPS[field].includes(op)) throw new Error(`Condition ${index + 1} has an unknown operator.`);
+	if (field === 'amount') {
+		const value = integer(src.value, `Condition ${index + 1} needs an amount in cents.`);
+		if (op === 'between') {
+			const value2 = integer(src.value2, `Condition ${index + 1} needs a maximum amount.`);
+			if (value2 < value) throw new Error(`Condition ${index + 1}: the max must be at least the min.`);
+			return { field, op, value, value2 };
+		}
+		return { field, op, value };
+	}
+	if (field === 'account' || field === 'category') {
+		const id = optionalId(src.value);
+		if (id == null) throw new Error(`Condition ${index + 1} needs a value.`);
+		return { field, op, value: id };
+	}
+	const value = requiredString(src.value, `Condition ${index + 1} needs a value.`);
+	return { field, op, value };
+}
+
+/**
+ * Editor view of a pre-ADO-50 flat filter. Matching of an unsaved row still uses the
+ * original signed min/max. Account → Is, category → Is, both bounds → Between,
+ * min only → More than, max only → Less than. Amount values stay in cents.
+ */
+export function legacyFiltersToConditions(flat: WebhookFilters): RuleCondition[] {
+	const conditions: RuleCondition[] = [];
+	if (flat.account_id != null) conditions.push({ field: 'account', op: 'equals', value: flat.account_id });
+	if (flat.category_id != null) conditions.push({ field: 'category', op: 'equals', value: flat.category_id });
+	const min = flat.min_amount_cents;
+	const max = flat.max_amount_cents;
+	if (min != null && max != null) {
+		const lo = Math.min(Math.abs(min), Math.abs(max));
+		const hi = Math.max(Math.abs(min), Math.abs(max));
+		conditions.push({ field: 'amount', op: 'between', value: lo, value2: hi });
+	} else if (min != null) {
+		conditions.push({ field: 'amount', op: 'gt', value: Math.abs(min) });
+	} else if (max != null) {
+		conditions.push({ field: 'amount', op: 'lt', value: Math.abs(max) });
+	}
+	return conditions;
+}
+
+/**
+ * Accept either `{ conditions }` or the old flat keys.
+ * Stored shape is always `{ conditions }` so a later save drops the flat keys.
+ */
 export function normalizeFilters(raw: unknown): WebhookFilters {
-	if (raw == null) return {};
+	if (raw == null) return { conditions: [] };
 	if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Filters must be an object.');
 	const src = raw as Record<string, unknown>;
-	const allowed = new Set(['account_id', 'category_id', 'min_amount_cents', 'max_amount_cents']);
+	const allowed = new Set(['account_id', 'category_id', 'min_amount_cents', 'max_amount_cents', 'conditions']);
 	for (const key of Object.keys(src)) {
-		if (!allowed.has(key)) throw new Error(`Unknown filter "${key}". Filters are account, category, and amount only.`);
+		if (!allowed.has(key)) throw new Error(`Unknown filter "${key}".`);
 	}
-	const filters: WebhookFilters = {};
-	if (src.account_id != null) filters.account_id = optionalId(src.account_id) ?? undefined;
-	if (src.category_id != null) filters.category_id = optionalId(src.category_id) ?? undefined;
-	if (src.min_amount_cents != null) filters.min_amount_cents = integer(src.min_amount_cents, 'Invalid minimum amount.');
-	if (src.max_amount_cents != null) filters.max_amount_cents = integer(src.max_amount_cents, 'Invalid maximum amount.');
-	return filters;
+	if (Array.isArray(src.conditions)) {
+		return { conditions: src.conditions.map((item, i) => normalizeCondition(item, i)) };
+	}
+	const flat: WebhookFilters = {};
+	if (src.account_id != null && src.account_id !== '') flat.account_id = optionalId(src.account_id) ?? undefined;
+	if (src.category_id != null && src.category_id !== '') flat.category_id = optionalId(src.category_id) ?? undefined;
+	if (src.min_amount_cents != null && src.min_amount_cents !== '') {
+		flat.min_amount_cents = integer(src.min_amount_cents, 'Invalid minimum amount.');
+	}
+	if (src.max_amount_cents != null && src.max_amount_cents !== '') {
+		flat.max_amount_cents = integer(src.max_amount_cents, 'Invalid maximum amount.');
+	}
+	return { conditions: legacyFiltersToConditions(flat) };
+}
+
+/** Read path: old rows stay flat until rewritten; new rows already have `conditions`. */
+export function filtersAsConditions(filters: WebhookFilters): RuleCondition[] {
+	if (Array.isArray(filters.conditions)) return filters.conditions;
+	return legacyFiltersToConditions(filters);
 }
 
 export function normalizeEvents(raw: unknown): string[] {
@@ -751,16 +830,25 @@ export function projectPayload(event: WebhookEvent, fields: string[]): Record<st
 	return out;
 }
 
+/**
+ * New `conditions` compare amount with Math.abs, same as rules, so "More than 25.00"
+ * matches a $40 expense. Rows that still store the old flat keys (no `conditions` array)
+ * keep the original signed, inclusive min/max check until they are saved again.
+ */
 export function webhookMatches(filters: WebhookFilters, events: string[], event: WebhookEvent): boolean {
 	if (!events.includes(event.event)) return false;
-	if (filters.account_id != null && event.account_id !== filters.account_id) return false;
-	if (filters.category_id != null && event.category_id !== filters.category_id) return false;
-	if (filters.min_amount_cents != null || filters.max_amount_cents != null) {
-		if (event.amount_cents == null) return false;
-		if (filters.min_amount_cents != null && event.amount_cents < filters.min_amount_cents) return false;
-		if (filters.max_amount_cents != null && event.amount_cents > filters.max_amount_cents) return false;
+	if (!Array.isArray(filters.conditions)) {
+		if (filters.account_id != null && event.account_id !== filters.account_id) return false;
+		if (filters.category_id != null && event.category_id !== filters.category_id) return false;
+		if (filters.min_amount_cents != null || filters.max_amount_cents != null) {
+			if (event.amount_cents == null) return false;
+			if (filters.min_amount_cents != null && event.amount_cents < filters.min_amount_cents) return false;
+			if (filters.max_amount_cents != null && event.amount_cents > filters.max_amount_cents) return false;
+		}
+		return true;
 	}
-	return true;
+	if (filters.conditions.length === 0) return true;
+	return filters.conditions.every((c) => conditionMatches(c, event));
 }
 
 export function signWebhookBody(secret: string, body: string): string {
@@ -782,13 +870,14 @@ interface WebhookRow {
 }
 
 function toPublic(row: WebhookRow): WebhookPublic {
+	const stored = JSON.parse(row.filters) as WebhookFilters;
 	return {
 		id: row.id,
 		name: row.name,
 		url: row.url,
 		secret_hint: row.secret_hint,
 		events: JSON.parse(row.events) as string[],
-		filters: JSON.parse(row.filters) as WebhookFilters,
+		filters: { conditions: filtersAsConditions(stored) },
 		fields: JSON.parse(row.fields) as string[],
 		enabled: row.enabled,
 		created_at: row.created_at
@@ -812,7 +901,7 @@ function newSecret(): { secret: string; hint: string } {
 
 export function createWebhook(
 	userId: number,
-	input: { name: string; url: string; events: unknown; filters: unknown; fields: unknown }
+	input: { name: string; url: string; events: unknown; filters: unknown; fields: unknown; enabled?: boolean }
 ): { ok: true; webhook: WebhookPublic; secret: string } | { ok: false; error: string } {
 	if (isDemoMode()) return { ok: false, error: demoBlockedMessage('Webhooks') };
 	try {
@@ -821,13 +910,24 @@ export function createWebhook(
 		const events = normalizeEvents(input.events);
 		const filters = normalizeFilters(input.filters);
 		const fields = normalizeFields(input.fields);
+		const enabled = input.enabled === false ? 0 : 1;
 		const { secret, hint } = newSecret();
 		const result = db()
 			.query(
-				`INSERT INTO webhooks (user_id, name, url, secret, secret_hint, events, filters, fields)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+				`INSERT INTO webhooks (user_id, name, url, secret, secret_hint, events, filters, fields, enabled)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			)
-			.run(userId, name, url, secret, hint, JSON.stringify(events), JSON.stringify(filters), JSON.stringify(fields));
+			.run(
+				userId,
+				name,
+				url,
+				secret,
+				hint,
+				JSON.stringify(events),
+				JSON.stringify(filters),
+				JSON.stringify(fields),
+				enabled
+			);
 		const row = db()
 			.query(
 				`SELECT id, user_id, name, url, secret, secret_hint, events, filters, fields, enabled, created_at
@@ -843,6 +943,40 @@ export function createWebhook(
 export function deleteWebhook(userId: number, id: number) {
 	if (isDemoMode()) throw new Error(demoBlockedMessage('Webhooks'));
 	db().query('DELETE FROM webhooks WHERE id = ? AND user_id = ?').run(id, userId);
+}
+
+export function updateWebhook(
+	userId: number,
+	id: number,
+	input: { name: string; url: string; events: unknown; filters: unknown; fields: unknown; enabled: boolean }
+): { ok: true } | { ok: false; error: string } {
+	if (isDemoMode()) return { ok: false, error: demoBlockedMessage('Webhooks') };
+	const existing = db().query('SELECT id FROM webhooks WHERE id = ? AND user_id = ?').get(id, userId);
+	if (!existing) return { ok: false, error: 'Webhook not found.' };
+	try {
+		const name = requiredString(input.name, 'Enter a name.');
+		const url = httpsWebhookUrl(input.url);
+		const events = normalizeEvents(input.events);
+		const filters = normalizeFilters(input.filters);
+		const fields = normalizeFields(input.fields);
+		db()
+			.query(
+				`UPDATE webhooks SET name = ?, url = ?, events = ?, filters = ?, fields = ?, enabled = ? WHERE id = ? AND user_id = ?`
+			)
+			.run(
+				name,
+				url,
+				JSON.stringify(events),
+				JSON.stringify(filters),
+				JSON.stringify(fields),
+				input.enabled ? 1 : 0,
+				id,
+				userId
+			);
+		return { ok: true };
+	} catch (error) {
+		return { ok: false, error: error instanceof Error ? error.message : 'Could not update webhook.' };
+	}
 }
 
 export function rotateWebhookSecret(

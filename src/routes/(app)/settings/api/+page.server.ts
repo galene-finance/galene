@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { createApiToken, deleteApiToken, listApiTokens, type ApiTokenScope } from '$lib/server/apiTokens';
+import { getAccounts, getCategories } from '$lib/server/finance';
 import { mcpEntryPath, mcpSettingsView, saveMcpSettings } from '$lib/server/mcp';
 import {
 	WEBHOOK_EVENTS,
@@ -10,8 +11,11 @@ import {
 	listAudit,
 	listWebhooks,
 	rotateWebhookSecret,
-	saveWriteApiSettings
+	saveWriteApiSettings,
+	updateWebhook
 } from '$lib/server/writeApi';
+import type { RuleCondition, RuleField, RuleOp } from '$lib/types';
+import { parseAmountToCents } from '$lib/utils';
 
 export function load({ locals, url }) {
 	const isAdmin = locals.user!.is_admin === 1;
@@ -28,8 +32,40 @@ export function load({ locals, url }) {
 		webhooks: listWebhooks(userId),
 		webhookEvents: WEBHOOK_EVENTS,
 		webhookFields: WEBHOOK_FIELDS,
+		accounts: getAccounts(userId),
+		categories: getCategories(userId),
 		audit: listAudit(userId)
 	};
+}
+
+function parseWebhookConditions(form: FormData): { ok: true; conditions: RuleCondition[] } | { ok: false; error: string } {
+	const conditions: RuleCondition[] = [];
+	for (let i = 0; ; i++) {
+		const field = String(form.get(`cond_field_${i}`) ?? '');
+		if (!field) break;
+		if (!['merchant', 'amount', 'account', 'category'].includes(field)) {
+			return { ok: false, error: 'Invalid condition field.' };
+		}
+		const op = String(form.get(`cond_op_${i}`) ?? '') as RuleOp;
+		const value = String(form.get(`cond_value_${i}`) ?? '').trim();
+		if (field === 'amount') {
+			const v = parseAmountToCents(value);
+			if (v === null || v <= 0) return { ok: false, error: `Condition ${i + 1} needs a valid amount.` };
+			if (op === 'between') {
+				const v2 = parseAmountToCents(String(form.get(`cond_value2_${i}`) ?? ''));
+				if (v2 === null || v2 < v) {
+					return { ok: false, error: `Condition ${i + 1}: the max must be at least the min.` };
+				}
+				conditions.push({ field: field as RuleField, op, value: v, value2: v2 });
+			} else {
+				conditions.push({ field: field as RuleField, op, value: v });
+			}
+		} else {
+			if (!value) return { ok: false, error: `Condition ${i + 1} needs a value.` };
+			conditions.push({ field: field as RuleField, op, value: field === 'merchant' ? value : Number(value) });
+		}
+	}
+	return { ok: true, conditions };
 }
 
 export const actions = {
@@ -73,24 +109,36 @@ export const actions = {
 
 	'create-webhook': async ({ request, locals }) => {
 		const form = await request.formData();
-		const filters: Record<string, number> = {};
-		const account = String(form.get('account_id') ?? '').trim();
-		const category = String(form.get('category_id') ?? '').trim();
-		const min = String(form.get('min_amount_cents') ?? '').trim();
-		const max = String(form.get('max_amount_cents') ?? '').trim();
-		if (account) filters.account_id = parseInt(account, 10);
-		if (category) filters.category_id = parseInt(category, 10);
-		if (min) filters.min_amount_cents = parseInt(min, 10);
-		if (max) filters.max_amount_cents = parseInt(max, 10);
+		const parsed = parseWebhookConditions(form);
+		if (!parsed.ok) return { webhookError: parsed.error };
 		const result = createWebhook(locals.user!.id, {
 			name: String(form.get('name') ?? ''),
 			url: String(form.get('url') ?? ''),
 			events: form.getAll('events'),
-			filters,
-			fields: form.getAll('fields')
+			filters: { conditions: parsed.conditions },
+			fields: form.getAll('fields'),
+			enabled: form.get('enabled') === '1'
 		});
 		if (!result.ok) return { webhookError: result.error };
 		return { ok: true, webhookSecret: result.secret, webhookName: result.webhook.name };
+	},
+
+	'update-webhook': async ({ request, locals }) => {
+		const form = await request.formData();
+		const id = parseInt(String(form.get('id') ?? ''), 10);
+		if (!Number.isFinite(id)) return { webhookError: 'Webhook not found.' };
+		const parsed = parseWebhookConditions(form);
+		if (!parsed.ok) return { webhookError: parsed.error };
+		const result = updateWebhook(locals.user!.id, id, {
+			name: String(form.get('name') ?? ''),
+			url: String(form.get('url') ?? ''),
+			events: form.getAll('events'),
+			filters: { conditions: parsed.conditions },
+			fields: form.getAll('fields'),
+			enabled: form.get('enabled') === '1'
+		});
+		if (!result.ok) return { webhookError: result.error };
+		return { ok: true, message: 'Webhook saved.' };
 	},
 
 	'delete-webhook': async ({ request, locals }) => {

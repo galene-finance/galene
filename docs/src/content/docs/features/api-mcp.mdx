@@ -40,13 +40,19 @@ curl -X POST -H "Authorization: Bearer galene_…" -H "Content-Type: application
 
 ## Webhooks
 
-Each user can add more than one webhook. A webhook has:
+Each user can add more than one webhook. Create and edit use the same form: **On**, **When**, **Then**, and payload fields.
 
-- Its own **HTTPS** URL. Any other scheme is rejected. There is no unsigned option.
-- **Conditions**: an event type (`transaction.created`, `category.updated`, `schedule.deleted`, and the same pattern for account, tag, budget, and rule, plus `split.updated`) and optional filters `account_id`, `category_id`, `min_amount_cents`, and `max_amount_cents`. Filters are exact ids and an amount range. There is no scripting language.
-- A **field list** for the JSON body (`event`, `resource`, `action`, `id`, `name`, `amount_cents`, `date`, `account_id`, `category_id`, `merchant`, `notes`, `type`). Fields you do not select are omitted.
+- **HTTPS URL.** Any other scheme is rejected. There is no unsigned option.
+- **On.** One or more events from the catalog (`transaction.created`, `category.updated`, `schedule.deleted`, and the same pattern for account, tag, budget, and rule, plus `split.updated`).
+- **When.** Optional conditions, all of which must match. The fields are the same as auto-categorization rules, plus category: merchant Contains or Equals, amount Equals / More than / Less than / Between (dollars in the form, cents stored), account Is, category Is. An empty When fires for every selected event. There is no OR group — add a second webhook for that. There is no scripting language.
+- **Then.** Galene POSTs the JSON body. You can leave the webhook disabled.
+- **Payload fields** (`event`, `resource`, `action`, `id`, `name`, `amount_cents`, `date`, `account_id`, `category_id`, `merchant`, `notes`, `type`). Fields you do not select are omitted.
 
-Galene signs the raw body with the webhook's secret: header `X-Galene-Signature: sha256=<hex>`. The secret is shown **once** when you create the webhook and again when you rotate it. The list shows only a hint. Webhooks run after a successful change from the write API or from the app (the same save path, once per change).
+Amount conditions compare the absolute cents value, the same way rules do, so More than 25.00 matches a $40 expense. Merchant Contains is a case-folded substring.
+
+Webhooks saved before this model stored flat filters (`account_id`, `category_id`, `min_amount_cents`, `max_amount_cents`). Those rows still match with the old signed, inclusive amount range until you save them. Saving rewrites them as conditions.
+
+Galene signs the raw body with the webhook's secret: header `X-Galene-Signature: sha256=<hex>`. The secret is shown **once** when you create the webhook and again when you rotate it. The list and the edit form show only a four-character hint. Webhooks run after a successful change from the write API or from the app (the same save path, once per change).
 
 ## MCP in the app image
 

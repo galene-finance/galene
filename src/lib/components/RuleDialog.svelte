@@ -2,20 +2,15 @@
 	import { enhance } from '$app/forms';
 	import Button from './ui/Button.svelte';
 	import Combobox from './ui/Combobox.svelte';
+	import ConditionCards, { type DialogCondition } from './ConditionCards.svelte';
 	import Dialog from './ui/Dialog.svelte';
 	import Field from './ui/Field.svelte';
 	import Input from './ui/Input.svelte';
-	import Select from './ui/Select.svelte';
 	import { categoryPickerItems } from '$lib/categoryPicker';
-	import type { Account, CategorizationRule, Category, RuleCondition, RuleField, RuleOp } from '$lib/types';
+	import type { Account, CategorizationRule, Category, RuleCondition } from '$lib/types';
 	import { centsToDollars } from '$lib/utils';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { withPending } from '$lib/formPending';
-
-	const CREATE_VALUE = '__create__';
-
-	// Dialog values are plain strings (dollars for amounts); the server parses them to cents.
-	type DialogCondition = { field: RuleField; op: RuleOp; value: string; value2?: string };
 
 	function toDialogConditions(conds: RuleCondition[]): DialogCondition[] {
 		return conds.map((c) => ({
@@ -25,26 +20,6 @@
 			value2: c.value2 != null ? (c.field === 'amount' ? centsToDollars(Number(c.value2)) : String(c.value2)) : undefined
 		}));
 	}
-
-	const FIELD_ITEMS = [
-		{ value: 'merchant', label: 'Merchant' },
-		{ value: 'amount', label: 'Amount' },
-		{ value: 'account', label: 'Account' }
-	];
-
-	const OPS: Record<RuleField, { value: RuleOp; label: string }[]> = {
-		merchant: [
-			{ value: 'contains', label: 'Contains' },
-			{ value: 'equals', label: 'Equals' }
-		],
-		amount: [
-			{ value: 'equals', label: 'Equals' },
-			{ value: 'gt', label: 'More than' },
-			{ value: 'lt', label: 'Less than' },
-			{ value: 'between', label: 'Between' }
-		],
-		account: [{ value: 'equals', label: 'Is' }]
-	};
 
 	let {
 		open = $bindable(false),
@@ -77,19 +52,6 @@
 	let saving = $state(false);
 
 	const categoryItems = $derived(categoryPickerItems(categories));
-	const accountItems = $derived(accounts.map((a) => ({ value: String(a.id), label: a.name })));
-
-	// Keep ops valid for their field (e.g. switching Amount → Merchant drops 'gt').
-	$effect(() => {
-		for (const cond of conditions) {
-			const valid = OPS[cond.field]?.map((o) => o.value) ?? [];
-			if (!valid.includes(cond.op)) {
-				cond.op = valid[0] ?? 'contains';
-				cond.value = '';
-				cond.value2 = undefined;
-			}
-		}
-	});
 
 	function onTypeChange(newType: 'expense' | 'income') {
 		if (newType === type) return;
@@ -124,14 +86,6 @@
 			conditions = [{ field: 'merchant', op: 'contains', value: '' }];
 		}
 	});
-
-	function addCondition() {
-		conditions.push({ field: 'merchant', op: 'contains', value: '' });
-	}
-
-	function removeCondition(i: number) {
-		conditions.splice(i, 1);
-	}
 
 	const handleSubmit: SubmitFunction = withPending(
 		(v) => (saving = v),
@@ -214,64 +168,7 @@
 			/>
 		</Field>
 
-		<div class="rounded-md border border-border p-3">
-			<p class="text-sm font-medium">
-				Conditions
-				<span class="ml-1 text-xs font-normal text-muted-foreground">All must match</span>
-			</p>
-			<div class="mt-2 flex flex-col gap-2.5">
-				{#each conditions as cond, i (i)}
-					<div class="rounded-[10px] border border-border bg-muted p-3">
-						<div class="mb-2 flex items-center justify-between gap-2">
-							<span
-								class="rounded-full bg-primary/10 px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wide text-primary"
-							>
-								Condition {i + 1}
-							</span>
-							<Button variant="ghost" size="sm" type="button" onclick={() => removeCondition(i)}>
-								Remove
-							</Button>
-						</div>
-						<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-							<Select bind:value={cond.field} items={FIELD_ITEMS} class="w-full sm:w-32" />
-							<Select bind:value={cond.op} items={OPS[cond.field]} class="w-full sm:w-36" />
-							{#if cond.field === 'account'}
-								<Select
-									bind:value={cond.value}
-									items={accountItems}
-									placeholder="Select account"
-									class="w-full min-w-40 sm:flex-1"
-								/>
-							{:else if cond.field === 'amount' && cond.op === 'between'}
-								<Input
-									bind:value={cond.value}
-									inputmode="decimal"
-									placeholder="Min"
-									class="w-full min-w-24 sm:flex-1"
-								/>
-								<Input
-									bind:value={cond.value2}
-									inputmode="decimal"
-									placeholder="Max"
-									class="w-full min-w-24 sm:flex-1"
-								/>
-							{:else}
-								<Input
-									bind:value={cond.value}
-									type="text"
-									inputmode={cond.field === 'amount' ? 'decimal' : undefined}
-									placeholder={cond.field === 'merchant' ? 'e.g. whole foods' : '0.00'}
-									class="w-full min-w-40 sm:flex-1"
-								/>
-							{/if}
-						</div>
-					</div>
-				{/each}
-			</div>
-			<Button variant="secondary" size="sm" type="button" class="mt-2" onclick={addCondition}>
-				+ Add condition
-			</Button>
-		</div>
+		<ConditionCards bind:conditions {accounts} {categories} />
 
 		<label class="flex cursor-pointer items-start gap-2 rounded-md border border-border p-3 text-sm">
 			<input type="checkbox" name="apply_existing" value="1" bind:checked={applyExisting} class="mt-0.5 size-4 accent-primary" />

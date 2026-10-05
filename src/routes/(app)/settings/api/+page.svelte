@@ -5,10 +5,12 @@
 	import Input from '$lib/components/ui/Input.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
+	import WebhookDialog, { type WebhookDraft } from '$lib/components/WebhookDialog.svelte';
 	import type { ApiTokenInfo } from '$lib/server/apiTokens';
 	import { copyText } from '$lib/clipboard';
 	import { watchFormToast } from '$lib/formToast.svelte';
 	import { toast } from '$lib/toasts';
+	import type { Account, Category, RuleCondition } from '$lib/types';
 
 	let {
 		form,
@@ -42,17 +44,11 @@
 				version: string;
 			} | null;
 			writeApiEnabled: boolean;
-			webhooks: {
-				id: number;
-				name: string;
-				url: string;
-				secret_hint: string;
-				events: string[];
-				fields: string[];
-				created_at: string;
-			}[];
+			webhooks: WebhookDraft[];
 			webhookEvents: string[];
 			webhookFields: string[];
+			accounts: Account[];
+			categories: Category[];
 			audit: { id: number; action: string; resource: string; resource_id: number | null; created_at: string; token_name: string | null }[];
 		};
 	} = $props();
@@ -63,6 +59,42 @@
 	let secretCopied = $state(false);
 	let mcpEnabled = $state(false);
 	let writeEnabled = $state(false);
+	let webhookOpen = $state(false);
+	let webhookEditing = $state<WebhookDraft | null>(null);
+
+	function openCreateWebhook() {
+		webhookEditing = null;
+		webhookOpen = true;
+	}
+
+	function openEditWebhook(hook: WebhookDraft) {
+		webhookEditing = hook;
+		webhookOpen = true;
+	}
+
+	function whenSummary(conditions: RuleCondition[] | undefined): string {
+		if (!conditions || conditions.length === 0) return 'Any matching event';
+		return conditions
+			.map((c) => {
+				if (c.field === 'merchant') return `merchant ${c.op === 'equals' ? 'equals' : 'contains'} “${c.value}”`;
+				if (c.field === 'account') {
+					const name = data.accounts.find((a) => String(a.id) === String(c.value))?.name ?? 'account';
+					return `account is ${name}`;
+				}
+				if (c.field === 'category') {
+					const name = data.categories.find((cat) => String(cat.id) === String(c.value))?.name ?? 'category';
+					return `category is ${name}`;
+				}
+				const dollars = (Math.abs(Number(c.value)) / 100).toFixed(2);
+				if (c.op === 'between') {
+					return `amount between ${dollars} and ${(Math.abs(Number(c.value2 ?? c.value)) / 100).toFixed(2)}`;
+				}
+				if (c.op === 'gt') return `amount more than ${dollars}`;
+				if (c.op === 'lt') return `amount less than ${dollars}`;
+				return `amount equals ${dollars}`;
+			})
+			.join(' and ');
+	}
 
 	$effect(() => {
 		if (form?.token) {
@@ -331,10 +363,10 @@
 		<div class="border-b border-border px-4 py-3">
 			<h2 class="font-medium">Webhooks</h2>
 			<p class="text-sm text-muted-foreground">
-				Each webhook has its own HTTPS URL, event list, simple filters (account, category, amount), and payload
-				fields. Unselected fields are left out. Every request is HMAC-signed. There is no unsigned option. The
-				signing secret is shown once, here, and can be rotated. Webhooks run after a change from the write API or
-				from the app, once per save.
+				Each webhook has an HTTPS URL, the events it listens for, optional conditions (all must match), and the
+				payload fields to include. Unselected fields are left out. Every request is HMAC-signed. There is no
+				unsigned option. The signing secret is shown once, here, and can be rotated. Webhooks run after a change
+				from the write API or from the app, once per save.
 			</p>
 		</div>
 		<div class="flex flex-col gap-4 p-4">
@@ -349,77 +381,29 @@
 					</div>
 				</div>
 			{/if}
-			{#if form?.webhookError}
+			{#if form?.webhookError && !webhookOpen}
 				<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.webhookError}</p>
 			{/if}
-			<form method="POST" action="?/create-webhook" use:enhance class="flex flex-col gap-3">
-				<div class="flex flex-wrap gap-3">
-					<Field label="Name" class="min-w-40 flex-1">
-						<Input type="text" name="name" required placeholder="Ledger sync" />
-					</Field>
-					<Field label="HTTPS URL" class="min-w-64 flex-[2]">
-						<Input type="url" name="url" required placeholder="https://example.com/hooks/galene" />
-					</Field>
-				</div>
-				<fieldset class="flex flex-col gap-2">
-					<legend class="text-sm font-medium">Events</legend>
-					<div class="flex flex-wrap gap-x-3 gap-y-1">
-						{#each data.webhookEvents as event (event)}
-							<label class="flex items-center gap-1.5 text-xs">
-								<input type="checkbox" name="events" value={event} />
-								{event}
-							</label>
-						{/each}
-					</div>
-				</fieldset>
-				<div class="flex flex-wrap gap-3">
-					<Field label="Account id" class="w-28">
-						<Input type="number" name="account_id" min="1" />
-					</Field>
-					<Field label="Category id" class="w-28">
-						<Input type="number" name="category_id" min="1" />
-					</Field>
-					<Field label="Min cents" class="w-28">
-						<Input type="number" name="min_amount_cents" />
-					</Field>
-					<Field label="Max cents" class="w-28">
-						<Input type="number" name="max_amount_cents" />
-					</Field>
-				</div>
-				<fieldset class="flex flex-col gap-2">
-					<legend class="text-sm font-medium">Payload fields</legend>
-					<div class="flex flex-wrap gap-x-3 gap-y-1">
-						{#each data.webhookFields as field (field)}
-							<label class="flex items-center gap-1.5 text-xs">
-								<input type="checkbox" name="fields" value={field} />
-								{field}
-							</label>
-						{/each}
-					</div>
-				</fieldset>
-				<Button type="submit">Create webhook</Button>
-			</form>
+			<div>
+				<Button type="button" onclick={openCreateWebhook}>Create webhook</Button>
+			</div>
 			{#if data.webhooks.length === 0}
-				<p class="text-sm text-muted-foreground">No webhooks yet.</p>
+				<p class="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">No webhooks yet.</p>
 			{:else}
 				<ul class="divide-y divide-border">
 					{#each data.webhooks as hook (hook.id)}
-						<li class="flex flex-col gap-2 py-3 text-sm">
+						<li class="flex flex-col gap-1 py-3 text-sm">
 							<div class="flex flex-wrap items-center justify-between gap-2">
-								<span class="font-medium">{hook.name}</span>
-								<span class="text-xs text-muted-foreground">secret ····{hook.secret_hint}</span>
+								<span class="font-medium {hook.enabled === 1 ? '' : 'text-muted-foreground'}">{hook.name}</span>
+								<span class="text-xs text-muted-foreground">····{hook.secret_hint}</span>
 							</div>
 							<code class="overflow-x-auto font-mono text-xs">{hook.url}</code>
 							<p class="text-xs text-muted-foreground">{hook.events.join(', ')}</p>
-							<div class="flex justify-end gap-3">
-								<form method="POST" action="?/rotate-webhook">
-									<input type="hidden" name="id" value={hook.id} />
-									<button type="submit" class="text-sm text-foreground hover:underline">Rotate secret</button>
-								</form>
-								<form method="POST" action="?/delete-webhook">
-									<input type="hidden" name="id" value={hook.id} />
-									<button type="submit" class="text-sm text-destructive hover:underline">Delete</button>
-								</form>
+							<p class="text-xs text-muted-foreground">{whenSummary(hook.filters.conditions)}</p>
+							<div class="flex justify-end">
+								<button type="button" class="text-sm text-primary hover:underline" onclick={() => openEditWebhook(hook)}>
+									Edit
+								</button>
 							</div>
 						</li>
 					{/each}
@@ -427,6 +411,17 @@
 			{/if}
 		</div>
 	</section>
+
+	<WebhookDialog
+		bind:open={webhookOpen}
+		editing={webhookEditing}
+		accounts={data.accounts}
+		categories={data.categories}
+		events={data.webhookEvents}
+		fields={data.webhookFields}
+		form={form}
+		onclose={() => (webhookEditing = null)}
+	/>
 
 	<section class="rounded-lg border border-border bg-surface">
 		<div class="border-b border-border px-4 py-3">

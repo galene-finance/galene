@@ -2,8 +2,9 @@ import { db } from './db';
 import { emitDataChange } from './webhookNotify';
 import type { GrantScope } from './advisor';
 import { scopeAccountIds, scopeDateRange } from './advisor';
-import { monthLabel, parseAmountToCents } from '$lib/utils';
-import { normalizeMerchant } from '$lib/merchantNormalize';
+import { monthLabel, parseAmountToCents } from '../utils';
+import { conditionMatches } from '../conditionMatch';
+import { normalizeMerchant } from '../merchantNormalize';
 import type {
 	Account,
 	AccountType,
@@ -1986,32 +1987,9 @@ function ruleMatches(
 	conditions: RuleCondition[],
 	tx: { merchant: string | null; amount_cents: number; account_id: number }
 ): boolean {
+	// Rules still require at least one condition. Category is a webhook field and is ignored here.
 	if (conditions.length === 0) return false;
-	return conditions.every((c) => {
-		if (c.field === 'merchant') {
-			if (tx.merchant == null) return false;
-			const lm = normalizeMerchant(tx.merchant);
-			const lv = normalizeMerchant(String(c.value ?? ''));
-			if (lv === '') return false;
-			return c.op === 'equals' ? lm === lv : lm.includes(lv);
-		}
-		if (c.field === 'account') return String(tx.account_id) === String(c.value);
-		const a = Math.abs(tx.amount_cents);
-		const v = Number(c.value);
-		if (!Number.isFinite(v)) return false;
-		switch (c.op) {
-			case 'equals':
-				return a === v;
-			case 'gt':
-				return a > v;
-			case 'lt':
-				return a < v;
-			case 'between':
-				return a >= v && a <= Number(c.value2 ?? v);
-			default:
-				return false;
-		}
-	});
+	return conditions.every((c) => c.field !== 'category' && conditionMatches(c, tx));
 }
 
 /** Fills a missing category on a transaction from the first matching enabled rule. */

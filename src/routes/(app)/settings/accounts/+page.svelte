@@ -218,7 +218,7 @@
 
 <Title title="Accounts" />
 
-<div class="mx-auto flex max-w-3xl flex-col gap-4 2xl:max-w-5xl">
+<div class="settings-stack mx-auto max-w-3xl 2xl:max-w-5xl">
 	{#if !data.viewer}
 	<a href="/settings" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
 		>← Back to Settings</a

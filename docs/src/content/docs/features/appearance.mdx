@@ -1,6 +1,6 @@
 ---
 title: Appearance
-description: Share an Appearance theme as a versioned JSON pack — export, copy, and import.
+description: Share an Appearance theme as a versioned JSON pack — export, copy, import, and publish to the theme gallery.
 ---
 
 Under **Settings → Appearance**, pick a built-in or custom theme, or build your own. A theme is a set of hex colors plus a card radius.
@@ -40,3 +40,49 @@ Unknown top-level fields are ignored. Every color key below is required.
   }
 }
 ```
+
+## Publish to the theme gallery
+
+The public theme gallery lives at [themes.galene.finance](https://themes.galene.finance). Anyone can browse, search, preview, vote on, and download themes there. A download is the same `galeneTheme: 1` JSON pack that **Import** accepts.
+
+**Publish** sends the theme you have selected under **Settings → Appearance** to the gallery. It does not upload a file from your browser. The gallery has no upload form and no accounts. It only accepts a signed request from a Galene instance.
+
+### What gets sent
+
+The request body is the validated theme pack, the same JSON that **Export** produces: `galeneTheme: 1`, the theme `name`, and every color as a `#rrggbb` hex value, plus the card `radius` in `rem`. Apart from the signing headers below, nothing about your instance, account, or data is sent. The gallery checks the pack again and declines anything malformed. Packs over 32 KB are refused.
+
+### Signing
+
+Each Galene instance makes an **Ed25519** key pair the first time it publishes and keeps it in its own database. Every publish is a `POST` with three headers:
+
+| Header | Value |
+| --- | --- |
+| `Galene-Key` | The instance's public key (raw, base64url). |
+| `Galene-Timestamp` | Unix time in seconds. |
+| `Galene-Signature` | Ed25519 signature (base64url) over the message below. |
+
+The signed message is UTF-8 text with three lines:
+
+```text
+galene-theme-publish
+<Galene-Timestamp>
+<hex SHA-256 of the raw request body>
+```
+
+The gallery rejects a request with a missing or invalid signature, or a timestamp more than five minutes from its own clock, so keep the host clock in sync (NTP). Back up the database as usual: restoring it keeps the same instance key, while a fresh database makes a new one.
+
+### One publish per hour
+
+The gallery allows **one successful publish per instance per hour**, counted per instance key. A publish the gallery declines does not use up the hour. The gallery enforces this limit, not the app. A second publish inside the hour is refused (HTTP 429) and Appearance shows a message such as:
+
+> You can publish one theme per hour. Try again in about 12 minutes.
+
+When the gallery does not say how long to wait, the message reads *“You can publish one theme per hour. Try again later.”*
+
+### Public demo
+
+Publishing is turned off on the [public demo](/self-host/public-demo/). Appearance shows *“Publishing is turned off on the public demo.”* in place of the button, and the publish action returns **403**.
+
+### Gallery address
+
+By default Galene publishes to `https://themes.galene.finance/api/themes`. Set **`GALENE_THEME_GALLERY_URL`** to send publishes somewhere else, such as a gallery you run yourself or a local test server. The address must use `https`. Plain `http` is allowed only for `localhost` or `127.0.0.1`. Galene does not follow redirects on publish, so point the variable at the final URL. See [Environment variables](/reference/environment-variables/).

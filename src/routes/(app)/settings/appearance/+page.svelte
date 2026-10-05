@@ -23,7 +23,7 @@
 		form,
 		data
 	}: {
-		form: { error?: string | null } | undefined;
+		form: { error?: string | null; message?: string | null } | undefined;
 		data: {
 			themes: Theme[];
 			selected: string;
@@ -31,6 +31,7 @@
 			icon: string;
 			favicon: string;
 			weekStartsOn: string;
+			canPublishTheme: boolean;
 		};
 	} = $props();
 
@@ -152,6 +153,8 @@
 		applyPackText(await file.text());
 	}
 
+	let publishing = $state(false);
+
 	function exportPack() {
 		const json = serializeThemePack(selectedTheme.name, selectedTheme.colors);
 		const blob = new Blob([json], { type: 'application/json' });
@@ -236,6 +239,7 @@
 			<h2 class="font-medium">Theme</h2>
 			<p class="text-sm text-muted-foreground">
 				Pick a theme for your account. It is saved on this browser as well, so the same theme shows on the sign-in page after you log out.
+				Publish sends the theme you have selected. The gallery only accepts that signed request from this Galene.
 			</p>
 		</div>
 		<div class="p-4">
@@ -285,6 +289,23 @@
 			<div class="mt-4 flex flex-wrap items-center gap-3">
 				<Button type="button" variant="secondary" onclick={newTheme}>New theme</Button>
 				<Button type="button" variant="secondary" onclick={exportPack}>Export</Button>
+				{#if data.canPublishTheme}
+					<form
+						method="POST"
+						action="?/publish-theme"
+						use:enhance={() => {
+							publishing = true;
+							return async ({ update }) => {
+								publishing = false;
+								await update();
+							};
+						}}
+					>
+						<Button type="submit" variant="secondary" pending={publishing}>Publish</Button>
+					</form>
+				{:else}
+					<p class="text-sm text-muted-foreground">Publishing is turned off on the public demo.</p>
+				{/if}
 				<Button type="button" variant="secondary" onclick={copyPack}>Copy JSON</Button>
 				<Button type="button" variant="secondary" onclick={openImport}>Import</Button>
 				<div class="flex items-center gap-2">

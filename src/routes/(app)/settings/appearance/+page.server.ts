@@ -8,6 +8,8 @@ import {
 	saveUserTheme
 } from '$lib/server/themes';
 import { parseThemePack, uniqueThemeName } from '$lib/theme-pack';
+import { isDemoMode } from '$lib/server/demoMode';
+import { publishCurrentTheme } from '$lib/server/themeGallery';
 import { DEFAULT_THEME_SLUG, RADIUS_RE, isHexColor } from '$lib/themes';
 import { EMBLEM_ICON_KEY, ICONS, isValidBrandingIcon, normalizeBrandingIcon } from '$lib/icons';
 import type { ThemeColors } from '$lib/types';
@@ -20,7 +22,8 @@ export function load({ locals }) {
 		appName: getSetting(userId, 'app_name') ?? '',
 		icon: normalizeBrandingIcon(getSetting(userId, 'icon') ?? EMBLEM_ICON_KEY),
 		favicon: normalizeBrandingIcon(getSetting(userId, 'favicon') ?? EMBLEM_ICON_KEY),
-		weekStartsOn: getSetting(userId, 'week_starts_on') ?? 'sunday'
+		weekStartsOn: getSetting(userId, 'week_starts_on') ?? 'sunday',
+		canPublishTheme: !isDemoMode()
 	};
 }
 
@@ -124,6 +127,12 @@ export const actions = {
 		setSetting(userId, 'icon', iconKey);
 		setSetting(userId, 'favicon', faviconKey);
 		return { ok: true };
+	},
+
+	'publish-theme': async ({ locals }) => {
+		const result = await publishCurrentTheme(locals.user!.id);
+		if (!result.ok) return { error: result.error };
+		return { ok: true, message: result.message };
 	},
 
 	'save-week-start': async ({ request, locals }) => {

@@ -25,6 +25,7 @@ description: Every environment variable the app image reads (including optional 
 | `GALENE_OIDC_CLIENT_SECRET` | unset | OIDC client secret. Overrides Settings when non-empty and is not shown back in the form. |
 | `GALENE_OIDC_SCOPES` | unset | Space-separated scopes. Overrides Settings when non-empty. Default in Settings is `openid profile email`. |
 | `GALENE_ENABLE_MCP` | unset | `1`/`0` overrides Settings → API MCP HTTP on/off. Unset uses the saved toggle (**default off**). When off, `/mcp` is not live. When on, MCP shares the app `PORT` (no separate MCP port). |
+| `GALENE_THEME_GALLERY_URL` | `https://themes.galene.finance/api/themes` | Where **Settings → Appearance → Publish** sends signed theme packs. Must be `https` (plain `http` only for `localhost` / `127.0.0.1`). See [Appearance](/features/appearance/#publish-to-the-theme-gallery). |
 
 ## MCP bundle (stdio from the app image)
 

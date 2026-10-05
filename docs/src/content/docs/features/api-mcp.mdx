@@ -46,7 +46,7 @@ Each user can add more than one webhook. A webhook has:
 - **Conditions**: an event type (`transaction.created`, `category.updated`, `schedule.deleted`, and the same pattern for account, tag, budget, and rule, plus `split.updated`) and optional filters `account_id`, `category_id`, `min_amount_cents`, and `max_amount_cents`. Filters are exact ids and an amount range. There is no scripting language.
 - A **field list** for the JSON body (`event`, `resource`, `action`, `id`, `name`, `amount_cents`, `date`, `account_id`, `category_id`, `merchant`, `notes`, `type`). Fields you do not select are omitted.
 
-Galene signs the raw body with the webhook's secret: header `X-Galene-Signature: sha256=<hex>`. The secret is shown **once** when you create the webhook and again when you rotate it. The list shows only a hint. Webhooks run after a successful write-API change, not after an edit made in the app UI.
+Galene signs the raw body with the webhook's secret: header `X-Galene-Signature: sha256=<hex>`. The secret is shown **once** when you create the webhook and again when you rotate it. The list shows only a hint. Webhooks run after a successful change from the write API or from the app (the same save path, once per change).
 
 ## MCP in the app image
 

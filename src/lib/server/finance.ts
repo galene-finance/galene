@@ -1,4 +1,5 @@
 import { db } from './db';
+import { emitDataChange } from './webhookNotify';
 import type { GrantScope } from './advisor';
 import { scopeAccountIds, scopeDateRange } from './advisor';
 import { monthLabel, parseAmountToCents } from '$lib/utils';
@@ -33,6 +34,52 @@ function categoryTypeFromRow(type: string, isTransfer: number): CategoryType {
 function categoryDbFields(type: CategoryType): { type: 'expense' | 'income'; is_transfer: number } {
 	if (type === 'transfer') return { type: 'expense', is_transfer: 1 };
 	return { type, is_transfer: 0 };
+}
+
+
+function emitChange(
+	userId: number,
+	resource: 'transaction' | 'category' | 'schedule' | 'account' | 'tag' | 'budget' | 'rule' | 'split',
+	action: 'created' | 'updated' | 'deleted',
+	row: Record<string, unknown> | null | undefined
+) {
+	if (!row || row.id == null) return;
+	const event: {
+		event: string;
+		resource: typeof resource;
+		action: typeof action;
+		id: number;
+		name?: string | null;
+		amount_cents?: number | null;
+		date?: string | null;
+		account_id?: number | null;
+		category_id?: number | null;
+		merchant?: string | null;
+		notes?: string | null;
+		type?: string | null;
+	} = {
+		event: `${resource}.${action}`,
+		resource,
+		action,
+		id: Number(row.id)
+	};
+	if ('name' in row) event.name = (row.name as string | null) ?? null;
+	if ('amount_cents' in row) event.amount_cents = row.amount_cents as number | null;
+	if ('limit_cents' in row && event.amount_cents == null) event.amount_cents = row.limit_cents as number | null;
+	if ('date' in row) event.date = (row.date as string | null) ?? null;
+	else if ('start_date' in row) event.date = (row.start_date as string | null) ?? null;
+	if ('account_id' in row) event.account_id = (row.account_id as number | null) ?? null;
+	if ('category_id' in row) event.category_id = (row.category_id as number | null) ?? null;
+	if ('merchant' in row) event.merchant = (row.merchant as string | null) ?? null;
+	if ('notes' in row) event.notes = (row.notes as string | null) ?? null;
+	if ('type' in row) event.type = (row.type as string | null) ?? null;
+	emitDataChange(userId, event);
+}
+
+function rowById(table: string, userId: number, id: number, columns: string): Record<string, unknown> | null {
+	return db().query(`SELECT ${columns} FROM ${table} WHERE id = ? AND user_id = ?`).get(id, userId) as
+		| Record<string, unknown>
+		| null;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +278,10 @@ export function saveAccount(
 				openingAsOf ?? null
 			);
 	}
+	const savedId =
+		id ??
+		(db().query('SELECT id FROM accounts WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId) as { id: number }).id;
+	emitChange(userId, 'account', id ? 'updated' : 'created', rowById('accounts', userId, savedId, 'id, name, type'));
 }
 
 /**
@@ -251,6 +302,7 @@ export function deleteAccount(userId: number, id: number, reassignTo: number) {
 		.get(reassignTo, userId) as { id: number } | undefined;
 	if (!target) throw new Error('Replacement account not found.');
 
+	const removed = rowById('accounts', userId, id, 'id, name, type');
 	const d = db();
 	d.run('BEGIN');
 	try {
@@ -302,6 +354,7 @@ export function deleteAccount(userId: number, id: number, reassignTo: number) {
 		}
 
 		d.run('COMMIT');
+		emitChange(userId, 'account', 'deleted', removed);
 	} catch (error) {
 		d.run('ROLLBACK');
 		throw error;
@@ -331,6 +384,15 @@ export function saveCategory(
 			throw new Error('A category with that name already exists.');
 		}
 	}
+	const savedId =
+		id ??
+		(db().query('SELECT id FROM categories WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId) as { id: number }).id;
+	emitChange(
+		userId,
+		'category',
+		id ? 'updated' : 'created',
+		rowById('categories', userId, savedId, 'id, name, type')
+	);
 }
 
 /** Collect subcategory ids under `id` (depth-first), same user only. */
@@ -380,6 +442,7 @@ export function deleteCategory(userId: number, id: number, reassignTo: number | 
 
 	const ids = [id, ...descendants];
 	const placeholders = ids.map(() => '?').join(',');
+	const removed = rowById('categories', userId, id, 'id, name, type');
 	const d = db();
 	d.run('BEGIN');
 	try {
@@ -449,6 +512,7 @@ export function deleteCategory(userId: number, id: number, reassignTo: number | 
 		}
 
 		d.run('COMMIT');
+		emitChange(userId, 'category', 'deleted', removed);
 	} catch (error) {
 		d.run('ROLLBACK');
 		throw error;
@@ -461,6 +525,10 @@ export function saveTag(userId: number, id: number | null, name: string) {
 	} else {
 		db().query('INSERT INTO tags (user_id, name) VALUES (?, ?)').run(userId, name);
 	}
+	const savedId =
+		id ??
+		(db().query('SELECT id FROM tags WHERE user_id = ? AND name = ? ORDER BY id DESC LIMIT 1').get(userId, name) as { id: number }).id;
+	emitChange(userId, 'tag', id ? 'updated' : 'created', rowById('tags', userId, savedId, 'id, name'));
 }
 
 /**
@@ -473,6 +541,7 @@ export function deleteTag(userId: number, id: number) {
 		.get(id, userId) as { id: number } | undefined;
 	if (!owned) throw new Error('Tag not found.');
 
+	const removed = rowById('tags', userId, id, 'id, name');
 	const d = db();
 	d.run('BEGIN');
 	try {
@@ -509,6 +578,7 @@ export function deleteTag(userId: number, id: number) {
 		if (result.changes === 0) throw new Error('Tag could not be deleted.');
 
 		d.run('COMMIT');
+		emitChange(userId, 'tag', 'deleted', removed);
 	} catch (error) {
 		d.run('ROLLBACK');
 		throw error;
@@ -837,6 +907,7 @@ export function transactionInputFromForm(userId: number, form: FormData): { inpu
 }
 
 export function saveTransaction(userId: number, input: TransactionInput) {
+	const created = input.id == null;
 	const amountCents = input.type === 'expense' ? -Math.abs(input.amountCents) : Math.abs(input.amountCents);
 	if (input.id) {
 		db()
@@ -871,6 +942,14 @@ export function saveTransaction(userId: number, input: TransactionInput) {
 	}
 	// Auto-categorization: only fills in a missing category, never overrides an explicit one.
 	if (input.category == null && input.id) applyCategorizationRules(userId, input.id);
+	if (input.id) {
+		emitChange(
+			userId,
+			'transaction',
+			created ? 'created' : 'updated',
+			rowById('transactions', userId, input.id, 'id, account_id, category_id, date, amount_cents, merchant, notes')
+		);
+	}
 }
 
 function setTransactionTags(userId: number, transactionId: number, tagIds: number[]) {
@@ -884,7 +963,9 @@ function setTransactionTags(userId: number, transactionId: number, tagIds: numbe
 }
 
 export function deleteTransaction(userId: number, id: number) {
-	db().query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(id, userId);
+	const removed = rowById('transactions', userId, id, 'id, account_id, category_id, date, amount_cents, merchant, notes');
+	const result = db().query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(id, userId);
+	if (result.changes) emitChange(userId, 'transaction', 'deleted', removed);
 }
 
 export function bulkDeleteTransactions(userId: number, ids: number[]) {
@@ -1302,10 +1383,16 @@ export function saveBudget(
 			)
 			.run(userId, data.categoryId, data.period, data.limitCents);
 	}
+	const saved = db()
+		.query('SELECT id, category_id, period, limit_cents FROM budgets WHERE user_id = ? AND category_id = ? AND period = ?')
+		.get(userId, data.categoryId, data.period) as Record<string, unknown> | null;
+	emitChange(userId, 'budget', id ? 'updated' : 'created', saved);
 }
 
 export function deleteBudget(userId: number, id: number) {
-	db().query('DELETE FROM budgets WHERE id = ? AND user_id = ?').run(id, userId);
+	const removed = rowById('budgets', userId, id, 'id, category_id, period, limit_cents');
+	const result = db().query('DELETE FROM budgets WHERE id = ? AND user_id = ?').run(id, userId);
+	if (result.changes) emitChange(userId, 'budget', 'deleted', removed);
 }
 
 /** [from, to) bounds of the current week (Monday start), month, or year. */
@@ -1629,13 +1716,29 @@ export function scheduledInputFromForm(userId: number, form: FormData): { input?
 	};
 }
 
-export function saveScheduled(userId: number, input: ScheduledInput) {
+export function saveScheduled(userId: number, input: ScheduledInput): number {
 	if (input.id && input.editScope) {
-		applyScheduledEdit(userId, input.id, input);
-		return;
+		const scope = input.editScope;
+		const resultId = applyScheduledEdit(userId, input.id, input);
+		input.id = resultId;
+		emitChange(
+			userId,
+			'schedule',
+			scope === 'new' ? 'created' : 'updated',
+			rowById('scheduled', userId, resultId, 'id, name, account_id, category_id, amount_cents, start_date, notes')
+		);
+		return resultId;
 	}
+	const created = input.id == null;
 	input.id = persistScheduled(userId, input);
 	setScheduledTags(userId, input.id, input.tags);
+	emitChange(
+		userId,
+		'schedule',
+		created ? 'created' : 'updated',
+		rowById('scheduled', userId, input.id, 'id, name, account_id, category_id, amount_cents, start_date, notes')
+	);
+	return input.id;
 }
 
 function persistScheduled(userId: number, input: ScheduledInput): number {
@@ -1700,7 +1803,7 @@ function repeatFields(input: ScheduledInput): { repeatInterval: number | null; r
 	};
 }
 
-function applyScheduledEdit(userId: number, id: number, input: ScheduledInput) {
+function applyScheduledEdit(userId: number, id: number, input: ScheduledInput): number {
 	const existing = getScheduled(userId).find((s) => s.id === id);
 	if (!existing) throw new Error('Scheduled expectation not found.');
 	const scope = input.editScope;
@@ -1709,6 +1812,7 @@ function applyScheduledEdit(userId: number, id: number, input: ScheduledInput) {
 	const known = new Set(expandScheduled(existing, existing.start_date, '9999-12-31').map((o) => o.date));
 	if (!known.has(anchor)) throw new Error('That date is not part of this schedule.');
 
+	let resultId = id;
 	const d = db();
 	d.run('BEGIN');
 	try {
@@ -1776,8 +1880,10 @@ function applyScheduledEdit(userId: number, id: number, input: ScheduledInput) {
 			d.query('DELETE FROM scheduled_exceptions WHERE scheduled_id = ? AND occurrence_date >= ?').run(id, anchor);
 			const created = persistScheduled(userId, { ...input, id: undefined, startDate: anchor, editScope: undefined });
 			setScheduledTags(userId, created, input.tags);
+			resultId = created;
 		}
 		d.run('COMMIT');
+		return resultId;
 	} catch (error) {
 		d.run('ROLLBACK');
 		throw error;
@@ -1818,7 +1924,9 @@ function setScheduledTags(userId: number, scheduledId: number, tagIds: number[])
 }
 
 export function deleteScheduled(userId: number, id: number) {
-	db().query('DELETE FROM scheduled WHERE id = ? AND user_id = ?').run(id, userId);
+	const removed = rowById('scheduled', userId, id, 'id, name, account_id, category_id, amount_cents, start_date, notes');
+	const result = db().query('DELETE FROM scheduled WHERE id = ? AND user_id = ?').run(id, userId);
+	if (result.changes) emitChange(userId, 'schedule', 'deleted', removed);
 }
 
 // ---------------------------------------------------------------------------
@@ -1851,6 +1959,7 @@ export function saveRule(
 		db()
 			.query('UPDATE categorization_rules SET name = ?, conditions = ?, category_id = ? WHERE id = ? AND user_id = ?')
 			.run(data.name, JSON.stringify(data.conditions), data.categoryId, id, userId);
+		emitChange(userId, 'rule', 'updated', rowById('categorization_rules', userId, id, 'id, name, category_id'));
 		return id;
 	}
 	const result = db()
@@ -1858,11 +1967,15 @@ export function saveRule(
 			'INSERT INTO categorization_rules (user_id, name, conditions, category_id, priority, enabled) VALUES (?, ?, ?, ?, 0, 1)'
 		)
 		.run(userId, data.name, JSON.stringify(data.conditions), data.categoryId);
-	return Number(result.lastInsertRowid);
+	const created = Number(result.lastInsertRowid);
+	emitChange(userId, 'rule', 'created', rowById('categorization_rules', userId, created, 'id, name, category_id'));
+	return created;
 }
 
 export function deleteRule(userId: number, id: number) {
-	db().query('DELETE FROM categorization_rules WHERE id = ? AND user_id = ?').run(id, userId);
+	const removed = rowById('categorization_rules', userId, id, 'id, name, category_id');
+	const result = db().query('DELETE FROM categorization_rules WHERE id = ? AND user_id = ?').run(id, userId);
+	if (result.changes) emitChange(userId, 'rule', 'deleted', removed);
 }
 
 export function setRuleEnabled(userId: number, id: number, enabled: boolean) {
@@ -2053,6 +2166,12 @@ export function saveTransactionSplits(
 	db()
 		.query('UPDATE transactions SET category_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
 		.run(splits[0].categoryId, txId);
+	emitChange(
+		userId,
+		'split',
+		'updated',
+		rowById('transactions', userId, txId, 'id, account_id, category_id, date, amount_cents, merchant, notes')
+	);
 }
 
 export function clearTransactionSplits(userId: number, txId: number) {

@@ -19,6 +19,7 @@ import {
 	saveTransactionSplits
 } from './finance';
 import type { ApiTokenScope } from './apiTokens';
+import { flushDataChanges, registerWebhookDeliver, type DataChangeEvent } from './webhookNotify';
 import type { AccountType, CategoryType, ForecastBehavior, RepeatUnit, RuleCondition, RuleField, RuleOp } from '$lib/types';
 
 /**
@@ -26,8 +27,8 @@ import type { AccountType, CategoryType, ForecastBehavior, RepeatUnit, RuleCondi
  *
  * The read API and MCP stay read-only. A write succeeds only when the
  * instance toggle is on, the caller is a token with scope `write`, and demo
- * mode is off. Every successful write is audited. Webhooks fire only for
- * those write-API changes (not for edits made in the app UI).
+ * mode is off. Every successful write is audited. Webhooks fire from the shared save path
+ * (the app and the write API), once per change.
  */
 
 export const WRITE_RESOURCES = [
@@ -193,7 +194,7 @@ export async function executeWrite(input: {
 			before: result.before,
 			after: result.after
 		});
-		await dispatchWebhooks(userId, result.event);
+		await flushDataChanges();
 		return { status: 200, body: { id: result.event.id, resource: input.resource, action: result.event.action } };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Write failed.';
@@ -856,7 +857,7 @@ export function rotateWebhookSecret(
 	return { ok: true, secret };
 }
 
-async function dispatchWebhooks(userId: number, event: WebhookEvent) {
+export async function dispatchWebhooks(userId: number, event: WebhookEvent | DataChangeEvent) {
 	const rows = db()
 		.query(
 			`SELECT id, user_id, name, url, secret, secret_hint, events, filters, fields, enabled, created_at
@@ -866,8 +867,9 @@ async function dispatchWebhooks(userId: number, event: WebhookEvent) {
 	for (const row of rows) {
 		const events = JSON.parse(row.events) as string[];
 		const filters = JSON.parse(row.filters) as WebhookFilters;
-		if (!webhookMatches(filters, events, event)) continue;
-		const payload = projectPayload(event, JSON.parse(row.fields) as string[]);
+		const hookEvent = event as WebhookEvent;
+		if (!webhookMatches(filters, events, hookEvent)) continue;
+		const payload = projectPayload(hookEvent, JSON.parse(row.fields) as string[]);
 		const body = JSON.stringify(payload);
 		const signature = signWebhookBody(row.secret, body);
 		const send = transportForTests ?? fetch;
@@ -885,3 +887,5 @@ async function dispatchWebhooks(userId: number, event: WebhookEvent) {
 		}
 	}
 }
+
+registerWebhookDeliver(dispatchWebhooks);

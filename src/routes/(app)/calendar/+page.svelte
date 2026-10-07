@@ -32,8 +32,13 @@
 		weekContaining,
 		type MobileCalendarView
 	} from '$lib/calendarMobile';
+	import {
+		splitDayGridItems,
+		estimatedOverflowHeight,
+		overflowPanelPosition
+	} from '$lib/calendarDayOverflow';
 	import { watchFormToast } from '$lib/formToast.svelte';
-	import { formatMoney, monthLabel, todayISO } from '$lib/utils';
+	import { formatDate, formatMoney, monthLabel, todayISO } from '$lib/utils';
 	import type { Account, Category, Scheduled, Tag, Transaction } from '$lib/types';
 
 	let { form, data }: {
@@ -203,6 +208,55 @@
 		selectedIso = iso;
 	}
 
+	const DAY_OVERFLOW_ID = 'calendar-day-overflow';
+	type DayOverflowItem =
+		| { kind: 'tx'; t: Transaction }
+		| { kind: 'occ'; o: { scheduled: Scheduled; date: string } };
+	let dayOverflow = $state<{
+		iso: string;
+		items: DayOverflowItem[];
+		top: number;
+		left: number;
+	} | null>(null);
+	let dayOverflowSource: HTMLElement | null = null;
+
+	function hideDayOverflow() {
+		if (dayOverflowSource) {
+			dayOverflowSource.removeAttribute('aria-expanded');
+			dayOverflowSource.removeAttribute('aria-controls');
+		}
+		dayOverflowSource = null;
+		dayOverflow = null;
+	}
+
+	function toggleDayOverflow(e: MouseEvent, iso: string, truncated: DayOverflowItem[]) {
+		e.preventDefault();
+		e.stopPropagation();
+		hidePillPopup();
+		const el = e.currentTarget;
+		if (!(el instanceof HTMLElement) || truncated.length === 0) {
+			hideDayOverflow();
+			return;
+		}
+		if (dayOverflowSource === el && dayOverflow?.iso === iso) {
+			hideDayOverflow();
+			return;
+		}
+		if (dayOverflowSource && dayOverflowSource !== el) {
+			dayOverflowSource.removeAttribute('aria-expanded');
+			dayOverflowSource.removeAttribute('aria-controls');
+		}
+		el.setAttribute('aria-expanded', 'true');
+		el.setAttribute('aria-controls', DAY_OVERFLOW_ID);
+		dayOverflowSource = el;
+		const pos = overflowPanelPosition(
+			el.getBoundingClientRect(),
+			{ width: window.innerWidth, height: window.innerHeight },
+			estimatedOverflowHeight(truncated.length)
+		);
+		dayOverflow = { iso, items: truncated, ...pos };
+	}
+
 	// --- Dialogs ---
 	let scheduledOpen = $state(false);
 	let scheduledEditing = $state<Scheduled | null>(null);
@@ -212,6 +266,7 @@
 
 	function openScheduledFor(date: string) {
 		hidePillPopup();
+		hideDayOverflow();
 		scheduledEditing = null;
 		scheduledOccurrence = null;
 		scheduledPrefill = date;
@@ -220,6 +275,7 @@
 
 	function openNewScheduled() {
 		hidePillPopup();
+		hideDayOverflow();
 		scheduledEditing = null;
 		scheduledOccurrence = null;
 		scheduledPrefill = todayISO();
@@ -228,6 +284,7 @@
 
 	function openScheduledEdit(s: Scheduled, date: string) {
 		hidePillPopup();
+		hideDayOverflow();
 		scheduledEditing = s;
 		scheduledOccurrence = date;
 		scheduledPrefill = null;
@@ -324,7 +381,10 @@
 	}
 
 	$effect(() => {
-		const hide = () => hidePillPopup();
+		const hide = () => {
+			hidePillPopup();
+			hideDayOverflow();
+		};
 		window.addEventListener('scroll', hide, true);
 		window.addEventListener('resize', hide);
 		return () => {
@@ -353,6 +413,32 @@
 		};
 	});
 
+
+	// Outside click / Escape closes day overflow.
+	$effect(() => {
+		if (!browser || !dayOverflow) return;
+		const onPointerDown = (e: PointerEvent) => {
+			const t = e.target;
+			if (!(t instanceof Node)) return;
+			if (dayOverflowSource?.contains(t)) return;
+			const panel = document.getElementById(DAY_OVERFLOW_ID);
+			if (panel?.contains(t)) return;
+			hideDayOverflow();
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') hideDayOverflow();
+		};
+		const id = window.setTimeout(() => {
+			window.addEventListener('pointerdown', onPointerDown, true);
+			window.addEventListener('keydown', onKey, true);
+		}, 0);
+		return () => {
+			window.clearTimeout(id);
+			window.removeEventListener('pointerdown', onPointerDown, true);
+			window.removeEventListener('keydown', onKey, true);
+		};
+	});
+
 	function shownItems(cell: Cell) {
 		const shownTx = data.hideActuals ? [] : cell.transactions;
 		return [
@@ -362,15 +448,9 @@
 	}
 
 	function gridShown(cell: Cell) {
-		const shownTx = data.hideActuals ? [] : cell.transactions;
-		const shown = [
-			...shownTx.slice(0, 3).map((t) => ({ kind: 'tx' as const, t })),
-			...cell.occurrences.slice(0, 3).map((o) => ({ kind: 'occ' as const, o }))
-		];
-		const hidden =
-			(data.hideActuals ? 0 : cell.transactions.length) + cell.occurrences.length - shown.length;
-		return { shown, hidden };
+		return splitDayGridItems(cell.transactions, cell.occurrences, data.hideActuals);
 	}
+
 
 	// Toast the latest action result (replaces the old top-of-page status block).
 	watchFormToast(() => form);
@@ -793,7 +873,7 @@
 					</div>
 				{/each}
 				{#each cells as cell (cell.iso)}
-					{@const { shown, hidden } = gridShown(cell)}
+					{@const { shown, truncated, hidden } = gridShown(cell)}
 					<div class="relative flex min-h-28 flex-col bg-surface p-1.5 text-left align-top transition-colors hover:bg-muted/50">
 						<button
 							type="button"
@@ -871,7 +951,15 @@
 								{/if}
 							{/each}
 							{#if hidden > 0}
-								<span class="pointer-events-none px-1.5 text-xs text-muted-foreground">+{hidden} more</span>
+								<button
+									type="button"
+									class="pointer-events-auto relative z-10 rounded px-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+									onclick={(e) => toggleDayOverflow(e, cell.iso, truncated)}
+									aria-haspopup="dialog"
+									aria-expanded={dayOverflow?.iso === cell.iso}
+								>
+									+{hidden} more
+								</button>
 							{/if}
 						</div>
 					</div>
@@ -898,6 +986,84 @@
 				<dd class="min-w-0 break-words font-medium">{row.value}</dd>
 			{/each}
 		</dl>
+	</div>
+{/if}
+
+{#if dayOverflow}
+	<div
+		id={DAY_OVERFLOW_ID}
+		role="dialog"
+		aria-label="More on {formatDate(dayOverflow.iso)}"
+		class="fixed z-[60] flex w-64 max-h-72 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-lg"
+		style="top: {dayOverflow.top}px; left: {dayOverflow.left}px"
+	>
+		<div class="shrink-0 border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+			{formatDate(dayOverflow.iso)}
+		</div>
+		<div class="min-h-0 flex-1 overflow-y-auto p-1.5">
+			<div class="flex flex-col gap-1">
+				{#each dayOverflow.items as item (item.kind + (item.kind === 'tx' ? item.t.id : item.o.scheduled.id))}
+					{#if item.kind === 'tx'}
+						<button
+							type="button"
+							class="flex select-none items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-left text-xs [-webkit-touch-callout:none]"
+							style="border-left: 3px solid {item.t.color ?? item.t.category_color ?? 'transparent'}"
+							onpointerenter={(e) => onPillPointerEnter(e.currentTarget, transactionPillRows(item.t))}
+							onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
+							onfocus={(e) => onPillFocus(e.currentTarget, transactionPillRows(item.t))}
+							onblur={onPillBlur}
+							onclick={(e) => onPillClick(e, transactionPillRows(item.t))}
+						>
+							<span class="truncate">{item.t.merchant ?? item.t.category_name ?? 'Transaction'}</span>
+							<span class="ml-auto shrink-0 font-medium {item.t.amount_cents > 0 ? 'text-success' : ''}">
+								{formatMoney(item.t.amount_cents)}
+							</span>
+						</button>
+					{:else}
+						<button
+							type="button"
+							class="flex cursor-pointer select-none items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-left text-xs [-webkit-touch-callout:none] {item
+								.o.scheduled.color
+									? ''
+									: 'border-primary/60 bg-primary/10'}"
+							style={item.o.scheduled.color
+								? `border-color: ${item.o.scheduled.color}; background: ${item.o.scheduled.color}1a`
+								: undefined}
+							onclick={(e) =>
+								onPillClick(e, scheduledPillRows(item.o.scheduled), () =>
+									openScheduledEdit(item.o.scheduled, item.o.date)
+								)}
+							onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
+							onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
+							onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
+							onblur={onPillBlur}
+						>
+							{#if item.o.scheduled.repeat_interval}
+								<svg
+									class="size-3 shrink-0"
+									style="color: {item.o.scheduled.color ?? 'var(--color-primary)'}"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+								>
+									<path d="M21 12a9 9 0 1 1-2.64-6.36" />
+									<path d="M21 3v6h-6" />
+								</svg>
+							{/if}
+							<span class="truncate">{item.o.scheduled.name}</span>
+							<span
+								class="ml-auto shrink-0 font-medium"
+								style="color: {item.o.scheduled.color ?? 'var(--color-primary)'}"
+							>
+								{formatMoney(item.o.scheduled.amount_cents)}
+							</span>
+						</button>
+					{/if}
+				{/each}
+			</div>
+		</div>
 	</div>
 {/if}
 

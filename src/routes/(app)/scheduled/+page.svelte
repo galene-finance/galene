@@ -1,10 +1,17 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import AddScheduledDialog from '$lib/components/AddScheduledDialog.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import { formatRepeat } from '$lib/calendarPillPopup';
 	import { softFill } from '$lib/calendarMobile';
 	import { watchFormToast } from '$lib/formToast.svelte';
+	import {
+		SCHEDULE_FILTER_STORAGE_KEY,
+		filterScheduleRows,
+		parseScheduleListFilter,
+		type ScheduleListFilter
+	} from '$lib/scheduleFilter';
 	import { formatDate, formatMoney, todayISO } from '$lib/utils';
 	import type { Account, Category, Scheduled, Tag } from '$lib/types';
 
@@ -22,6 +29,33 @@
 	let scheduledEditing = $state<Scheduled | null>(null);
 	let scheduledOccurrence = $state<string | null>(null);
 	let scheduledPrefill = $state<string | null>(null);
+
+	/** Default upcoming; restored from sessionStorage when present. */
+	let listFilter = $state<ScheduleListFilter>('upcoming');
+
+	$effect(() => {
+		if (!browser) return;
+		try {
+			const saved = parseScheduleListFilter(sessionStorage.getItem(SCHEDULE_FILTER_STORAGE_KEY));
+			if (saved) listFilter = saved;
+		} catch {
+			/* ignore */
+		}
+	});
+
+	function setListFilter(next: ScheduleListFilter) {
+		listFilter = next;
+		if (!browser) return;
+		try {
+			sessionStorage.setItem(SCHEDULE_FILTER_STORAGE_KEY, next);
+		} catch {
+			/* ignore */
+		}
+	}
+
+	const today = $derived(todayISO());
+	const visibleRows = $derived(filterScheduleRows(data.rows, listFilter, today));
+	const filterHidesAll = $derived(data.rows.length > 0 && visibleRows.length === 0);
 
 	function openNewScheduled() {
 		scheduledEditing = null;
@@ -68,15 +102,53 @@
 		<Button type="button" onclick={openNewScheduled}>+ New scheduled</Button>
 	</div>
 
+	<div class="flex" role="group" aria-label="Schedule list filter">
+		<button
+			type="button"
+			class="flex-1 rounded-l-md border px-3 py-2 text-sm font-medium transition-colors {listFilter ===
+			'upcoming'
+				? 'border-primary/40 bg-primary/15 text-primary'
+				: 'border-border bg-surface text-muted-foreground hover:bg-muted hover:text-foreground'}"
+			aria-pressed={listFilter === 'upcoming'}
+			onclick={() => setListFilter('upcoming')}
+		>
+			Upcoming
+		</button>
+		<button
+			type="button"
+			class="flex-1 rounded-r-md border border-l-0 px-3 py-2 text-sm font-medium transition-colors {listFilter ===
+			'all'
+				? 'border-primary/40 bg-primary/15 text-primary'
+				: 'border-border bg-surface text-muted-foreground hover:bg-muted hover:text-foreground'}"
+			aria-pressed={listFilter === 'all'}
+			onclick={() => setListFilter('all')}
+		>
+			All
+		</button>
+	</div>
+
 	{#if data.rows.length === 0}
 		<div class="rounded-lg border border-dashed border-border bg-surface p-10 text-center">
 			<p class="text-sm text-muted-foreground">
 				No schedules yet. Add one to see it here and on the calendar.
 			</p>
 		</div>
+	{:else if filterHidesAll}
+		<div class="rounded-lg border border-dashed border-border bg-surface p-10 text-center">
+			<p class="text-sm text-muted-foreground">
+				No upcoming schedules. Switch to All to see ended or past series.
+			</p>
+			<button
+				type="button"
+				class="mt-3 text-sm font-medium text-primary hover:underline"
+				onclick={() => setListFilter('all')}
+			>
+				Show all
+			</button>
+		</div>
 	{:else}
 		<ul class="flex flex-col gap-3">
-			{#each data.rows as row (row.scheduled.id)}
+			{#each visibleRows as row (row.scheduled.id)}
 				<li>
 					<button
 						type="button"

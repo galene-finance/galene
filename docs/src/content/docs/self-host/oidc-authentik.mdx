@@ -17,8 +17,9 @@ Take a [backup](/self-host/backups/) before upgrading an image that includes thi
    `https://galene.example/auth/oidc/callback`
 
    The live value is also on Galene → Settings → Security (your public origin plus `/auth/oidc/callback`). Behind TLS, the origin comes from the [reverse proxy](/self-host/reverse-proxy/) headers (`PROTOCOL_HEADER`, `HOST_HEADER`).
-3. Include scopes `openid`, `profile`, and `email`. The email claim must match an existing Galene user.
-4. Copy the provider’s **OpenID Configuration Issuer**, client ID, and client secret.
+3. Include scopes `openid`, `profile`, and `email`. The email claim must match an existing Galene user, and the token must carry `email_verified: true` (see [Verified email](#verified-email)).
+4. Restrict who can use the application with **application bindings** (a group or policy binding on the Galene application). Users without a binding get **Access denied** at Authentik before Galene sees them.
+5. Copy the provider’s **OpenID Configuration Issuer**, client ID, and client secret.
 
 ## Galene fields
 
@@ -32,27 +33,43 @@ An administrator opens **Settings → Security → Single sign-on (OIDC)**:
 | Client secret | From the Authentik provider. Masked after save; Show / Hide while editing. Leave blank on a later save to keep the stored secret. |
 | Scopes | `openid profile email` |
 | Mode | **Optional** (default). Password and authenticator-app MFA stay on the sign-in page, next to **Continue with SSO**. **Required** sends `/login` straight to Authentik. Local password is `/login?local=1` (also linked from a callback error as **Use local password**). |
-| User mapping | Match by email. Galene does not create a user on first login. |
+| User mapping | First sign-in matches a verified email and links the Authentik subject. Galene does not create a user on first login. |
 | Redirect URI | Read-only. Copy it into Authentik. |
 
 **Test connection** loads `/.well-known/openid-configuration` and checks the client at the token endpoint. Authentik often has the client-credentials grant turned off. The test still succeeds when discovery works and the token endpoint recognizes the client.
 
 A non-empty `GALENE_OIDC_*` variable overrides the matching field. See [Environment variables](/reference/environment-variables/).
 
+## Verified email
+
+Galene only links an account when Authentik says the email is verified. Check what your Authentik version’s default `email` scope mapping sends (Authentik → Applications → Providers → your provider → Preview). If `email_verified` is missing or `false`, and Authentik is your source of truth for user emails, add a custom **Scope Mapping** with scope name `email`:
+
+```python
+return {
+    "email": request.user.email,
+    "email_verified": True,
+}
+```
+
+Select it in the provider’s scopes instead of the default `email` mapping, save, and preview again.
+
 ## Sign-in
 
 1. Create the Galene user first (the first-run account, or Settings → Users) with the same email Authentik will send.
 2. Save Optional mode and run **Test connection**.
 3. Sign out. In **Optional** mode, choose **Continue with SSO**. The hint reads **via Authentik** when the issuer URL contains `authentik`. In **Required** mode, `/login` starts Authentik immediately. `/login?local=1`, or **Use local password** on a callback error, still shows the password form.
-4. After Authentik, Galene opens home. There is no Welcome back step. The account menu says **Signed in via SSO**. **Sign out** clears the Galene session only. It does not sign the browser out of Authentik.
+4. The first SSO sign-in links the Galene account to the Authentik user (issuer + subject). Later sign-ins use that link even if the email changes in Authentik.
+5. After Authentik, Galene opens home. There is no Welcome back step. The account menu says **Signed in via SSO**. **Sign out** clears the Galene session only. It does not sign the browser out of Authentik.
 
 ## Troubleshooting
 
 **Access denied.** Authentik did not approve the sign-in (cancelled, or the user is not allowed on the application). Galene shows **Access denied** and **Back to sign in**. No session is created.
 
-**Email doesn’t match an existing account.** Authentik returned an email that is not a Galene user. Ask an admin to create that user, then try again. Galene does not insert a row.
+**No Galene account for this email** (formerly “Not provisioned” / “Email doesn’t match”). Galene never creates accounts from SSO. An admin creates a Galene user in Settings → Users with exactly the Authentik email, then the user signs in with SSO again.
 
-**Not provisioned.** SSO is on and automatic account creation is off (always, in this version), or the provider marked the email unverified. Create the Galene user with the Authentik email.
+**Email not verified.** Authentik did not send `email_verified: true`. See [Verified email](#verified-email).
+
+**Account linked to a different sign-in.** The Galene user is already linked to a different Authentik user or issuer (for example the Authentik user was recreated). Sign in with the original Authentik user, or an admin clicks **Unlink SSO** for that user in Settings → Users; the next SSO sign-in links again.
 
 **Discovery failed.** The Issuer URL should be the OpenID Configuration Issuer, without a trailing `/.well-known/openid-configuration`. Galene must be able to open that URL from the app host.
 

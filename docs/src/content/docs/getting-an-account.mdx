@@ -31,6 +31,10 @@ Admins create additional accounts in **Settings → Users**:
 
 Sign in with your email and password. If two-factor authentication is enabled, a second step asks for a 6-digit code from your authenticator app or a backup code. You can enable TOTP in **Settings → Security** → **Two-factor authentication** (API bearer tokens bypass TOTP; the browser still asks for the code).
 
+### Single sign-on
+
+If your server has SSO turned on, accounts are still never created automatically. Ask an admin to create a Galene user with the same email your identity provider uses. Then choose **Continue with SSO** on the sign-in page; the first SSO sign-in links that account. See [Single sign-on (OIDC)](/self-host/oidc/).
+
 ## Where to go next
 
 - [Quick start](/quick-start/) — running the server itself.

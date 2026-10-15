@@ -48,6 +48,11 @@ export function deleteAllData(userId: number): void {
 	const d = db();
 	d.run('BEGIN');
 	try {
+		d.query('DELETE FROM sync_review_items WHERE user_id = ?').run(userId);
+		d.query('DELETE FROM webhooks WHERE user_id = ?').run(userId);
+		d.query('DELETE FROM advisor_audit WHERE user_id = ?').run(userId);
+		// packs and viewer_sessions cascade from advisor_grants
+		d.query('DELETE FROM advisor_grants WHERE user_id = ?').run(userId);
 		d.query('DELETE FROM transactions WHERE user_id = ?').run(userId);
 		d.query('DELETE FROM scheduled WHERE user_id = ?').run(userId);
 		d.query('DELETE FROM budgets WHERE user_id = ?').run(userId);

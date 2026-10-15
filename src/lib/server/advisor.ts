@@ -165,7 +165,17 @@ export function createGrant(
 	const passwordPlain = input.password?.trim() ?? '';
 	if (!passwordPlain) return { error: 'A link password is required.' };
 	const password = hashSharePassword(passwordPlain);
-	const ids = [...new Set(input.accountIds.filter((n) => Number.isInteger(n) && n > 0))];
+	const requested = [...new Set(input.accountIds.filter((n) => Number.isInteger(n) && n > 0))];
+	const ids =
+		requested.length === 0
+			? []
+			: (
+					db()
+						.query(
+							`SELECT id FROM accounts WHERE user_id = ? AND id IN (${requested.map(() => '?').join(',')})`
+						)
+						.all(userId, ...requested) as { id: number }[]
+				).map((row) => row.id);
 	const result = db()
 		.query(
 			`INSERT INTO advisor_grants

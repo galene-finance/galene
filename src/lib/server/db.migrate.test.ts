@@ -142,3 +142,33 @@ describe('migrate category rebuild (#20)', () => {
 		db.close();
 	});
 });
+
+describe('migrate OIDC identity pinning (ADO-55)', () => {
+	test('adds oidc_identities to an existing database without touching users', () => {
+		const db = new Database(':memory:');
+		db.exec('PRAGMA foreign_keys = ON');
+		migrate(db);
+		db.exec('DROP TABLE oidc_identities');
+		db.run(`PRAGMA user_version = ${migrationCount() - 1}`);
+		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
+		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
+
+		migrate(db);
+
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
+		expect(db.query('SELECT COUNT(*) AS n FROM users').get()).toEqual({ n: 1 });
+		expect(db.query('SELECT COUNT(*) AS n FROM accounts').get()).toEqual({ n: 1 });
+		expect(db.query('SELECT COUNT(*) AS n FROM oidc_identities').get()).toEqual({ n: 0 });
+		db.query(`INSERT INTO oidc_identities (user_id, issuer, sub) VALUES (1, 'https://idp.example.com', 's')`).run();
+		expect(() =>
+			db.query(`INSERT INTO oidc_identities (user_id, issuer, sub) VALUES (1, 'https://idp.example.com', 't')`).run()
+		).toThrow();
+		// Deleting the user cascades the link.
+		db.query('DELETE FROM users WHERE id = 1').run();
+		expect(db.query('SELECT COUNT(*) AS n FROM oidc_identities').get()).toEqual({ n: 0 });
+		// Replay is idempotent.
+		db.run(`PRAGMA user_version = ${migrationCount() - 1}`);
+		expect(() => migrate(db)).not.toThrow();
+		db.close();
+	});
+});

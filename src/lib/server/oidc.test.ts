@@ -3,14 +3,20 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { closeDbForTests, db, migrate } from './db';
+import { closeDbForTests, db, migrate, migrationCount } from './db';
+import { assertAllowed } from './loginThrottle';
+import { unlinkUserOidc } from './users';
 import {
 	callbackErrorCopy,
 	claimsFromIdToken,
 	decodeJwtPayload,
+	completeOidcSignIn,
+	getOidcLink,
 	loadOidcConfig,
-	mapEmailToUser,
 	maskSecret,
+	oidcThrottleEmailKey,
+	parseUserinfo,
+	resolveOidcUser,
 	parseDiscovery,
 	parseTokenResponse,
 	pkceChallengeFor,
@@ -142,19 +148,16 @@ describe('OIDC discovery and settings', () => {
 });
 
 describe('OIDC email mapping and callback errors', () => {
-	test('matches an existing user case-insensitively and does not insert', () => {
-		const before = (db().query('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
-		expect(mapEmailToUser('ada@example.com', true)).toEqual({ ok: true, userId: 1 });
-		expect(mapEmailToUser('missing@example.com', null)).toEqual({ ok: false, error: 'email_mismatch' });
-		expect(mapEmailToUser('ada@example.com', false)).toEqual({ ok: false, error: 'not_provisioned' });
-		const after = (db().query('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
-		expect(after).toBe(before);
-	});
-
-	test('calm copy covers the three callback errors', () => {
+	test('calm copy covers every callback error and drops the nonexistent settings', () => {
 		expect(callbackErrorCopy('access_denied', 'Authentik').title).toBe('Access denied');
-		expect(callbackErrorCopy('email_mismatch', 'Authentik').title).toBe('Email doesn’t match an existing account');
-		expect(callbackErrorCopy('not_provisioned', 'SSO').title).toBe('Not provisioned');
+		for (const code of ['email_mismatch', 'not_provisioned'] as const) {
+			const copy = callbackErrorCopy(code, 'Authentik');
+			expect(copy.title).toBe('No Galene account for this email');
+			expect(copy.body).toContain('admin to create a user with exactly the email');
+			expect(copy.body).not.toMatch(/automatic account creation|household admin|invite/i);
+		}
+		expect(callbackErrorCopy('email_unverified', 'SSO').title).toBe('Email not verified');
+		expect(callbackErrorCopy('sub_mismatch', 'SSO').body).toContain('Settings → Users');
 	});
 
 	test('reads email and nonce from an identity token payload', () => {
@@ -171,6 +174,14 @@ describe('OIDC email mapping and callback errors', () => {
 		if ('error' in claims) return;
 		expect(claims.email).toBe('ada@example.com');
 		expect(claims.nonce).toBe('abc');
+		expect(claims.sub).toBeNull();
+		const withSub = claimsFromIdToken(`hdr.${b64url({ sub: 'abc-123', email: 'a@example.com' })}.sig`);
+		expect('error' in withSub ? null : withSub.sub).toBe('abc-123');
+		expect(parseUserinfo({ sub: 's1', email: 'A@example.com', email_verified: 'true' })).toEqual({
+			sub: 's1',
+			email: 'a@example.com',
+			emailVerified: true
+		});
 		expect(decodeJwtPayload('not-a-jwt')).toBeNull();
 	});
 
@@ -183,5 +194,146 @@ describe('OIDC email mapping and callback errors', () => {
 		const verifier = 'verifier-value';
 		const expected = createHash('sha256').update(verifier).digest().toString('base64url');
 		expect(pkceChallengeFor(verifier)).toBe(expected);
+	});
+});
+
+const ISS = 'https://idp.example.com/application/o/galene';
+const userCount = () => (db().query('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
+
+describe('OIDC identity pinning (ADO-55)', () => {
+	test('first link with a verified email pins issuer+sub and never inserts a user', () => {
+		const before = userCount();
+		expect(resolveOidcUser({ issuer: ISS, sub: 'sub-1', email: 'ada@example.com', emailVerified: true })).toEqual({
+			ok: true,
+			userId: 1,
+			linked: true
+		});
+		const row = db().query('SELECT user_id, issuer, sub FROM oidc_identities').all();
+		expect(row).toEqual([{ user_id: 1, issuer: ISS, sub: 'sub-1' }]);
+		expect(getOidcLink(1)?.issuer).toBe(ISS);
+		expect(userCount()).toBe(before);
+	});
+
+	test('a pinned sub still signs in after the provider email changes', () => {
+		resolveOidcUser({ issuer: ISS, sub: 'sub-1', email: 'ada@example.com', emailVerified: true });
+		expect(resolveOidcUser({ issuer: ISS, sub: 'sub-1', email: 'ada.new@example.com', emailVerified: null })).toEqual({
+			ok: true,
+			userId: 1,
+			linked: false
+		});
+	});
+
+	test('a different sub for an already linked email is rejected, not relinked', () => {
+		resolveOidcUser({ issuer: ISS, sub: 'sub-1', email: 'ada@example.com', emailVerified: true });
+		expect(resolveOidcUser({ issuer: ISS, sub: 'sub-2', email: 'ada@example.com', emailVerified: true })).toEqual({
+			ok: false,
+			error: 'sub_mismatch'
+		});
+		const other = 'https://other.example.com';
+		expect(resolveOidcUser({ issuer: other, sub: 'sub-1', email: 'ada@example.com', emailVerified: true })).toEqual({
+			ok: false,
+			error: 'sub_mismatch'
+		});
+		expect(db().query('SELECT sub FROM oidc_identities WHERE user_id = 1').get()).toEqual({ sub: 'sub-1' });
+	});
+
+	test('(issuer, sub) is unique', () => {
+		db().query(`INSERT INTO users (name, email, password_hash) VALUES ('Bea', 'bea@example.com', 'x')`).run();
+		resolveOidcUser({ issuer: ISS, sub: 'sub-1', email: 'ada@example.com', emailVerified: true });
+		expect(() =>
+			db().query(`INSERT INTO oidc_identities (user_id, issuer, sub) VALUES (2, ?, 'sub-1')`).run(ISS)
+		).toThrow();
+	});
+
+	test('missing or false email_verified is rejected for an unlinked identity', () => {
+		for (const emailVerified of [null, false]) {
+			expect(resolveOidcUser({ issuer: ISS, sub: 'sub-1', email: 'ada@example.com', emailVerified })).toEqual({
+				ok: false,
+				error: 'email_unverified'
+			});
+		}
+		expect(db().query('SELECT COUNT(*) AS n FROM oidc_identities').get()).toEqual({ n: 0 });
+	});
+
+	test('missing sub is invalid', () => {
+		expect(resolveOidcUser({ issuer: ISS, sub: null, email: 'ada@example.com', emailVerified: true })).toEqual({
+			ok: false,
+			error: 'invalid'
+		});
+	});
+
+	test('no matching user is rejected with the new copy', () => {
+		const result = resolveOidcUser({ issuer: ISS, sub: 'x', email: 'missing@example.com', emailVerified: true });
+		expect(result).toEqual({ ok: false, error: 'email_mismatch' });
+		if (!result.ok) expect(callbackErrorCopy(result.error, 'SSO').body).toContain('create a user with exactly the email');
+	});
+
+	test('per-email throttle locks repeated rejections across IPs without touching the password bucket', () => {
+		for (let i = 0; i < 5; i++) {
+			const r = completeOidcSignIn({ ip: `198.51.100.${i}`, issuer: ISS, sub: 'x', email: 'missing@example.com', emailVerified: true });
+			expect(r.ok).toBe(false);
+		}
+		const locked = completeOidcSignIn({ ip: '198.51.100.99', issuer: ISS, sub: 'x', email: 'missing@example.com', emailVerified: true });
+		expect(locked.ok).toBe(false);
+		if (!locked.ok) expect(locked.throttled).toMatch(/Too many attempts/);
+		expect(() => assertAllowed('198.51.100.99', oidcThrottleEmailKey('missing@example.com'))).toThrow();
+		// The password-login email bucket for the same address is untouched.
+		expect(() => assertAllowed('203.0.113.1', 'missing@example.com')).not.toThrow();
+	});
+
+	test('success clears the per-email bucket', () => {
+		for (let i = 0; i < 3; i++) {
+			completeOidcSignIn({ ip: '198.51.100.1', issuer: ISS, sub: 'sub-1', email: 'ada@example.com', emailVerified: false });
+		}
+		const ok = completeOidcSignIn({ ip: '198.51.100.1', issuer: ISS, sub: 'sub-1', email: 'ada@example.com', emailVerified: true });
+		expect(ok.ok).toBe(true);
+		expect(db().query(`SELECT COUNT(*) AS n FROM auth_throttle`).get()).toEqual({ n: 0 });
+	});
+
+	test('admin unlink then a new sub re-pins by verified email', () => {
+		resolveOidcUser({ issuer: ISS, sub: 'sub-1', email: 'ada@example.com', emailVerified: true });
+		expect(unlinkUserOidc(1)).toEqual({ ok: true });
+		expect(getOidcLink(1)).toBeNull();
+		expect(unlinkUserOidc(1).ok).toBe(false);
+		expect(resolveOidcUser({ issuer: ISS, sub: 'sub-2', email: 'ada@example.com', emailVerified: true })).toEqual({
+			ok: true,
+			userId: 1,
+			linked: true
+		});
+		expect(resolveOidcUser({ issuer: ISS, sub: 'sub-1', email: 'ada@example.com', emailVerified: true })).toEqual({
+			ok: false,
+			error: 'sub_mismatch'
+		});
+	});
+
+	test('admin unlink is blocked in demo mode', () => {
+		resolveOidcUser({ issuer: ISS, sub: 'sub-1', email: 'ada@example.com', emailVerified: true });
+		const prev = process.env.GALENE_DEMO;
+		process.env.GALENE_DEMO = '1';
+		try {
+			expect(unlinkUserOidc(1).ok).toBe(false);
+		} finally {
+			if (prev === undefined) delete process.env.GALENE_DEMO;
+			else process.env.GALENE_DEMO = prev;
+		}
+		expect(getOidcLink(1)).not.toBeNull();
+	});
+
+	test('upgrading an existing database keeps users and pins on first verified sign-in', () => {
+		// Rewind to the schema before ADO-55 with an existing user.
+		db().exec('DROP TABLE oidc_identities');
+		db().run(`PRAGMA user_version = ${migrationCount() - 1}`);
+		closeDbForTests();
+		const before = userCount();
+		expect(db().query(`SELECT name FROM sqlite_master WHERE name = 'oidc_identities'`).get()).toEqual({
+			name: 'oidc_identities'
+		});
+		expect((db().query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
+		expect(userCount()).toBe(before);
+		expect(resolveOidcUser({ issuer: ISS, sub: 'legacy', email: 'ADA@example.com', emailVerified: true })).toEqual({
+			ok: true,
+			userId: 1,
+			linked: true
+		});
 	});
 });

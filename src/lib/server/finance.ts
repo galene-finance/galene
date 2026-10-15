@@ -83,6 +83,45 @@ function rowById(table: string, userId: number, id: number, columns: string): Re
 		| null;
 }
 
+type OwnedTable = 'transactions' | 'scheduled' | 'accounts' | 'categories' | 'tags' | 'budgets';
+
+/**
+ * Positive ids that belong to this user in a user-scoped table.
+ * Foreign or invalid ids are dropped — callers must never mutate them.
+ */
+export function ownedIds(table: OwnedTable, userId: number, ids: number[]): number[] {
+	const unique = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))];
+	if (unique.length === 0) return [];
+	return (
+		db()
+			.query(
+				`SELECT id FROM ${table} WHERE user_id = ? AND id IN (${unique.map(() => '?').join(',')})`
+			)
+			.all(userId, ...unique) as { id: number }[]
+	).map((row) => row.id);
+}
+
+export function ownedTransactionIds(userId: number, ids: number[]): number[] {
+	return ownedIds('transactions', userId, ids);
+}
+
+function ownsId(table: OwnedTable, userId: number, id: number): boolean {
+	return ownedIds(table, userId, [id]).length === 1;
+}
+
+function assertOwnedAccount(userId: number, accountId: number) {
+	if (!ownsId('accounts', userId, accountId)) throw new Error('Select a valid account.');
+}
+
+function assertOwnedCategory(userId: number, categoryId: number | null | undefined) {
+	if (categoryId == null) return;
+	if (!ownsId('categories', userId, categoryId)) throw new Error('Select a valid category.');
+}
+
+function ownedTagIds(userId: number, tagIds: number[]): number[] {
+	return ownedIds('tags', userId, tagIds);
+}
+
 // ---------------------------------------------------------------------------
 // Reference data
 // ---------------------------------------------------------------------------
@@ -862,6 +901,11 @@ export interface TransactionInput {
  */
 export function transactionInputFromForm(userId: number, form: FormData): { input?: TransactionInput; error?: string } {
 	const id = form.get('id') ? parseInt(String(form.get('id')), 10) : null;
+	if (id != null) {
+		if (!Number.isFinite(id) || !ownsId('transactions', userId, id)) {
+			return { error: 'Transaction not found.' };
+		}
+	}
 	const type = form.get('type') === 'income' ? 'income' : 'expense';
 	const amount = parseAmountToCents(String(form.get('amount') ?? ''));
 	const date = String(form.get('date') ?? '');
@@ -908,9 +952,13 @@ export function transactionInputFromForm(userId: number, form: FormData): { inpu
 }
 
 export function saveTransaction(userId: number, input: TransactionInput) {
+	assertOwnedAccount(userId, input.account);
+	assertOwnedCategory(userId, input.category);
+	const tagIds = ownedTagIds(userId, input.tags);
 	const created = input.id == null;
 	const amountCents = input.type === 'expense' ? -Math.abs(input.amountCents) : Math.abs(input.amountCents);
 	if (input.id) {
+		if (!ownsId('transactions', userId, input.id)) return;
 		db()
 			.query(
 				`UPDATE transactions
@@ -929,7 +977,7 @@ export function saveTransaction(userId: number, input: TransactionInput) {
 				input.id,
 				userId
 			);
-		setTransactionTags(userId, input.id, input.tags);
+		setTransactionTags(userId, input.id, tagIds);
 	} else {
 		const result = db()
 			.query(
@@ -938,7 +986,7 @@ export function saveTransaction(userId: number, input: TransactionInput) {
 			)
 			.run(userId, input.account, input.category, input.date, amountCents, input.merchant, input.notes, input.color ?? null);
 		const newId = Number(result.lastInsertRowid);
-		setTransactionTags(userId, newId, input.tags);
+		setTransactionTags(userId, newId, tagIds);
 		input.id = newId;
 	}
 	// Auto-categorization: only fills in a missing category, never overrides an explicit one.
@@ -954,12 +1002,11 @@ export function saveTransaction(userId: number, input: TransactionInput) {
 }
 
 function setTransactionTags(userId: number, transactionId: number, tagIds: number[]) {
-	const valid = db()
-		.query('SELECT id FROM tags WHERE user_id = ? AND id IN (' + (tagIds.length ? tagIds.map(() => '?').join(',') : 'NULL') + ')')
-		.all(userId, ...tagIds) as { id: number }[];
+	if (ownedTransactionIds(userId, [transactionId]).length === 0) return;
+	const valid = ownedTagIds(userId, tagIds);
 	db().query('DELETE FROM transaction_tags WHERE transaction_id = ?').run(transactionId);
-	for (const tag of valid) {
-		db().query('INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)').run(transactionId, tag.id);
+	for (const tagId of valid) {
+		db().query('INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)').run(transactionId, tagId);
 	}
 }
 
@@ -977,14 +1024,18 @@ export function bulkDeleteTransactions(userId: number, ids: number[]) {
 }
 
 export function bulkSetCategory(userId: number, ids: number[], categoryId: number | null) {
-	if (ids.length === 0) return;
+	assertOwnedCategory(userId, categoryId);
+	const owned = ownedTransactionIds(userId, ids);
+	if (owned.length === 0) return;
 	db()
-		.query(`UPDATE transactions SET category_id = ?, updated_at = datetime('now') WHERE user_id = ? AND id IN (${ids.map(() => '?').join(',')})`)
-		.run(categoryId, userId, ...ids);
+		.query(
+			`UPDATE transactions SET category_id = ?, updated_at = datetime('now') WHERE user_id = ? AND id IN (${owned.map(() => '?').join(',')})`
+		)
+		.run(categoryId, userId, ...owned);
 	// An explicit category choice makes the transaction single-category again.
 	db()
-		.query(`DELETE FROM transaction_splits WHERE transaction_id IN (${ids.map(() => '?').join(',')})`)
-		.run(...ids);
+		.query(`DELETE FROM transaction_splits WHERE transaction_id IN (${owned.map(() => '?').join(',')})`)
+		.run(...owned);
 }
 
 /** All transactions in [from, to) with tags and splits attached. */
@@ -1372,6 +1423,8 @@ export function saveBudget(
 	id: number | null,
 	data: { categoryId: number; period: Budget['period']; limitCents: number }
 ) {
+	assertOwnedCategory(userId, data.categoryId);
+	if (id != null && !ownsId('budgets', userId, id)) return;
 	if (id) {
 		db()
 			.query('UPDATE budgets SET category_id = ?, period = ?, limit_cents = ? WHERE id = ? AND user_id = ?')
@@ -1639,6 +1692,11 @@ function attachChildTags(
  */
 export function scheduledInputFromForm(userId: number, form: FormData): { input?: ScheduledInput; error?: string } {
 	const id = form.get('id') ? parseInt(String(form.get('id')), 10) : null;
+	if (id != null) {
+		if (!Number.isFinite(id) || !ownsId('scheduled', userId, id)) {
+			return { error: 'Scheduled expectation not found.' };
+		}
+	}
 	const name = String(form.get('name') ?? '').trim();
 	if (!name) return { error: 'Enter a name for this expectation.' };
 	const amount = parseAmountToCents(String(form.get('amount') ?? ''));
@@ -1718,6 +1776,10 @@ export function scheduledInputFromForm(userId: number, form: FormData): { input?
 }
 
 export function saveScheduled(userId: number, input: ScheduledInput): number {
+	if (input.account != null) assertOwnedAccount(userId, input.account);
+	assertOwnedCategory(userId, input.category);
+	// Mutate in place so callers (write API) still see updated input.id.
+	input.tags = ownedTagIds(userId, input.tags);
 	if (input.id && input.editScope) {
 		const scope = input.editScope;
 		const resultId = applyScheduledEdit(userId, input.id, input);
@@ -1729,6 +1791,9 @@ export function saveScheduled(userId: number, input: ScheduledInput): number {
 			rowById('scheduled', userId, resultId, 'id, name, account_id, category_id, amount_cents, start_date, notes')
 		);
 		return resultId;
+	}
+	if (input.id != null && !ownsId('scheduled', userId, input.id)) {
+		throw new Error('Scheduled expectation not found.');
 	}
 	const created = input.id == null;
 	input.id = persistScheduled(userId, input);
@@ -1746,7 +1811,7 @@ function persistScheduled(userId: number, input: ScheduledInput): number {
 	const repeatInterval = input.repeats && input.repeatUnit ? input.repeatInterval ?? 1 : null;
 	const repeatUnit = input.repeats && input.repeatUnit ? input.repeatUnit : null;
 	if (input.id) {
-		db()
+		const result = db()
 			.query(
 				`UPDATE scheduled
 				 SET name = ?, account_id = ?, category_id = ?, amount_cents = ?, start_date = ?,
@@ -1768,6 +1833,7 @@ function persistScheduled(userId: number, input: ScheduledInput): number {
 				input.id,
 				userId
 			);
+		if (result.changes === 0) throw new Error('Scheduled expectation not found.');
 		return input.id;
 	} else {
 		const result = db()
@@ -1905,22 +1971,12 @@ function setChildTags(
 	}
 }
 
-function ownedTagIds(userId: number, tagIds: number[]): number[] {
-	if (tagIds.length === 0) return [];
-	const valid = db()
-		.query('SELECT id FROM tags WHERE user_id = ? AND id IN (' + tagIds.map(() => '?').join(',') + ')')
-		.all(userId, ...tagIds) as { id: number }[];
-	return valid.map((t) => t.id);
-}
-
-
 function setScheduledTags(userId: number, scheduledId: number, tagIds: number[]) {
-	const valid = db()
-		.query('SELECT id FROM tags WHERE user_id = ? AND id IN (' + (tagIds.length ? tagIds.map(() => '?').join(',') : 'NULL') + ')')
-		.all(userId, ...tagIds) as { id: number }[];
+	if (ownedIds('scheduled', userId, [scheduledId]).length === 0) return;
+	const valid = ownedTagIds(userId, tagIds);
 	db().query('DELETE FROM scheduled_tags WHERE scheduled_id = ?').run(scheduledId);
-	for (const tag of valid) {
-		db().query('INSERT OR IGNORE INTO scheduled_tags (scheduled_id, tag_id) VALUES (?, ?)').run(scheduledId, tag.id);
+	for (const tagId of valid) {
+		db().query('INSERT OR IGNORE INTO scheduled_tags (scheduled_id, tag_id) VALUES (?, ?)').run(scheduledId, tagId);
 	}
 }
 
@@ -1956,6 +2012,10 @@ export function saveRule(
 	id: number | null,
 	data: { name: string; conditions: RuleCondition[]; categoryId: number }
 ): number {
+	assertOwnedCategory(userId, data.categoryId);
+	if (id != null && !rowById('categorization_rules', userId, id, 'id')) {
+		throw new Error('Rule not found.');
+	}
 	if (id) {
 		db()
 			.query('UPDATE categorization_rules SET name = ?, conditions = ?, category_id = ? WHERE id = ? AND user_id = ?')
@@ -2129,6 +2189,7 @@ export function saveTransactionSplits(
 		.query('SELECT amount_cents FROM transactions WHERE id = ? AND user_id = ?')
 		.get(txId, userId) as { amount_cents: number } | undefined;
 	if (!tx) throw new Error('Transaction not found.');
+	for (const s of splits) assertOwnedCategory(userId, s.categoryId);
 	const total = Math.abs(tx.amount_cents);
 	const sum = splits.reduce((s, x) => s + x.amountCents, 0);
 	if (splits.length === 0 || sum !== total) {
@@ -2142,8 +2203,10 @@ export function saveTransactionSplits(
 	}
 	// The transaction's own category becomes the primary (first) split.
 	db()
-		.query('UPDATE transactions SET category_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
-		.run(splits[0].categoryId, txId);
+		.query(
+			`UPDATE transactions SET category_id = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`
+		)
+		.run(splits[0].categoryId, txId, userId);
 	emitChange(
 		userId,
 		'split',
@@ -2153,7 +2216,9 @@ export function saveTransactionSplits(
 }
 
 export function clearTransactionSplits(userId: number, txId: number) {
-	db().query('DELETE FROM transaction_splits WHERE transaction_id = ?').run(txId);
+	const owned = ownedTransactionIds(userId, [txId]);
+	if (owned.length === 0) return;
+	db().query('DELETE FROM transaction_splits WHERE transaction_id = ?').run(owned[0]);
 }
 
 function attachSplits(userId: number, rows: Transaction[]): Transaction[] {
@@ -2186,13 +2251,12 @@ function attachSplits(userId: number, rows: Transaction[]): Transaction[] {
 // ---------------------------------------------------------------------------
 
 export function bulkAddTags(userId: number, txIds: number[], tagIds: number[]) {
-	if (txIds.length === 0 || tagIds.length === 0) return;
-	const valid = db()
-		.query('SELECT id FROM tags WHERE user_id = ? AND id IN (' + tagIds.map(() => '?').join(',') + ')')
-		.all(userId, ...tagIds) as { id: number }[];
-	for (const txId of txIds) {
-		for (const tag of valid) {
-			db().query('INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)').run(txId, tag.id);
+	const ownedTx = ownedTransactionIds(userId, txIds);
+	const valid = ownedTagIds(userId, tagIds);
+	if (ownedTx.length === 0 || valid.length === 0) return;
+	for (const txId of ownedTx) {
+		for (const tagId of valid) {
+			db().query('INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)').run(txId, tagId);
 		}
 	}
 }

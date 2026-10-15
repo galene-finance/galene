@@ -7,6 +7,7 @@ Release), which commits it and tags `vX.Y`.
 
 ## [Unreleased]
 
+- **SSO hardening (ADO-55):** the first SSO sign-in pins the Galene user to the provider issuer + subject; later sign-ins match on that, and a different subject for a linked email is rejected. Linking by email now requires `email_verified: true` — a provider that omits the claim is rejected (check your IdP sends it). Clearer callback errors, a per-email limit on rejected SSO sign-ins, and **Unlink SSO** in Settings → Users. Schema migration adds `oidc_identities`; take a backup before upgrading.
 - MCP HTTP is served on the **app port** at `/mcp` when enabled in Settings → API (**default off**); no separate MCP port.
 - **MCP image removed:** no `:mcp-*` tags are published. Use the app image (`:latest` / `:test`), enable MCP in Settings (same port). Stdio: `docker run --entrypoint bun <app-image> mcp-bundle.js`.
 - **GHCR tag rename (#157):** image tags drop the `app-` prefix (`:latest`, `:test`, `:test-<sha>`, `:<ver>`). During cutover the Docker workflow dual-publishes legacy `:app-*` aliases so existing host pull refs keep working.

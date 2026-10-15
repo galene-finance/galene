@@ -10,12 +10,20 @@ export interface UserRow {
 	email: string;
 	is_admin: number;
 	created_at: string;
+	/** OIDC issuer this user is pinned to (ADO-55). The subject is never exposed. */
+	oidc_issuer?: string | null;
+	oidc_linked_at?: string | null;
 }
 
 /** All accounts on this server, oldest first (the setup account first). */
 export function listUsers(): UserRow[] {
 	return db()
-		.query('SELECT id, name, email, is_admin, created_at FROM users ORDER BY id')
+		.query(
+			`SELECT u.id, u.name, u.email, u.is_admin, u.created_at,
+			        o.issuer AS oidc_issuer, o.linked_at AS oidc_linked_at
+			 FROM users u LEFT JOIN oidc_identities o ON o.user_id = u.id
+			 ORDER BY u.id`
+		)
 		.all() as UserRow[];
 }
 
@@ -136,5 +144,18 @@ export function resetPassword(
 	if (!target) return { ok: false, error: 'User not found.' };
 	if (password.length < 8) return { ok: false, error: 'Password must be at least 8 characters.' };
 	db().query('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), targetId);
+	return { ok: true };
+}
+
+/**
+ * Remove a user's single sign-on link (admin action, ADO-55). The user's next
+ * SSO sign-in pins again by verified email. Blocked in demo mode.
+ */
+export function unlinkUserOidc(targetId: number): { ok: true } | { ok: false; error: string } {
+	if (isDemoMode()) return { ok: false, error: demoBlockedMessage('User account changes') };
+	const target = getUserRow(targetId);
+	if (!target) return { ok: false, error: 'User not found.' };
+	const removed = db().query('DELETE FROM oidc_identities WHERE user_id = ?').run(targetId).changes;
+	if (!removed) return { ok: false, error: 'This user has no single sign-on link.' };
 	return { ok: true };
 }

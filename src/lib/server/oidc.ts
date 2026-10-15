@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { db } from './db';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
+import { assertAllowed, clearOnSuccess, recordFailure } from './loginThrottle';
 
 /**
  * Household app-native OIDC (issue #98). Authentik (or any generic OIDC IdP)
@@ -40,7 +41,22 @@ export interface OidcDiscovery {
 	jwksUri: string | null;
 }
 
-export type OidcCallbackError = 'access_denied' | 'email_mismatch' | 'not_provisioned' | 'invalid';
+export type OidcCallbackError =
+	| 'access_denied'
+	| 'email_mismatch'
+	| 'not_provisioned'
+	| 'email_unverified'
+	| 'sub_mismatch'
+	| 'invalid';
+
+export const OIDC_CALLBACK_ERRORS: OidcCallbackError[] = [
+	'access_denied',
+	'email_mismatch',
+	'not_provisioned',
+	'email_unverified',
+	'sub_mismatch',
+	'invalid'
+];
 
 interface ConfigRow {
 	enabled: number;
@@ -375,6 +391,8 @@ export function authorizeUrl(args: {
 }
 
 export interface IdTokenClaims {
+	/** Stable subject identifier from the provider (`sub`). */
+	sub: string | null;
 	email: string;
 	emailVerified: boolean | null;
 	nonce: string | null;
@@ -418,6 +436,7 @@ export function claimsFromIdToken(token: string): IdTokenClaims | { error: strin
 					? false
 					: null;
 	return {
+		sub: typeof payload.sub === 'string' && payload.sub.trim() ? payload.sub.trim() : null,
 		email,
 		emailVerified,
 		nonce: typeof payload.nonce === 'string' ? payload.nonce : null,
@@ -434,7 +453,8 @@ export function assertIdToken(claims: IdTokenClaims, config: OidcConfig, nonce: 
 		return 'The identity token was not issued for this client.';
 	}
 	if (!claims.nonce || !safeEqual(claims.nonce, nonce)) return 'The identity token nonce does not match.';
-	if (claims.emailVerified === false) return 'The identity provider has not verified this email.';
+	// email_verified is enforced by resolveOidcUser (missing or false is not
+	// verified) so the callback can show the email_unverified copy.
 	return null;
 }
 
@@ -506,6 +526,7 @@ export async function exchangeCode(args: {
 }
 
 export interface UserinfoEmail {
+	sub: string | null;
 	email: string;
 	emailVerified: boolean | null;
 }
@@ -523,23 +544,108 @@ export function parseUserinfo(body: unknown): UserinfoEmail | { error: string } 
 				: doc.email_verified === 'false'
 					? false
 					: null;
-	return { email, emailVerified };
+	const sub = typeof doc.sub === 'string' && doc.sub.trim() ? doc.sub.trim() : null;
+	return { sub, email, emailVerified };
+}
+
+/** Key for the per-email OIDC throttle bucket. Prefixed so an IdP email never locks the password bucket. */
+export function oidcThrottleEmailKey(email: string): string {
+	return `oidc:${email.trim().toLowerCase()}`;
+}
+
+export interface OidcLink {
+	userId: number;
+	issuer: string;
+	linkedAt: string;
+	lastLoginAt: string | null;
+}
+
+/** The OIDC link for a user, without the subject value. */
+export function getOidcLink(userId: number): OidcLink | null {
+	const row = db()
+		.query('SELECT user_id, issuer, linked_at, last_login_at FROM oidc_identities WHERE user_id = ?')
+		.get(userId) as { user_id: number; issuer: string; linked_at: string; last_login_at: string | null } | undefined;
+	if (!row) return null;
+	return { userId: row.user_id, issuer: row.issuer, linkedAt: row.linked_at, lastLoginAt: row.last_login_at };
 }
 
 /**
- * Map an IdP email onto an existing Galene user. Never inserts.
- * Unknown email is email_mismatch. A verified=false claim is not_provisioned
- * so operators can tell "IdP said no" from "no Galene row".
+ * Resolve an OIDC sign-in to an existing Galene user (ADO-55). Never inserts a
+ * user.
+ *
+ * 1. issuer+sub already pinned: sign in as that user, whatever the email says now.
+ * 2. Otherwise email is used once, to link: email_verified must be exactly true.
+ * 3. No user with that email: email_mismatch.
+ * 4. That user is already pinned to a different subject (or issuer): sub_mismatch.
+ *    Never relinks silently; an admin can unlink in Settings → Users.
+ * 5. Else pin (issuer, sub) to the user and sign in.
  */
-export function mapEmailToUser(email: string, emailVerified: boolean | null):
-	| { ok: true; userId: number }
+export function resolveOidcUser(input: {
+	issuer: string;
+	sub: string | null;
+	email: string;
+	emailVerified: boolean | null;
+}):
+	| { ok: true; userId: number; linked: boolean }
 	| { ok: false; error: OidcCallbackError } {
-	if (emailVerified === false) return { ok: false, error: 'not_provisioned' };
-	const row = db()
-		.query('SELECT id FROM users WHERE lower(email) = lower(?)')
-		.get(email.trim().toLowerCase()) as { id: number } | undefined;
-	if (!row) return { ok: false, error: 'email_mismatch' };
-	return { ok: true, userId: row.id };
+	const issuer = input.issuer.trim().replace(/\/+$/, '');
+	const sub = input.sub?.trim() ?? '';
+	if (!issuer || !sub) return { ok: false, error: 'invalid' };
+	const d = db();
+	const pinned = d
+		.query('SELECT user_id FROM oidc_identities WHERE issuer = ? AND sub = ?')
+		.get(issuer, sub) as { user_id: number } | undefined;
+	if (pinned) {
+		d.query(`UPDATE oidc_identities SET last_login_at = datetime('now') WHERE user_id = ?`).run(pinned.user_id);
+		return { ok: true, userId: pinned.user_id, linked: false };
+	}
+	if (input.emailVerified !== true) return { ok: false, error: 'email_unverified' };
+	const email = input.email.trim().toLowerCase();
+	if (!email) return { ok: false, error: 'invalid' };
+	const user = d.query('SELECT id FROM users WHERE lower(email) = lower(?)').get(email) as { id: number } | undefined;
+	if (!user) return { ok: false, error: 'email_mismatch' };
+	const existing = d.query('SELECT 1 AS o FROM oidc_identities WHERE user_id = ?').get(user.id);
+	if (existing) return { ok: false, error: 'sub_mismatch' };
+	try {
+		d.query(
+			`INSERT INTO oidc_identities (user_id, issuer, sub, linked_at, last_login_at)
+			 VALUES (?, ?, ?, datetime('now'), datetime('now'))`
+		).run(user.id, issuer, sub);
+	} catch {
+		// A concurrent callback pinned this user or subject first.
+		return { ok: false, error: 'sub_mismatch' };
+	}
+	return { ok: true, userId: user.id, linked: true };
+}
+
+/**
+ * Throttle + resolve for the callback (ADO-55). Rejections count toward the
+ * per-IP bucket and a per-email bucket (prefixed, see oidcThrottleEmailKey);
+ * success clears both. A locked bucket returns `throttled` with the generic
+ * lockout message.
+ */
+export function completeOidcSignIn(input: {
+	ip: string;
+	issuer: string;
+	sub: string | null;
+	email: string;
+	emailVerified: boolean | null;
+}):
+	| { ok: true; userId: number; linked: boolean }
+	| { ok: false; error: OidcCallbackError; throttled?: string } {
+	const emailKey = input.email ? oidcThrottleEmailKey(input.email) : undefined;
+	try {
+		assertAllowed(input.ip, emailKey);
+	} catch (err) {
+		return { ok: false, error: 'invalid', throttled: (err as Error).message };
+	}
+	const result = resolveOidcUser(input);
+	if (!result.ok) {
+		recordFailure(input.ip, emailKey);
+		return result;
+	}
+	clearOnSuccess(input.ip, emailKey);
+	return result;
 }
 
 export function callbackErrorCopy(code: OidcCallbackError, label: string): { title: string; body: string } {
@@ -547,25 +653,29 @@ export function callbackErrorCopy(code: OidcCallbackError, label: string): { tit
 	if (code === 'access_denied') {
 		return {
 			title: 'Access denied',
-			body: `${name} did not approve this sign-in. You may have cancelled, or your account isn’t allowed for Galene. Try again, or use a local password if your household allows it.`
+			body: `${name} did not approve this sign-in. You may have cancelled, or your account isn’t allowed for Galene. Try again, or use a local password if this server allows it.`
 		};
 	}
-	if (code === 'not_provisioned') {
+	if (code === 'not_provisioned' || code === 'email_mismatch') {
 		return {
-			title: 'Not provisioned',
-			body: `SSO is on, but automatic account creation is off for this household. Ask an admin to create your Galene user (matching your ${name} email), then try again.`
+			title: 'No Galene account for this email',
+			body: `You signed in at ${name}, but no Galene user has that email. Galene does not create accounts from single sign-on. Ask a Galene admin to create a user with exactly the email ${name} sends, then try again.`
 		};
 	}
-	if (code === 'email_mismatch') {
+	if (code === 'email_unverified') {
 		return {
-			title: 'Email doesn’t match an existing account',
-			body: `We signed you in at ${name}, but that email isn’t linked to a Galene user yet. Ask your household admin to invite you, or sign in with the email already on your Galene account.`
+			title: 'Email not verified',
+			body: `${name} did not confirm that your email is verified, so Galene can’t use it to find your account. Verify the email at ${name} (or ask its admin to mark it verified), then try again.`
+		};
+	}
+	if (code === 'sub_mismatch') {
+		return {
+			title: 'Account linked to a different sign-in',
+			body: `This Galene account is already linked to a different ${name} identity. Sign in with the ${name} account you used before, or ask a Galene admin to unlink single sign-on for this user in Settings → Users.`
 		};
 	}
 	return {
 		title: 'Couldn’t complete sign-in',
-		body: 'Something went wrong confirming this sign-in. Go back and try again, or use a local password if your household allows it.'
+		body: 'Something went wrong confirming this sign-in. Go back and try again, or use a local password if this server allows it.'
 	};
 }
-
-

@@ -203,6 +203,12 @@
 							<p class="text-sm text-muted-foreground">
 								{u.email} · created {formatDate(u.created_at.slice(0, 10))}
 							</p>
+							{#if u.oidc_issuer}
+								<p class="text-xs text-muted-foreground" data-testid="oidc-link">
+									SSO linked · <span class="break-all">{u.oidc_issuer}</span>
+									{#if u.oidc_linked_at}· since {formatDate(u.oidc_linked_at.slice(0, 10))}{/if}
+								</p>
+							{/if}
 						</div>
 						<div class="flex shrink-0 flex-wrap items-center gap-2">
 							{#if u.id !== data.me}
@@ -211,6 +217,19 @@
 									<input type="hidden" name="make_admin" value={u.is_admin ? '0' : '1'} />
 									<Button type="submit" variant="secondary" size="sm">
 										{u.is_admin ? 'Remove admin' : 'Make admin'}
+									</Button>
+								</form>
+							{/if}
+							{#if u.oidc_issuer}
+								<form method="POST" action="?/unlink-oidc" use:enhance>
+									<input type="hidden" name="id" value={u.id} />
+									<Button
+										type="submit"
+										variant="secondary"
+										size="sm"
+										title="Remove the SSO link. The next SSO sign-in links again by verified email."
+									>
+										Unlink SSO
 									</Button>
 								</form>
 							{/if}

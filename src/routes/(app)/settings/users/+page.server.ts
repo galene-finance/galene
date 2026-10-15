@@ -1,5 +1,5 @@
 import { requireAdmin } from '$lib/server/auth';
-import { createUser, deleteUser, getUserRow, listUsers, resetPassword, setUserAdmin } from '$lib/server/users';
+import { createUser, deleteUser, getUserRow, listUsers, resetPassword, setUserAdmin, unlinkUserOidc } from '$lib/server/users';
 
 export function load({ locals }) {
 	requireAdmin(locals);
@@ -57,5 +57,20 @@ export const actions = {
 		const result = resetPassword(locals.user!.id, id, String(form.get('password') ?? ''));
 		if (!result.ok) return { error: result.error, source: 'reset' };
 		return { ok: true, source: 'reset', message: `Updated ${target.name}'s password.` };
+	},
+
+	'unlink-oidc': async ({ request, locals }) => {
+		requireAdmin(locals);
+		const form = await request.formData();
+		const id = Number(form.get('id'));
+		const target = getUserRow(id);
+		if (!target) return { error: 'User not found.', source: 'toggle' };
+		const result = unlinkUserOidc(id);
+		if (!result.ok) return { error: result.error, source: 'toggle' };
+		return {
+			ok: true,
+			source: 'toggle',
+			message: `Unlinked single sign-on for ${target.name}. Their next SSO sign-in links again by verified email.`
+		};
 	}
 };

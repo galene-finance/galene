@@ -932,6 +932,21 @@ CREATE TABLE IF NOT EXISTS gallery_instance (
 	created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `
+},
+{
+	// OIDC identity pinning (ADO-55). Additive link table, one link per user,
+	// unique (issuer, sub). Existing users have no row and pin on their next
+	// SSO sign-in with a verified email. No parent-table rebuild.
+	sql: `
+CREATE TABLE IF NOT EXISTS oidc_identities (
+	user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	issuer TEXT NOT NULL,
+	sub TEXT NOT NULL,
+	linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+	last_login_at TEXT,
+	UNIQUE (issuer, sub)
+);
+`
 }
 ];
 
@@ -960,6 +975,8 @@ function categoryLinkSnapshot(database: Database): {
 	budgets: number;
 	rules: number;
 	scheduledCategorized: number;
+	users: number;
+	oidcLinks: number;
 } {
 	const has = (table: string) =>
 		!!(
@@ -979,7 +996,9 @@ function categoryLinkSnapshot(database: Database): {
 			: 0,
 		scheduledCategorized: has('scheduled')
 			? n('SELECT COUNT(*) AS n FROM scheduled WHERE category_id IS NOT NULL')
-			: 0
+			: 0,
+		users: has('users') ? n('SELECT COUNT(*) AS n FROM users') : 0,
+		oidcLinks: has('oidc_identities') ? n('SELECT COUNT(*) AS n FROM oidc_identities') : 0
 	};
 }
 
@@ -1006,6 +1025,12 @@ function assertCategoryLinksPreserved(
 		throw new Error(
 			`Migration aborted: categorization_rules fell from ${before.rules} to ${after.rules}`
 		);
+	}
+	if (after.users < before.users) {
+		throw new Error(`Migration aborted: users fell from ${before.users} to ${after.users}`);
+	}
+	if (after.oidcLinks < before.oidcLinks) {
+		throw new Error(`Migration aborted: OIDC links fell from ${before.oidcLinks} to ${after.oidcLinks}`);
 	}
 	if (after.scheduledCategorized < before.scheduledCategorized) {
 		throw new Error(

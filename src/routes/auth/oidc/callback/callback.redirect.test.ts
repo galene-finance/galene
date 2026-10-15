@@ -60,6 +60,7 @@ describe('OIDC callback success', () => {
 	test('a completed sign-in redirects home', async () => {
 		const pending = rememberOidcState();
 		const idToken = `hdr.${b64url({
+			sub: 'idp-subject-1',
 			email: 'ada@example.com',
 			email_verified: true,
 			nonce: pending.nonce,
@@ -105,6 +106,9 @@ describe('OIDC callback success', () => {
 			expect(error.location).toBe('/');
 		}
 		expect(setCookies).toContain('galene_session');
+		expect(db().query('SELECT user_id, sub FROM oidc_identities').all()).toEqual([
+			{ user_id: 1, sub: 'idp-subject-1' }
+		]);
 	});
 
 	test('welcome=1 is an error page, not an interstitial', async () => {

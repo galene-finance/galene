@@ -1,14 +1,15 @@
 import { redirect } from '@sveltejs/kit';
 import { createSession, setSessionCookie } from '$lib/server/auth';
-import { assertAllowed, clearOnSuccess, recordFailure } from '$lib/server/loginThrottle';
+import { assertAllowed, recordFailure } from '$lib/server/loginThrottle';
 import {
 	assertIdToken,
 	callbackErrorCopy,
 	claimsFromIdToken,
 	exchangeCode,
 	fetchDiscovery,
+	completeOidcSignIn,
 	loadOidcConfig,
-	mapEmailToUser,
+	OIDC_CALLBACK_ERRORS,
 	oidcReady,
 	OIDC_CALLBACK_PATH,
 	parseUserinfo,
@@ -17,7 +18,7 @@ import {
 	type OidcCallbackError
 } from '$lib/server/oidc';
 
-const KNOWN: OidcCallbackError[] = ['access_denied', 'email_mismatch', 'not_provisioned', 'invalid'];
+const KNOWN: OidcCallbackError[] = OIDC_CALLBACK_ERRORS;
 
 function errorView(code: OidcCallbackError, detail?: string | null) {
 	const label = providerLabel(loadOidcConfig().issuer);
@@ -104,6 +105,7 @@ export async function load(event) {
 	}
 
 	let email = '';
+	let sub: string | null = null;
 	let emailVerified: boolean | null = null;
 	if (tokens.idToken) {
 		const claims = claimsFromIdToken(tokens.idToken);
@@ -117,10 +119,13 @@ export async function load(event) {
 			return errorView('invalid', claimError);
 		}
 		email = claims.email;
+		sub = claims.sub;
 		emailVerified = claims.emailVerified;
 	}
 
-	if (!email && tokens.accessToken && discovery.userinfoEndpoint) {
+	// Userinfo fills a missing email, subject, or email_verified. Its sub must
+	// match the ID token's sub when both are present (OIDC Core 5.3.2).
+	if ((!email || !sub || emailVerified !== true) && tokens.accessToken && discovery.userinfoEndpoint) {
 		try {
 			const userinfo = await fetch(discovery.userinfoEndpoint, {
 				headers: { authorization: `Bearer ${tokens.accessToken}`, accept: 'application/json' },
@@ -128,13 +133,16 @@ export async function load(event) {
 			});
 			if (userinfo.ok) {
 				const parsed = parseUserinfo(await userinfo.json());
-				if (!('error' in parsed)) {
-					email = parsed.email;
-					emailVerified = parsed.emailVerified;
+				if (!('error' in parsed) && (!sub || !parsed.sub || parsed.sub === sub)) {
+					if (!email) email = parsed.email;
+					if (!sub) sub = parsed.sub;
+					if (emailVerified !== true && parsed.email === email && parsed.emailVerified !== null) {
+						emailVerified = parsed.emailVerified;
+					}
 				}
 			}
 		} catch {
-			/* missing email is reported below */
+			/* missing email / sub is reported below */
 		}
 	}
 
@@ -142,17 +150,18 @@ export async function load(event) {
 		recordFailure(ip);
 		return errorView('invalid', 'The identity provider did not return an email.');
 	}
-
-	const mapped = mapEmailToUser(email, emailVerified);
-	if (!mapped.ok) {
-		// Count the IP only. A mismatched IdP email must not lock the password
-		// bucket for that address.
+	if (!sub) {
 		recordFailure(ip);
-		return errorView(mapped.error);
+		return errorView('invalid', 'The identity provider did not return a subject (sub) claim.');
 	}
 
-	clearOnSuccess(ip, email);
-	const session = createSession(mapped.userId, { method: 'oidc', idpLabel: providerLabel(config.issuer) });
+	const result = completeOidcSignIn({ ip, issuer: config.issuer, sub, email, emailVerified });
+	if (!result.ok) {
+		if (result.throttled) return errorView('invalid', result.throttled);
+		return errorView(result.error);
+	}
+
+	const session = createSession(result.userId, { method: 'oidc', idpLabel: providerLabel(config.issuer) });
 	setSessionCookie(cookies, session);
 	redirect(303, '/');
 }

@@ -76,3 +76,20 @@ body {
 		gap: calc(var(--spacing) * 4);
 	}
 }
+
+/*
+ * Mobile 16px fields: iOS Safari zooms the page when a focused control's
+ * font-size is under 16px. Below the lg breakpoint (64rem / 1024px), force
+ * every text-entry control to 16px. Unlayered + !important so it beats
+ * Tailwind text-xs/text-sm utilities and component-scoped styles (e.g. the
+ * Transactions row category pill). Desktop (>= lg) is untouched. Zoom is
+ * NOT blocked: the viewport meta keeps pinch-zoom enabled.
+ */
+@media (width < 64rem) {
+	input:not([type='checkbox'], [type='radio'], [type='range'], [type='hidden']),
+	select,
+	textarea,
+	[contenteditable]:not([contenteditable='false']) {
+		font-size: 16px !important;
+	}
+}

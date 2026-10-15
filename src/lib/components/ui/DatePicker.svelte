@@ -72,7 +72,7 @@
 	{onValueChange}
 >
 	<BitsDatePicker.Trigger
-		class="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-surface px-3 text-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 {className}"
+		class="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-surface px-3 text-sm max-lg:text-base focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 {className}"
 	>
 		<span class={value ? '' : 'text-muted-foreground'}>{display || placeholder}</span>
 		<svg

@@ -65,10 +65,12 @@ Behind TLS, keep [cookie and proxy settings](/self-host/reverse-proxy/) as you a
 
 ## Sign-in
 
-1. Create the Galene user first (Settings → Users, or the first-run account) with the same email the identity provider will send.
+1. Create the Galene user first (Settings → Users, or the first-run account) with the same email the identity provider will send. Galene never creates accounts from SSO.
 2. Enable Optional, save, and test the connection.
 3. Sign out. In **Optional** mode, use **Continue with SSO** on the sign-in page. In **Required** mode, opening `/login` starts the identity provider on its own. Open `/login?local=1` for the password form, or use **Use local password** on a callback error.
 4. After the identity provider approves the sign-in, Galene opens the home page. There is no Welcome back step. The account menu says **Signed in via SSO**.
+
+The first successful SSO sign-in **links** the account: Galene stores the provider’s issuer and subject (`sub`) for that user. From then on the subject decides who signs in, not the email.
 
 If the email is not a Galene user, the callback explains that and offers **Back to sign in**. No new user row is created.
 
@@ -77,5 +79,15 @@ If the email is not a Galene user, the callback explains that and offers **Back 
 | No Galene account for this email | No Galene user has the email the provider sent | An admin creates a Galene user with exactly that email |
 | Email not verified | `email_verified` missing or false on an unlinked identity | Verify the email at the provider, or have it send the claim |
 | Account linked to a different sign-in | The Galene user is pinned to another subject or issuer | Use the original provider account, or an admin unlinks SSO in Settings → Users |
+
+## Troubleshooting
+
+**No Galene account for this email** (formerly “Not provisioned” / “Email doesn’t match”). Galene does not create accounts from SSO. An admin creates a Galene user in Settings → Users with exactly the email the provider sends, then the user signs in with SSO again.
+
+**Email not verified.** The first link needs `email_verified: true` from the provider. A missing claim counts as not verified. Verify the email at the provider, or configure it to send the claim (see the [Authentik notes](/self-host/oidc-authentik/)).
+
+**Account linked to a different sign-in.** This Galene user is already linked to another subject or issuer (for example a recreated provider account, or a changed issuer URL). Sign in with the original provider account, or an admin clicks **Unlink SSO** for that user in Settings → Users. The next SSO sign-in links again by verified email.
+
+**Too many attempts.** Repeated rejected SSO sign-ins lock that IP and that email for a short time. Wait and try again after fixing the cause.
 
 Upgrading: existing users have no link yet. Their first SSO sign-in after the upgrade pins them, provided the provider marks the email verified.

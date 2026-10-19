@@ -1,5 +1,14 @@
-import type { BankProvider, ProviderAccount, ProviderContext, ProviderTransaction } from '$lib/types';
-import { getSetting, setSetting } from '$lib/server/finance';
+import type { BankProvider, ProviderAccount, ProviderContext, ProviderTransaction } from '../../types';
+import { getSetting, setSetting } from '../finance';
+import {
+	clearItemErrorByToken,
+	isReconnectCode,
+	recordItemFailure,
+	setItemAccountExternalIds,
+	tokenHint,
+	upsertPlaidItem,
+	type ReconnectErrorCode
+} from '../plaidItems';
 import { fetchJson, ProviderHttpError } from './http';
 
 const NAME = 'Plaid';
@@ -132,6 +141,17 @@ export function plaidLinkEnabled(userId: number): boolean {
  * Falls back to the legacy single `access_token` field for connections made
  * before multi-bank support, so existing links keep working.
  */
+export function accessTokensFromCredentials(creds: Record<string, string>): string[] {
+	return accessTokens(creds);
+}
+
+/** Credential set with the access-token list replaced. Drops the legacy single-token field. */
+export function replaceAccessTokens(creds: Record<string, string>, tokens: string[]): Record<string, string> {
+	const next: Record<string, string> = { ...creds, access_tokens: JSON.stringify(tokens) };
+	delete next.access_token;
+	return next;
+}
+
 function accessTokens(creds: Record<string, string>): string[] {
 	const raw = creds.access_tokens;
 	if (raw) {
@@ -146,29 +166,58 @@ function accessTokens(creds: Record<string, string>): string[] {
 	return single ? [single] : [];
 }
 
+/** Plaid error_code from a thrown provider error, when one was present. */
+export function plaidErrorCode(error: unknown): string | null {
+	if (error instanceof ProviderHttpError && error.code) return error.code;
+	return null;
+}
+
+/** User-facing sync line for one item. Reconnect codes never leak the raw code. */
+export function itemFailureMessage(code: string | null): string {
+	if (isReconnectCode(code)) return 'A linked institution needs you to sign in again.';
+	return 'One linked institution could not be synced. The others were updated.';
+}
+
+export class PlaidItemError extends Error {
+	readonly code: string | null;
+	readonly itemId: string;
+	constructor(message: string, code: string | null, itemId: string) {
+		super(message);
+		this.code = code;
+		this.itemId = itemId;
+	}
+}
+
 /**
  * Create a short-lived, one-time-use Link token for a user. The current Plaid
  * Link SDK (link-initialize.js) is token-based: the client secret never reaches
  * the browser, everything the widget needs is baked into the token.
  */
-export async function createLinkToken(userId: number): Promise<string> {
+/**
+ * Create a short-lived Link token.
+ * `accessToken` set means update mode: Plaid re-authenticates that existing
+ * item and does not create a new one. Omit it to link a new institution.
+ */
+export async function createLinkToken(userId: number, accessToken?: string): Promise<string> {
 	const cfg = getPlaidConfig(userId);
 	if (!cfg.clientId || !cfg.clientSecret) {
 		throw new ProviderHttpError(
 			'Plaid is not configured yet — add your Plaid client id and secret below.'
 		);
 	}
+	const updateMode = !!accessToken?.trim();
 	// The current Link SDK always returns a one-time public token (via the
 	// onSuccess metadata); the old `request_public_token` field is no longer
 	// recognized by the production API and is rejected as an unknown field.
+	// Update mode must not send products — Plaid rejects that combination.
 	const body: Record<string, unknown> = {
 		client_id: cfg.clientId,
 		secret: cfg.clientSecret,
 		client_name: 'Galene',
 		user: { client_user_id: `galene-${userId}` },
-		products: ['transactions'],
 		country_codes: ['US'],
-		language: 'en'
+		language: 'en',
+		...(updateMode ? { access_token: accessToken!.trim() } : { products: ['transactions'] })
 	};
 	if (cfg.env !== 'production') {
 		if (!cfg.sandboxInstance) {
@@ -288,6 +337,88 @@ async function exchangePublicToken(userId: number, publicToken: string): Promise
 	return accessToken;
 }
 
+interface PlaidItemMeta {
+	item?: { item_id?: string; institution_id?: string | null; error?: { error_code?: string } | null };
+	institution?: { name?: string } | null;
+}
+
+/** item_id + display name for one access token. Name falls back to a generic label. */
+export async function fetchItemIdentity(
+	cfg: PlaidConfig,
+	accessToken: string
+): Promise<{ itemId: string; institutionName: string | null; errorCode: string | null }> {
+	const res = await plaidPost<PlaidItemMeta>(cfg, accessToken, '/item/get');
+	const itemId = String(res.item?.item_id ?? '').trim() || `unknown:${tokenHint(accessToken).slice(0, 12)}`;
+	let institutionName: string | null = null;
+	const institutionId = res.item?.institution_id;
+	if (institutionId && cfg.clientId && cfg.clientSecret) {
+		try {
+			const inst = await fetchJson<{ institution?: { name?: string } }>(
+				`${plaidBase(cfg.env)}/institutions/get_by_id`,
+				NAME,
+				{
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						client_id: cfg.clientId,
+						secret: cfg.clientSecret,
+						institution_id: institutionId,
+						country_codes: ['US']
+					})
+				}
+			);
+			institutionName = inst.institution?.name?.trim() || null;
+		} catch {
+			institutionName = null;
+		}
+	}
+	return { itemId, institutionName, errorCode: res.item?.error?.error_code ?? null };
+}
+
+/** Ask Plaid to drop one item. A missing item is success — the local token is going either way. */
+export async function listAccountExternalIdsForToken(userId: number, accessToken: string): Promise<string[]> {
+	const cfg = getPlaidConfig(userId);
+	const res = await plaidPost<{ accounts: PlaidAccount[] }>(cfg, accessToken, '/accounts/get');
+	return (res.accounts ?? [])
+		.map((a) => a.account_id ?? a.id ?? '')
+		.filter(Boolean);
+}
+
+export async function removePlaidItem(userId: number, accessToken: string): Promise<void> {
+	const cfg = getPlaidConfig(userId);
+	try {
+		await plaidPost(cfg, accessToken, '/item/remove');
+	} catch (error) {
+		const code = plaidErrorCode(error);
+		if (code === 'ITEM_NOT_FOUND' || code === 'INVALID_ACCESS_TOKEN') return;
+		throw error;
+	}
+}
+
+/** Sandbox-only: force ITEM_LOGIN_REQUIRED on an item. Used by the acceptance test. */
+export async function sandboxResetLogin(userId: number, accessToken: string): Promise<void> {
+	const cfg = getPlaidConfig(userId);
+	if (cfg.env === 'production') throw new ProviderHttpError('Login reset is only available in the Plaid sandbox.');
+	await plaidPost(cfg, accessToken, '/sandbox/item/reset_login');
+}
+
+export function noteItemOutcome(
+	userId: number,
+	connectionId: number,
+	accessToken: string,
+	itemId: string,
+	error: unknown | null
+): ReconnectErrorCode | null {
+	if (!error) {
+		clearItemErrorByToken(userId, accessToken);
+		upsertPlaidItem(userId, connectionId, { accessToken, itemId });
+		return null;
+	}
+	const code = error instanceof PlaidItemError ? error.code : plaidErrorCode(error);
+	recordItemFailure(userId, connectionId, accessToken, itemId, code);
+	return isReconnectCode(code) ? code : null;
+}
+
 export const plaidProvider: BankProvider = {
 	id: 'plaid',
 	label: 'Plaid',
@@ -315,10 +446,9 @@ export const plaidProvider: BankProvider = {
 			// rejects unknown or already-used public tokens.
 			if (!ctx) throw new ProviderHttpError('Missing provider context.');
 			const added = await exchangePublicToken(ctx.userId, publicToken);
-			// Append to the tokens already stored for this connection so the
-			// user can link multiple banks; dedupe if the same bank is re-linked.
 			const tokens = accessTokens(ctx.existing ?? {});
-			return { access_tokens: JSON.stringify(tokens.includes(added) ? tokens : [...tokens, added]) };
+			const merged = await mergeAccessToken(ctx.userId, tokens, added);
+			return { access_tokens: JSON.stringify(merged) };
 		}
 		// The submitted form only carries a (possibly empty) public token; the
 		// stored tokens live in ctx.existing. syncNow passes the stored
@@ -332,43 +462,145 @@ export const plaidProvider: BankProvider = {
 	},
 	async listAccounts(ctx) {
 		const context = ctxOrThrow(ctx);
-		const cfg = getPlaidConfig(context.userId);
-		const tokens = accessTokens(context.credentials);
-		if (tokens.length === 0) {
-			throw new ProviderHttpError('No Plaid accounts are linked yet. Use "Link another account" to add one.');
-		}
-		// One /accounts/get call per linked bank (item); each is well under
-		// Plaid's 15 req/min per-item limit.
-		const accounts: ProviderAccount[] = [];
-		for (const token of tokens) {
+		return (await syncPlaidItems(context)).accounts;
+	},
+	async fetchTransactions(since, ctx) {
+		const context = ctxOrThrow(ctx);
+		// Default to the last 90 days when there is no cursor yet.
+		const start = since ?? new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+		return (await syncPlaidItems(context, start)).transactions;
+	}
+};
+
+interface ItemSyncBundle {
+	accounts: ProviderAccount[];
+	transactions: ProviderTransaction[];
+	/** True when at least one item failed and the caller should surface a soft error. */
+	partialFailure: boolean;
+	reconnectNeeded: boolean;
+	/** Provider account ids from items that finished this run without error. */
+	syncedAccountExternalIds: string[];
+}
+
+const itemSyncCache = new WeakMap<ProviderContext, Promise<ItemSyncBundle>>();
+
+/**
+ * Sync every linked item on its own. A failure is recorded on that item and
+ * the loop continues, so one ITEM_LOGIN_REQUIRED bank cannot block the rest.
+ * listAccounts and fetchTransactions share one pass per context object.
+ */
+async function syncPlaidItems(ctx: ProviderContext, since?: string): Promise<ItemSyncBundle> {
+	const cached = itemSyncCache.get(ctx);
+	if (cached) return cached;
+	const pending = runItemSync(ctx, since);
+	itemSyncCache.set(ctx, pending);
+	return pending;
+}
+
+async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSyncBundle> {
+	const cfg = getPlaidConfig(ctx.userId);
+	const allTokens = accessTokens(ctx.credentials);
+	const only = ctx.onlyAccessTokens?.map((t) => t.trim()).filter(Boolean);
+	const tokens = only?.length ? allTokens.filter((t) => only.includes(t)) : allTokens;
+	if (allTokens.length === 0) {
+		throw new ProviderHttpError('No Plaid accounts are linked yet. Use "Link another account" to add one.');
+	}
+	if (tokens.length === 0) {
+		throw new ProviderHttpError('That linked institution was not found.');
+	}
+	const connectionId = ctx.connectionId;
+	const start = since ?? new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+	const end = new Date().toISOString().slice(0, 10);
+	const accounts: ProviderAccount[] = [];
+	const transactions: ProviderTransaction[] = [];
+	const syncedAccountExternalIds: string[] = [];
+	let partialFailure = false;
+	let reconnectNeeded = false;
+
+	for (const token of tokens) {
+		let itemId = `unknown:${tokenHint(token).slice(0, 12)}`;
+		try {
+			if (connectionId != null) {
+				try {
+					const identity = await fetchItemIdentity(cfg, token);
+					itemId = identity.itemId;
+					upsertPlaidItem(ctx.userId, connectionId, {
+						accessToken: token,
+						itemId,
+						institutionName: identity.institutionName
+					});
+					if (isReconnectCode(identity.errorCode)) {
+						recordItemFailure(ctx.userId, connectionId, token, itemId, identity.errorCode);
+						partialFailure = true;
+						reconnectNeeded = true;
+						continue;
+					}
+				} catch (error) {
+					const code = plaidErrorCode(error);
+					if (isReconnectCode(code)) {
+						recordItemFailure(ctx.userId, connectionId, token, itemId, code);
+						partialFailure = true;
+						reconnectNeeded = true;
+						continue;
+					}
+				}
+			}
 			const res = await plaidPost<{ accounts: PlaidAccount[] }>(cfg, token, '/accounts/get');
+			const itemAccountIds: string[] = [];
 			for (const a of res.accounts) {
 				const type = mapType(typeof a.type === 'string' ? a.type : a.type?.primary);
+				const externalId = a.account_id ?? a.id ?? '';
+				itemAccountIds.push(externalId);
 				accounts.push({
-					external_id: a.account_id ?? a.id ?? '',
+					external_id: externalId,
 					name: a.name,
 					type,
 					balance_cents: plaidBalanceCents(a, type)
 				});
 			}
+			transactions.push(...(await fetchItemTransactions(cfg, token, start, end)));
+			syncedAccountExternalIds.push(...itemAccountIds.filter(Boolean));
+			if (connectionId != null) {
+				noteItemOutcome(ctx.userId, connectionId, token, itemId, null);
+				setItemAccountExternalIds(ctx.userId, token, itemAccountIds);
+			}
+		} catch (error) {
+			partialFailure = true;
+			const code = plaidErrorCode(error);
+			if (isReconnectCode(code)) reconnectNeeded = true;
+			if (connectionId != null) {
+				noteItemOutcome(ctx.userId, connectionId, token, itemId, new PlaidItemError(itemFailureMessage(code), code, itemId));
+			} else if (tokens.length === 1) {
+				throw error;
+			}
 		}
-		return accounts;
-	},
-	async fetchTransactions(since, ctx) {
-		const context = ctxOrThrow(ctx);
-		const cfg = getPlaidConfig(context.userId);
-		const tokens = accessTokens(context.credentials);
-		// Default to the last 90 days when there is no cursor yet.
-		const start = since ?? new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
-		// The current API requires both a start and an end date.
-		const end = new Date().toISOString().slice(0, 10);
-		const out: ProviderTransaction[] = [];
-		for (const token of tokens) {
-			out.push(...(await fetchItemTransactions(cfg, token, start, end)));
-		}
-		return out;
 	}
-};
+
+	if (partialFailure && accounts.length === 0 && transactions.length === 0 && tokens.length > 0) {
+		// Every item failed. Still throw so the connection is marked in error,
+		// but the per-item rows already say which ones need a sign-in.
+		throw new ProviderHttpError(
+			reconnectNeeded
+				? 'A linked institution needs you to sign in again.'
+				: 'Plaid could not sync any linked institution. Try again in a moment.'
+		);
+	}
+	return { accounts, transactions, partialFailure, reconnectNeeded, syncedAccountExternalIds };
+}
+
+/** Whether the last sync of this context had a per-item failure. */
+export async function plaidSyncHadPartialFailure(ctx: ProviderContext): Promise<boolean> {
+	const cached = itemSyncCache.get(ctx);
+	if (!cached) return false;
+	return (await cached).partialFailure;
+}
+
+/** Provider account ids that synced successfully in this context's Plaid pass. */
+export async function plaidSyncedAccountExternalIds(ctx: ProviderContext): Promise<string[]> {
+	const cached = itemSyncCache.get(ctx);
+	if (!cached) return [];
+	return (await cached).syncedAccountExternalIds;
+}
 
 /**
  * Pull one item's (bank's) transactions, following Plaid's pagination.
@@ -381,6 +613,43 @@ export const plaidProvider: BankProvider = {
  * docs, /transactions/get: "Positive values when money moves out of the
  * account; negative values when money moves in.")
  */
+/**
+ * Keep one access token per Plaid item. A repeat Link of the same item
+ * replaces that token instead of appending a second one.
+ */
+async function mergeAccessToken(userId: number, tokens: string[], added: string): Promise<string[]> {
+	if (tokens.includes(added)) return tokens;
+	let addedItemId = '';
+	try {
+		addedItemId = (await fetchItemIdentity(getPlaidConfig(userId), added)).itemId;
+	} catch {
+		return [...tokens, added];
+	}
+	const kept: string[] = [];
+	let replaced = false;
+	for (const token of tokens) {
+		if (token === added) {
+			replaced = true;
+			kept.push(added);
+			continue;
+		}
+		let same = false;
+		try {
+			same = (await fetchItemIdentity(getPlaidConfig(userId), token)).itemId === addedItemId;
+		} catch {
+			same = false;
+		}
+		if (same) {
+			if (!replaced) kept.push(added);
+			replaced = true;
+		} else {
+			kept.push(token);
+		}
+	}
+	if (!replaced) kept.push(added);
+	return kept;
+}
+
 async function fetchItemTransactions(cfg: PlaidConfig, accessToken: string, start: string, end: string): Promise<ProviderTransaction[]> {
 	const out: PlaidTx[] = [];
 	let offset = 0;

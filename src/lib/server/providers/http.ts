@@ -6,7 +6,10 @@
 
 const TIMEOUT_MS = 20000;
 
-export class ProviderHttpError extends Error {}
+export class ProviderHttpError extends Error {
+	/** Provider error code when the body included one (e.g. Plaid ITEM_LOGIN_REQUIRED). */
+	code?: string;
+}
 
 /**
  * Redact a URL for logging: only the host and path are kept. SimpleFIN
@@ -103,9 +106,12 @@ export async function fetchJson<T>(url: string, provider: string, opts: Options 
 
 	if (status < 200 || status >= 300) {
 		const detail = extractDetail(data);
-		throw new ProviderHttpError(
+		const err = new ProviderHttpError(
 			detail ? `${provider} error: ${detail}` : `${provider} error (HTTP ${status}).`
 		);
+		const code = errorCode(data);
+		if (code) err.code = code;
+		throw err;
 	}
 
 	return data as T;
@@ -122,6 +128,12 @@ export async function fetchText(url: string, provider: string, opts: Options = {
 		);
 	}
 	return text;
+}
+
+function errorCode(data: unknown): string | null {
+	if (!data || typeof data !== 'object') return null;
+	const code = (data as Record<string, unknown>).error_code;
+	return typeof code === 'string' && code.trim() ? code.trim() : null;
 }
 
 /** Pull a human-readable message out of a JSON error body, if present. */

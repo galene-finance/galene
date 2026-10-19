@@ -3,8 +3,28 @@ import { db } from './db';
 import { getProvider } from './providers';
 import { applyCategorizationRules } from './finance';
 import { notifySyncFailed, notifySyncRecovered } from './notifications';
-import type { Connection, LinkedAccount, SyncSummary } from '$lib/types';
+import type { Connection, LinkedAccount, PlaidItemInfo, SyncSummary } from '../types';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
+import { ownedIds } from './finance';
+import {
+	accessTokenForItem,
+	accountIdsForExternalIds,
+	assertReconnectHandled,
+	clearItemError,
+	closeOpenReviewsForAccounts,
+	deletePlaidItem,
+	listPlaidItemViews,
+	parseAccountExternalIds
+} from './plaidItems';
+import {
+	accessTokensFromCredentials,
+	createLinkToken,
+	listAccountExternalIdsForToken,
+	plaidSyncHadPartialFailure,
+	plaidSyncedAccountExternalIds,
+	removePlaidItem,
+	replaceAccessTokens
+} from './providers/plaid';
 
 interface ConnectionRow {
 	id: number;
@@ -144,14 +164,35 @@ export function disconnect(userId: number, providerId: string) {
  * matched by (provider, external_id); transactions are deduped the same way,
  * so re-syncing adds new items and updates changed ones without duplicating.
  */
-export async function syncNow(userId: number, providerId: string): Promise<SyncSummary | { error: string }> {
+export type SyncNowOptions = {
+	/** Plaid only: sync this one item (access token) instead of every linked institution. */
+	onlyAccessToken?: string;
+};
+
+export type SyncNowResult =
+	| SyncSummary
+	| { error: string }
+	| (SyncSummary & { error: string; partialFailure?: boolean });
+
+export async function syncNow(
+	userId: number,
+	providerId: string,
+	options: SyncNowOptions = {}
+): Promise<SyncNowResult> {
 	if (isDemoMode()) return { error: demoBlockedMessage('Bank sync') };
 	const conn = getConnection(userId, providerId);
 	if (!conn) return { error: 'Connect to the provider first.' };
 	const provider = getProvider(providerId)!;
 	const providerLabel = provider.label;
 	const credentials = JSON.parse(conn.credentials) as Record<string, string>;
-	const ctx = { userId, credentials };
+	const ctx = {
+		userId,
+		credentials,
+		connectionId: conn.id,
+		...(options.onlyAccessToken
+			? { onlyAccessTokens: [options.onlyAccessToken] }
+			: {})
+	};
 	const wasInError = conn.status === 'error';
 	try {
 		await provider.connect(credentials, ctx);
@@ -319,9 +360,71 @@ export async function syncNow(userId: number, providerId: string): Promise<SyncS
 
 		// The upsert above imported every copy the provider reports now; fold
 		// the stale copies it no longer reports into their replacements.
-		const merged = since ? mergeRepostedTransactions(userId, providerId, since, liveIds) : 0;
+		// Only accounts whose item synced successfully this run may enter the
+		// dropped-from-feed sweep — a failed or skipped item must not flood Sync review.
+		let eligibleAccountIds: Set<number> | undefined;
+		if (providerId === 'plaid') {
+			const syncedExternal = await plaidSyncedAccountExternalIds(ctx);
+			eligibleAccountIds = new Set(
+				syncedExternal
+					.map((externalId) => accountMap.get(externalId))
+					.filter((id): id is number => id != null)
+			);
+		} else {
+			eligibleAccountIds = new Set(accountMap.values());
+		}
+		const merged = since
+			? mergeRepostedTransactions(userId, providerId, since, liveIds, db(), eligibleAccountIds)
+			: 0;
+		closeRecoveredSyncReviews(userId, providerId, liveIds);
 
 		const lastSyncedAt = dbTime(new Date());
+		const partial = providerId === 'plaid' && (await plaidSyncHadPartialFailure(ctx));
+		if (partial) {
+			const message = 'Some linked institutions could not be synced. The others were updated.';
+			db()
+				.query(
+					"UPDATE connections SET status = 'error', last_synced_at = ?, last_error = ? WHERE id = ? AND user_id = ?"
+				)
+				.run(lastSyncedAt, message, conn.id, userId);
+			notifySyncFailed(userId, providerLabel, conn.id, message);
+			return {
+				accounts: accountMap.size,
+				created,
+				updated,
+				merged,
+				lastSyncedAt,
+			error: message,
+			partialFailure: true
+			};
+		}
+		const stillNeedsReconnect =
+			providerId === 'plaid' &&
+			(
+				db()
+					.query(
+						`SELECT COUNT(*) AS n FROM plaid_items
+						 WHERE user_id = ? AND connection_id = ? AND needs_reconnect = 1`
+					)
+					.get(userId, conn.id) as { n: number }
+			).n > 0;
+		if (stillNeedsReconnect) {
+			const message = 'Some linked institutions could not be synced. The others were updated.';
+			db()
+				.query(
+					"UPDATE connections SET status = 'error', last_synced_at = ?, last_error = ? WHERE id = ? AND user_id = ?"
+				)
+				.run(lastSyncedAt, message, conn.id, userId);
+			return {
+				accounts: accountMap.size,
+				created,
+				updated,
+				merged,
+				lastSyncedAt,
+			error: message,
+			partialFailure: true
+			};
+		}
 		db()
 			.query("UPDATE connections SET status = 'connected', last_synced_at = ?, last_error = NULL WHERE id = ? AND user_id = ?")
 			.run(lastSyncedAt, conn.id, userId);
@@ -551,7 +654,9 @@ export function mergeRepostedTransactions(
 	providerId: string,
 	since: string,
 	liveIds: Set<string>,
-	database = db()
+	database = db(),
+	/** When set, only these Galene account ids may be treated as dropped-from-feed. */
+	eligibleAccountIds?: Set<number>
 ): number {
 	const orphans = database
 		.query(
@@ -563,6 +668,7 @@ export function mergeRepostedTransactions(
 		.all(userId, providerId, since) as OrphanRow[];
 	let merged = 0;
 	for (const orphan of orphans) {
+		if (eligibleAccountIds && !eligibleAccountIds.has(orphan.account_id)) continue;
 		if (liveIds.has(orphan.external_id)) continue; // still reported — not stale
 		const candidates = database
 			.query(
@@ -648,6 +754,39 @@ export function foldOrphanIntoTarget(
 		database.run('ROLLBACK');
 		throw error;
 	}
+}
+
+
+/** Dismiss open review rows whose orphan id is live again (false drop-out recovered). */
+export function closeRecoveredSyncReviews(
+	userId: number,
+	providerId: string,
+	liveIds: Set<string>,
+	database: Database = db()
+): number {
+	if (liveIds.size === 0) return 0;
+	const open = database
+		.query(
+			`SELECT r.id, t.external_id AS external_id
+			 FROM sync_review_items r
+			 JOIN transactions t ON t.id = r.orphan_transaction_id
+			 WHERE r.user_id = ? AND r.status = 'open' AND r.provider = ?
+			   AND t.external_id IS NOT NULL AND t.external_id != ''`
+		)
+		.all(userId, providerId) as { id: number; external_id: string }[];
+	let closed = 0;
+	for (const row of open) {
+		if (!liveIds.has(row.external_id)) continue;
+		database
+			.query(
+				`UPDATE sync_review_items
+				 SET status = 'dismissed', resolved_at = datetime('now')
+				 WHERE id = ? AND user_id = ? AND status = 'open'`
+			)
+			.run(row.id, userId);
+		closed++;
+	}
+	return closed;
 }
 
 /** Queue an orphan for user review when auto-fold has no clear winner. */
@@ -835,6 +974,100 @@ export function resolveSyncReview(
 		.query(`UPDATE sync_review_items SET status = 'folded', resolved_at = ? WHERE id = ? AND user_id = ?`)
 		.run(now, reviewId, userId);
 	return { ok: true };
+}
+
+/** Linked Plaid items for Settings → Sync. Messages are plain language. */
+export function listPlaidItemsForSettings(userId: number): PlaidItemInfo[] {
+	const conn = getConnection(userId, 'plaid');
+	if (!conn) return [];
+	const tokens = accessTokensFromCredentials(JSON.parse(conn.credentials) as Record<string, string>);
+	return listPlaidItemViews(userId, conn.id, tokens, new Map()).map((item) => ({
+		id: item.id,
+		label: item.institutionName?.trim() || 'A linked institution',
+		needsReconnect: item.state.needsReconnect,
+		message: assertReconnectHandled(item.state)
+	}));
+}
+
+/**
+ * Link token in update mode for one owned item. Does not create a new item.
+ */
+export async function reconnectLinkToken(userId: number, itemRowId: number): Promise<string> {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
+	const access = ownedItemAccessToken(userId, itemRowId);
+	return createLinkToken(userId, access);
+}
+
+/**
+ * Update mode finished. Clear the item error and leave tokens and account
+ * mappings untouched — the existing access token is still valid.
+ */
+export function completePlaidReconnect(userId: number, itemRowId: number): void {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
+	if (ownedIds('plaid_items', userId, [itemRowId]).length !== 1) {
+		throw new Error('That linked institution was not found.');
+	}
+	clearItemError(userId, itemRowId);
+}
+
+/**
+ * After Link update mode succeeds: clear the item error and sync that one
+ * item immediately. Failures stay on the item (and connection soft error),
+ * never as an uncaught page error.
+ */
+export async function finishPlaidReconnect(userId: number, itemRowId: number): Promise<SyncNowResult> {
+	if (isDemoMode()) return { error: demoBlockedMessage('Bank sync') };
+	const access = ownedItemAccessToken(userId, itemRowId);
+	clearItemError(userId, itemRowId);
+	return syncNow(userId, 'plaid', { onlyAccessToken: access });
+}
+
+/**
+ * Remove one linked Plaid item for this user. Other items, accounts, and
+ * transactions stay. Plaid is asked to drop the item.
+ */
+export async function removePlaidItemForUser(userId: number, itemRowId: number): Promise<void> {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
+	const conn = getConnection(userId, 'plaid');
+	if (!conn) throw new Error('That linked institution was not found.');
+	const creds = JSON.parse(conn.credentials) as Record<string, string>;
+	const tokens = accessTokensFromCredentials(creds);
+	const access = ownedItemAccessToken(userId, itemRowId, tokens);
+	const item = db()
+		.query('SELECT account_external_ids FROM plaid_items WHERE id = ? AND user_id = ?')
+		.get(itemRowId, userId) as { account_external_ids: string | null } | undefined;
+	let externalIds = parseAccountExternalIds(item?.account_external_ids);
+	if (externalIds.length === 0) {
+		try {
+			externalIds = await listAccountExternalIdsForToken(userId, access);
+		} catch {
+			// Item may already be unusable; still remove the token and close what we can.
+		}
+	}
+	const accountIds = accountIdsForExternalIds(userId, externalIds);
+	await removePlaidItem(userId, access);
+	deletePlaidItem(userId, itemRowId);
+	if (accountIds.length) closeOpenReviewsForAccounts(userId, accountIds);
+	const next = tokens.filter((token) => token !== access);
+	if (next.length === 0) {
+		disconnect(userId, 'plaid');
+		return;
+	}
+	db()
+		.query('UPDATE connections SET credentials = ? WHERE id = ? AND user_id = ?')
+		.run(JSON.stringify(replaceAccessTokens(creds, next)), conn.id, userId);
+}
+
+function ownedItemAccessToken(userId: number, itemRowId: number, tokens?: string[]): string {
+	if (ownedIds('plaid_items', userId, [itemRowId]).length !== 1) {
+		throw new Error('That linked institution was not found.');
+	}
+	const conn = getConnection(userId, 'plaid');
+	if (!conn) throw new Error('That linked institution was not found.');
+	const list = tokens ?? accessTokensFromCredentials(JSON.parse(conn.credentials) as Record<string, string>);
+	const access = accessTokenForItem(userId, itemRowId, list);
+	if (!access) throw new Error('That linked institution was not found.');
+	return access;
 }
 
 /** Provider accounts linked to this user's Galene accounts, with imported transaction counts. */

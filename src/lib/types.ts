@@ -444,6 +444,13 @@ export interface ProviderContext {
 	 * appends a second bank's access token to the ones it already holds.
 	 */
 	existing?: Record<string, string>;
+	/** Persisted connection id, when the row already exists. Plaid uses it to store per-item health. */
+	connectionId?: number;
+	/**
+	 * When set, Plaid syncs only these access tokens (Link update reconnect).
+	 * Other linked items are left untouched for this run.
+	 */
+	onlyAccessTokens?: string[];
 }
 
 /**
@@ -536,6 +543,17 @@ export interface LinkedAccount {
 	source_name: string | null;
 	/** 1 when the user chose this account's name; the sync engine won't overwrite it. */
 	name_locked: number;
+}
+
+/**
+ * One linked Plaid item as the settings page may show it.
+ * `message` is plain language; the error code stays on the server.
+ */
+export interface PlaidItemInfo {
+	id: number;
+	label: string;
+	needsReconnect: boolean;
+	message: string | null;
 }
 
 /** Result of a sync run. */

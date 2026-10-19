@@ -57,8 +57,10 @@ Plaid settings are per user. Disconnecting a Plaid connection keeps the accounts
 
 A linked institution can stop syncing until you sign in again — for example after a password change, or when the institution is about to expire the connection. Galene syncs each linked institution on its own, so the others keep updating.
 
-On **Settings → Bank sync**, that institution shows **Your bank needs you to sign in again** and a **Reconnect** button. Reconnect opens Plaid Link for that same connection. Your existing account mappings and transaction history stay; Galene does not add a second copy of the institution.
+On **Settings → Bank sync**, that institution shows **Your bank needs you to sign in again** and a **Reconnect** button. Reconnect opens Plaid Link for that same connection. Your existing account mappings and transaction history stay; Galene does not add a second copy of the institution. After you finish signing in, Galene syncs that institution automatically so the card returns to healthy without pressing **Sync now**.
 
-**Remove** drops one linked institution after you confirm. Its imported accounts and transactions stay. The other linked institutions are left in place.
+When one linked institution fails, the others keep syncing on their normal schedule. The connection only backs off the full hour when every linked institution failed.
+
+**Remove** drops one linked institution after you confirm. Its imported accounts and transactions stay. The other linked institutions are left in place. Open Sync review items for that institution are closed.
 
 On the public demo, Reconnect and Remove stay visible and do nothing — bank sync is read-only there.

@@ -1,10 +1,10 @@
 import { db } from './db';
-import { dbTime, syncNow } from './sync';
+import { dbTime, syncNow, type SyncNowResult } from './sync';
 import { generateComputedAlerts } from './notifications';
 
 const TICK_MS = 60_000;
 /** A failed auto-sync retries no sooner than an hour later. */
-const FAILURE_BACKOFF_MINUTES = 60;
+export const FAILURE_BACKOFF_MINUTES = 60;
 /** Derived alerts (budget overruns, upcoming bills) are recomputed at most this often. */
 const ALERTS_INTERVAL_MS = 5 * 60 * 1000;
 let lastAlertsAt = 0;
@@ -21,6 +21,18 @@ const g = globalThis as unknown as { __galeneSyncScheduler?: boolean };
  * the connections whose next_sync_at has passed, one at a time per
  * connection, and reschedules them.
  */
+
+/**
+ * How long until the next scheduled sync. A hard failure (every item failed,
+ * or a non-partial error) backs off to at least an hour. A partial Plaid
+ * failure keeps the normal interval so healthy items still sync on schedule.
+ */
+export function nextSyncDelayMinutes(result: SyncNowResult, intervalMinutes: number): number {
+	const partial = 'partialFailure' in result && result.partialFailure === true;
+	const hardFail = 'error' in result && !partial;
+	return hardFail ? Math.max(intervalMinutes, FAILURE_BACKOFF_MINUTES) : intervalMinutes;
+}
+
 export function startSyncScheduler(): void {
 	if (g.__galeneSyncScheduler) return;
 	g.__galeneSyncScheduler = true;
@@ -53,9 +65,7 @@ async function tick(): Promise<void> {
 		void (async () => {
 			try {
 				const result = await syncNow(row.user_id, row.provider);
-				const delay = 'error' in result
-					? Math.max(row.sync_interval_minutes, FAILURE_BACKOFF_MINUTES)
-					: row.sync_interval_minutes;
+				const delay = nextSyncDelayMinutes(result, row.sync_interval_minutes);
 				db()
 					.query('UPDATE connections SET next_sync_at = ? WHERE id = ?')
 					.run(dbTime(new Date(Date.now() + delay * 60000)), row.id);

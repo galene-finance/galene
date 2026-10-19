@@ -56,6 +56,7 @@ interface ItemRow {
 	error_code: string | null;
 	error_at: string | null;
 	needs_reconnect: number;
+	account_external_ids: string | null;
 }
 
 function stateFromRow(row: Pick<ItemRow, 'error_code' | 'error_at' | 'needs_reconnect'>): PlaidItemState {
@@ -141,6 +142,105 @@ export function clearItemErrorByToken(userId: number, accessToken: string): void
 			 WHERE user_id = ? AND token_hint = ?`
 		)
 		.run(userId, tokenHint(accessToken));
+}
+
+
+/** Remember which provider account ids belong to this item after a successful sync. */
+export function setItemAccountExternalIds(userId: number, accessToken: string, externalIds: string[]): void {
+	const unique = [...new Set(externalIds.map((id) => id.trim()).filter(Boolean))].sort();
+	db()
+		.query(
+			`UPDATE plaid_items
+			 SET account_external_ids = ?, updated_at = datetime('now')
+			 WHERE user_id = ? AND token_hint = ?`
+		)
+		.run(JSON.stringify(unique), userId, tokenHint(accessToken));
+}
+
+export function parseAccountExternalIds(raw: string | null | undefined): string[] {
+	if (!raw) return [];
+	try {
+		const parsed = JSON.parse(raw) as unknown;
+		if (!Array.isArray(parsed)) return [];
+		return parsed.map((v) => String(v)).filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
+/** Close open sync-review rows for orphans on these Galene account ids (user-scoped). */
+export function closeOpenReviewsForAccounts(userId: number, accountIds: number[]): number {
+	const ids = [...new Set(accountIds.filter((id) => Number.isFinite(id) && id > 0))];
+	if (ids.length === 0) return 0;
+	const placeholders = ids.map(() => '?').join(',');
+	const result = db()
+		.query(
+			`UPDATE sync_review_items
+			 SET status = 'dismissed', resolved_at = datetime('now')
+			 WHERE user_id = ? AND status = 'open'
+			   AND orphan_transaction_id IN (
+			     SELECT id FROM transactions WHERE user_id = ? AND account_id IN (${placeholders})
+			   )`
+		)
+		.run(userId, userId, ...ids);
+	return Number(result.changes ?? 0);
+}
+
+/** Galene account ids whose provider external_id is in the given set. */
+export function accountIdsForExternalIds(userId: number, externalIds: string[]): number[] {
+	const ids = [...new Set(externalIds.map((id) => id.trim()).filter(Boolean))];
+	if (ids.length === 0) return [];
+	const placeholders = ids.map(() => '?').join(',');
+	const rows = db()
+		.query(
+			`SELECT id FROM accounts
+			 WHERE user_id = ? AND provider = 'plaid' AND external_id IN (${placeholders})`
+		)
+		.all(userId, ...ids) as { id: number }[];
+	return rows.map((r) => r.id);
+}
+
+/**
+ * One-shot cleanup: dismiss open review items for accounts that belong to a
+ * reconnect-needed item, or whose external_id is not on any remaining item.
+ * Safe, user-scoped UPDATEs only (no DELETE of transactions/accounts).
+ */
+export function cleanupStalePlaidSyncReviews(): number {
+	const users = db().query('SELECT DISTINCT user_id FROM plaid_items').all() as { user_id: number }[];
+	let closed = 0;
+	for (const { user_id: userId } of users) {
+		const items = db()
+			.query(
+				`SELECT needs_reconnect, account_external_ids FROM plaid_items WHERE user_id = ?`
+			)
+			.all(userId) as { needs_reconnect: number; account_external_ids: string | null }[];
+		const liveExternal = new Set<string>();
+		const brokenExternal = new Set<string>();
+		for (const item of items) {
+			const ids = parseAccountExternalIds(item.account_external_ids);
+			for (const id of ids) {
+				liveExternal.add(id);
+				if (item.needs_reconnect === 1) brokenExternal.add(id);
+			}
+		}
+		if (brokenExternal.size) {
+			closed += closeOpenReviewsForAccounts(userId, accountIdsForExternalIds(userId, [...brokenExternal]));
+		}
+		// Accounts still marked plaid but no longer on any item (removed item).
+		const orphans = db()
+			.query(
+				`SELECT id, external_id FROM accounts
+				 WHERE user_id = ? AND provider = 'plaid' AND external_id IS NOT NULL AND external_id != ''`
+			)
+			.all(userId) as { id: number; external_id: string }[];
+		const removedAccountIds = orphans
+			.filter((a) => liveExternal.size > 0 && !liveExternal.has(a.external_id))
+			.map((a) => a.id);
+		if (removedAccountIds.length) {
+			closed += closeOpenReviewsForAccounts(userId, removedAccountIds);
+		}
+	}
+	return closed;
 }
 
 export function getItemById(userId: number, itemRowId: number): (ItemRow & { state: PlaidItemState }) | null {

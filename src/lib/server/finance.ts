@@ -23,7 +23,7 @@ import type {
 	Tag,
 	Transaction,
 	TransactionSplit
-} from '$lib/types';
+} from '../types';
 
 
 /** Map a DB category row (type + is_transfer) to the public CategoryType. */
@@ -83,7 +83,7 @@ function rowById(table: string, userId: number, id: number, columns: string): Re
 		| null;
 }
 
-type OwnedTable = 'transactions' | 'scheduled' | 'accounts' | 'categories' | 'tags' | 'budgets';
+type OwnedTable = 'transactions' | 'scheduled' | 'accounts' | 'categories' | 'tags' | 'budgets' | 'plaid_items';
 
 /**
  * Positive ids that belong to this user in a user-scoped table.

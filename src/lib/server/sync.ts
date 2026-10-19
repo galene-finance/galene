@@ -3,8 +3,23 @@ import { db } from './db';
 import { getProvider } from './providers';
 import { applyCategorizationRules } from './finance';
 import { notifySyncFailed, notifySyncRecovered } from './notifications';
-import type { Connection, LinkedAccount, SyncSummary } from '$lib/types';
+import type { Connection, LinkedAccount, PlaidItemInfo, SyncSummary } from '../types';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
+import { ownedIds } from './finance';
+import {
+	accessTokenForItem,
+	assertReconnectHandled,
+	clearItemError,
+	deletePlaidItem,
+	listPlaidItemViews
+} from './plaidItems';
+import {
+	accessTokensFromCredentials,
+	createLinkToken,
+	plaidSyncHadPartialFailure,
+	removePlaidItem,
+	replaceAccessTokens
+} from './providers/plaid';
 
 interface ConnectionRow {
 	id: number;
@@ -144,14 +159,17 @@ export function disconnect(userId: number, providerId: string) {
  * matched by (provider, external_id); transactions are deduped the same way,
  * so re-syncing adds new items and updates changed ones without duplicating.
  */
-export async function syncNow(userId: number, providerId: string): Promise<SyncSummary | { error: string }> {
+export async function syncNow(
+	userId: number,
+	providerId: string
+): Promise<SyncSummary | { error: string } | (SyncSummary & { error: string })> {
 	if (isDemoMode()) return { error: demoBlockedMessage('Bank sync') };
 	const conn = getConnection(userId, providerId);
 	if (!conn) return { error: 'Connect to the provider first.' };
 	const provider = getProvider(providerId)!;
 	const providerLabel = provider.label;
 	const credentials = JSON.parse(conn.credentials) as Record<string, string>;
-	const ctx = { userId, credentials };
+	const ctx = { userId, credentials, connectionId: conn.id };
 	const wasInError = conn.status === 'error';
 	try {
 		await provider.connect(credentials, ctx);
@@ -322,6 +340,17 @@ export async function syncNow(userId: number, providerId: string): Promise<SyncS
 		const merged = since ? mergeRepostedTransactions(userId, providerId, since, liveIds) : 0;
 
 		const lastSyncedAt = dbTime(new Date());
+		const partial = providerId === 'plaid' && (await plaidSyncHadPartialFailure(ctx));
+		if (partial) {
+			const message = 'Some linked institutions could not be synced. The others were updated.';
+			db()
+				.query(
+					"UPDATE connections SET status = 'error', last_synced_at = ?, last_error = ? WHERE id = ? AND user_id = ?"
+				)
+				.run(lastSyncedAt, message, conn.id, userId);
+			notifySyncFailed(userId, providerLabel, conn.id, message);
+			return { accounts: accountMap.size, created, updated, merged, lastSyncedAt, error: message };
+		}
 		db()
 			.query("UPDATE connections SET status = 'connected', last_synced_at = ?, last_error = NULL WHERE id = ? AND user_id = ?")
 			.run(lastSyncedAt, conn.id, userId);
@@ -835,6 +864,75 @@ export function resolveSyncReview(
 		.query(`UPDATE sync_review_items SET status = 'folded', resolved_at = ? WHERE id = ? AND user_id = ?`)
 		.run(now, reviewId, userId);
 	return { ok: true };
+}
+
+/** Linked Plaid items for Settings → Sync. Messages are plain language. */
+export function listPlaidItemsForSettings(userId: number): PlaidItemInfo[] {
+	const conn = getConnection(userId, 'plaid');
+	if (!conn) return [];
+	const tokens = accessTokensFromCredentials(JSON.parse(conn.credentials) as Record<string, string>);
+	return listPlaidItemViews(userId, conn.id, tokens, new Map()).map((item) => ({
+		id: item.id,
+		label: item.institutionName?.trim() || 'A linked institution',
+		needsReconnect: item.state.needsReconnect,
+		message: assertReconnectHandled(item.state)
+	}));
+}
+
+/**
+ * Link token in update mode for one owned item. Does not create a new item.
+ */
+export async function reconnectLinkToken(userId: number, itemRowId: number): Promise<string> {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
+	const access = ownedItemAccessToken(userId, itemRowId);
+	return createLinkToken(userId, access);
+}
+
+/**
+ * Update mode finished. Clear the item error and leave tokens and account
+ * mappings untouched — the existing access token is still valid.
+ */
+export function completePlaidReconnect(userId: number, itemRowId: number): void {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
+	if (ownedIds('plaid_items', userId, [itemRowId]).length !== 1) {
+		throw new Error('That linked institution was not found.');
+	}
+	clearItemError(userId, itemRowId);
+}
+
+/**
+ * Remove one linked Plaid item for this user. Other items, accounts, and
+ * transactions stay. Plaid is asked to drop the item.
+ */
+export async function removePlaidItemForUser(userId: number, itemRowId: number): Promise<void> {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
+	const conn = getConnection(userId, 'plaid');
+	if (!conn) throw new Error('That linked institution was not found.');
+	const creds = JSON.parse(conn.credentials) as Record<string, string>;
+	const tokens = accessTokensFromCredentials(creds);
+	const access = ownedItemAccessToken(userId, itemRowId, tokens);
+	await removePlaidItem(userId, access);
+	deletePlaidItem(userId, itemRowId);
+	const next = tokens.filter((token) => token !== access);
+	if (next.length === 0) {
+		disconnect(userId, 'plaid');
+		return;
+	}
+	db()
+		.query('UPDATE connections SET credentials = ? WHERE id = ? AND user_id = ?')
+		.run(JSON.stringify(replaceAccessTokens(creds, next)), conn.id, userId);
+}
+
+function ownedItemAccessToken(userId: number, itemRowId: number, tokens?: string[]): string {
+	if (ownedIds('plaid_items', userId, [itemRowId]).length !== 1) {
+		throw new Error('That linked institution was not found.');
+	}
+	const conn = getConnection(userId, 'plaid');
+	if (!conn) throw new Error('That linked institution was not found.');
+	const list = tokens ?? accessTokensFromCredentials(JSON.parse(conn.credentials) as Record<string, string>);
+	const access = accessTokenForItem(userId, itemRowId, list);
+	if (!access) throw new Error('That linked institution was not found.');
+	return access;
 }
 
 /** Provider accounts linked to this user's Galene accounts, with imported transaction counts. */

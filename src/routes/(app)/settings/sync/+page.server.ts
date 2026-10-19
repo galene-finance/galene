@@ -9,7 +9,20 @@ import {
 	plaidLinkEnabled,
 	savePlaidConfig
 } from '$lib/server/providers/plaid';
-import { connect, countOpenSyncReviews, disconnect, getLinkedAccounts, listConnections, mapAccount, setSyncInterval, syncNow } from '$lib/server/sync';
+import {
+	completePlaidReconnect,
+	connect,
+	countOpenSyncReviews,
+	disconnect,
+	getLinkedAccounts,
+	listConnections,
+	listPlaidItemsForSettings,
+	mapAccount,
+	reconnectLinkToken,
+	removePlaidItemForUser,
+	setSyncInterval,
+	syncNow
+} from '$lib/server/sync';
 import { mergedNote } from '$lib/utils';
 
 /** "90 minutes" / "an hour" / "a day" style label for an interval in minutes. */
@@ -65,7 +78,8 @@ export function load({ locals, depends }) {
 		// Plaid is configured per user; the form pre-fills the saved values —
 		// except the secret, which never reaches the browser (see
 		// plaidConfigForClient).
-		plaid: plaidConfigForClient(userId)
+		plaid: plaidConfigForClient(userId),
+		plaidItems: listPlaidItemsForSettings(userId)
 	};
 }
 
@@ -98,6 +112,44 @@ export const actions = {
 			return { token: await createLinkToken(locals.user!.id) };
 		} catch (error) {
 			return { error: error instanceof Error ? error.message : 'Could not start a Plaid session.' };
+		}
+	},
+
+	// Update-mode Link token for one item that needs a fresh sign-in.
+	'reconnect-token': async ({ request, locals }) => {
+		const form = await request.formData();
+		const itemId = Number(form.get('item_id'));
+		try {
+			return { token: await reconnectLinkToken(locals.user!.id, itemId), itemId };
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : 'Could not start a reconnect session.' };
+		}
+	},
+
+	// Link update mode does not issue a new access token. Clearing the error
+	// is enough; the next sync uses the token already stored for this item.
+	'reconnect-done': async ({ request, locals }) => {
+		const form = await request.formData();
+		const itemId = Number(form.get('item_id'));
+		try {
+			completePlaidReconnect(locals.user!.id, itemId);
+			return { ok: true, message: 'Signed in again. Use Sync now to refresh this institution.' };
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : 'Could not finish reconnecting.' };
+		}
+	},
+
+	'remove-item': async ({ request, locals }) => {
+		const form = await request.formData();
+		const itemId = Number(form.get('item_id'));
+		try {
+			await removePlaidItemForUser(locals.user!.id, itemId);
+			return {
+				ok: true,
+				message: 'Removed that linked institution. Its imported accounts and transactions stay in your app.'
+			};
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : 'Could not remove that institution.' };
 		}
 	},
 

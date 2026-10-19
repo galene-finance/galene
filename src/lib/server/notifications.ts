@@ -6,8 +6,8 @@ import {
 	expandScheduled,
 	getScheduled
 } from './finance';
-import { formatMoney } from '$lib/utils';
-import type { AppNotification, NotificationKind } from '$lib/types';
+import { formatMoney } from '../utils';
+import type { AppNotification, NotificationKind } from '../types';
 
 /** UTC "YYYY-MM-DD HH:MM:SS" — the same storage format as the rest of the app. */
 function nowSql(): string {

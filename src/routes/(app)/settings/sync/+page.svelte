@@ -11,7 +11,8 @@
 	import { openPlaidLink, preloadPlaidLink, type PlaidLinkHandler } from '$lib/plaidLink';
 	import AccountMapping from './AccountMapping.svelte';
 	import { mergedNote } from '$lib/utils';
-	import type { Connection, LinkedAccount, ProviderInfo } from '$lib/types';
+	import Dialog from '$lib/components/ui/Dialog.svelte';
+	import type { Connection, LinkedAccount, PlaidItemInfo, ProviderInfo } from '$lib/types';
 
 	/** Auto-sync choices in minutes; the server filters out ones under the provider's minimum. */
 	const FREQ_OPTIONS = [
@@ -47,7 +48,7 @@
 	});
 
 	async function openPlaid(p: ProviderInfo) {
-		if (!p.link || plaidOpening || !plaidForm) return;
+		if (data.demo || !p.link || plaidOpening || !plaidForm) return;
 		plaidError = '';
 		plaidOpening = true;
 		try {
@@ -81,6 +82,51 @@
 		}
 	}
 
+	let reconnectForm = $state<HTMLFormElement | null>(null);
+	let reconnectItemId = $state('');
+	let removeOpen = $state(false);
+	let removeTarget = $state<PlaidItemInfo | null>(null);
+
+	async function reconnectItem(item: PlaidItemInfo) {
+		if (data.demo || plaidOpening) return;
+		plaidError = '';
+		plaidOpening = true;
+		try {
+			const body = new FormData();
+			body.set('item_id', String(item.id));
+			const response = await fetch(new URL('?/reconnect-token', window.location.href), {
+				method: 'POST',
+				body
+			});
+			const res = deserialize(await response.text());
+			const d =
+				'data' in res ? (res.data as { token?: string; error?: string } | undefined) : undefined;
+			if (!d?.token) throw new Error(d?.error ?? 'Could not start a reconnect session.');
+			plaidHandler = await openPlaidLink({
+				token: d.token,
+				onSuccess: async () => {
+					reconnectItemId = String(item.id);
+					await tick();
+					reconnectForm?.requestSubmit();
+					plaidOpening = false;
+				},
+				onExit: (message) => {
+					plaidOpening = false;
+					if (message) plaidError = message;
+				}
+			});
+		} catch (error) {
+			plaidOpening = false;
+			plaidError = error instanceof Error ? error.message : 'Could not open Plaid Link.';
+		}
+	}
+
+	function askRemove(item: PlaidItemInfo) {
+		if (data.demo) return;
+		removeTarget = item;
+		removeOpen = true;
+	}
+
 	let {
 		form,
 		data
@@ -105,6 +151,8 @@
 			userId: number;
 			openSyncReviews: number;
 			plaid: { clientId: string; env: string; sandboxInstance: string; secretConfigured: boolean };
+			plaidItems: PlaidItemInfo[];
+			demo?: boolean;
 		};
 	} = $props();
 
@@ -319,6 +367,34 @@
 								</form>
 							</div>
 
+							{#if p.id === 'plaid' && data.plaidItems.length}
+								<ul class="divide-y divide-border rounded-md border border-border">
+									{#each data.plaidItems as item (item.id)}
+										<li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+											<div class="min-w-0">
+												<p class="text-sm font-medium">{item.label}</p>
+												{#if item.needsReconnect && item.message}
+													<p class="text-sm text-destructive">{item.message}</p>
+												{/if}
+											</div>
+											<div class="flex gap-2">
+												{#if item.needsReconnect}
+													<Button type="button" disabled={plaidOpening || data.demo} onclick={() => reconnectItem(item)}>
+														Reconnect
+													</Button>
+												{/if}
+												<Button type="button" variant="secondary" disabled={data.demo} onclick={() => askRemove(item)}>
+													Remove
+												</Button>
+											</div>
+										</li>
+									{/each}
+								</ul>
+								<form bind:this={reconnectForm} method="POST" action="?/reconnect-done" use:enhance class="hidden">
+									<input type="hidden" name="item_id" value={reconnectItemId} />
+								</form>
+							{/if}
+
 							{#if data.linked[p.id]?.length}
 								<div>
 									<p class="mb-1.5 text-sm font-medium">Linked accounts</p>
@@ -447,4 +523,28 @@
 	{/each}
 
 	</div>
+
+	<Dialog
+		bind:open={removeOpen}
+		title="Remove this institution?"
+		description="Imported accounts and transactions stay. Other linked institutions are not affected."
+		size="sm"
+	>
+		<div class="mt-4 flex justify-end gap-2">
+			<Button type="button" variant="secondary" onclick={() => (removeOpen = false)}>Cancel</Button>
+			<form
+				method="POST"
+				action="?/remove-item"
+				use:enhance={() => {
+					return async ({ update }) => {
+						removeOpen = false;
+						await update();
+					};
+				}}
+			>
+				<input type="hidden" name="item_id" value={removeTarget?.id ?? ''} />
+				<Button type="submit" variant="destructive" disabled={data.demo}>Remove</Button>
+			</form>
+		</div>
+	</Dialog>
 </div>

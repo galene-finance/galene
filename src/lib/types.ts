@@ -446,6 +446,11 @@ export interface ProviderContext {
 	existing?: Record<string, string>;
 	/** Persisted connection id, when the row already exists. Plaid uses it to store per-item health. */
 	connectionId?: number;
+	/**
+	 * When set, Plaid syncs only these access tokens (Link update reconnect).
+	 * Other linked items are left untouched for this run.
+	 */
+	onlyAccessTokens?: string[];
 }
 
 /**

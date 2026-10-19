@@ -968,6 +968,45 @@ CREATE TABLE IF NOT EXISTS plaid_items (
 );
 CREATE INDEX IF NOT EXISTS idx_plaid_items_user ON plaid_items(user_id, connection_id);
 `
+},
+{
+	// ADO-58 follow-up: remember which provider account ids belong to each
+	// Plaid item so the dropped-from-feed sweep can skip failed/removed items.
+	// Also dismiss open Sync review rows that were wrongly queued for those
+	// accounts (safe UPDATE only; no row deletes of transactions/accounts).
+	sql: `-- account_external_ids on plaid_items (ADO-58 follow-up)`,
+	after(database) {
+		const cols = database.query('PRAGMA table_info(plaid_items)').all() as { name: string }[];
+		const names = new Set(cols.map((c) => c.name));
+		if (!names.has('account_external_ids')) {
+			database.exec('ALTER TABLE plaid_items ADD COLUMN account_external_ids TEXT');
+		}
+		// Dismiss open reviews for orphans on accounts tied to a reconnect-needed
+		// item that already recorded its account ids. Removed-item cleanup runs
+		// at remove time; this only heals the false positives from failed syncs.
+		database.exec(`
+			UPDATE sync_review_items
+			 SET status = 'dismissed', resolved_at = datetime('now')
+			 WHERE status = 'open'
+			   AND user_id IN (SELECT DISTINCT user_id FROM plaid_items WHERE needs_reconnect = 1)
+			   AND orphan_transaction_id IN (
+			     SELECT t.id
+			     FROM transactions t
+			     JOIN accounts a ON a.id = t.account_id
+			     JOIN plaid_items p ON p.user_id = t.user_id AND p.needs_reconnect = 1
+			     WHERE t.user_id = sync_review_items.user_id
+			       AND a.provider = 'plaid'
+			       AND a.external_id IS NOT NULL
+			       AND a.external_id != ''
+			       AND p.account_external_ids IS NOT NULL
+			       AND EXISTS (
+			         SELECT 1
+			         FROM json_each(p.account_external_ids) j
+			         WHERE j.value = a.external_id
+			       )
+			   )
+		`);
+	}
 }
 ];
 

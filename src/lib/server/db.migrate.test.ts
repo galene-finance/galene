@@ -205,4 +205,33 @@ describe('migrate Plaid item health (ADO-58)', () => {
 		expect(() => migrate(db)).not.toThrow();
 		db.close();
 	});
+
+	test('adds account_external_ids on an existing plaid_items table', () => {
+		const db = new Database(':memory:');
+		db.exec('PRAGMA foreign_keys = ON');
+		migrate(db);
+		// Rewind one migration and recreate plaid_items without the new column.
+		db.run(`PRAGMA user_version = ${migrationCount() - 1}`);
+		db.exec('DROP TABLE plaid_items');
+		db.exec(`
+CREATE TABLE plaid_items (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+	item_id TEXT NOT NULL,
+	token_hint TEXT NOT NULL,
+	institution_name TEXT,
+	error_code TEXT,
+	error_at TEXT,
+	needs_reconnect INTEGER NOT NULL DEFAULT 0 CHECK (needs_reconnect IN (0, 1)),
+	updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+	UNIQUE (user_id, token_hint)
+);`);
+		migrate(db);
+		const cols = db.query('PRAGMA table_info(plaid_items)').all() as { name: string }[];
+		expect(cols.some((c) => c.name === 'account_external_ids')).toBe(true);
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
+		db.close();
+	});
+
 });

@@ -4,6 +4,7 @@ import {
 	clearItemErrorByToken,
 	isReconnectCode,
 	recordItemFailure,
+	setItemAccountExternalIds,
 	tokenHint,
 	upsertPlaidItem,
 	type ReconnectErrorCode
@@ -375,6 +376,14 @@ export async function fetchItemIdentity(
 }
 
 /** Ask Plaid to drop one item. A missing item is success — the local token is going either way. */
+export async function listAccountExternalIdsForToken(userId: number, accessToken: string): Promise<string[]> {
+	const cfg = getPlaidConfig(userId);
+	const res = await plaidPost<{ accounts: PlaidAccount[] }>(cfg, accessToken, '/accounts/get');
+	return (res.accounts ?? [])
+		.map((a) => a.account_id ?? a.id ?? '')
+		.filter(Boolean);
+}
+
 export async function removePlaidItem(userId: number, accessToken: string): Promise<void> {
 	const cfg = getPlaidConfig(userId);
 	try {
@@ -469,6 +478,8 @@ interface ItemSyncBundle {
 	/** True when at least one item failed and the caller should surface a soft error. */
 	partialFailure: boolean;
 	reconnectNeeded: boolean;
+	/** Provider account ids from items that finished this run without error. */
+	syncedAccountExternalIds: string[];
 }
 
 const itemSyncCache = new WeakMap<ProviderContext, Promise<ItemSyncBundle>>();
@@ -488,15 +499,21 @@ async function syncPlaidItems(ctx: ProviderContext, since?: string): Promise<Ite
 
 async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSyncBundle> {
 	const cfg = getPlaidConfig(ctx.userId);
-	const tokens = accessTokens(ctx.credentials);
-	if (tokens.length === 0) {
+	const allTokens = accessTokens(ctx.credentials);
+	const only = ctx.onlyAccessTokens?.map((t) => t.trim()).filter(Boolean);
+	const tokens = only?.length ? allTokens.filter((t) => only.includes(t)) : allTokens;
+	if (allTokens.length === 0) {
 		throw new ProviderHttpError('No Plaid accounts are linked yet. Use "Link another account" to add one.');
+	}
+	if (tokens.length === 0) {
+		throw new ProviderHttpError('That linked institution was not found.');
 	}
 	const connectionId = ctx.connectionId;
 	const start = since ?? new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
 	const end = new Date().toISOString().slice(0, 10);
 	const accounts: ProviderAccount[] = [];
 	const transactions: ProviderTransaction[] = [];
+	const syncedAccountExternalIds: string[] = [];
 	let partialFailure = false;
 	let reconnectNeeded = false;
 
@@ -529,17 +546,24 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 				}
 			}
 			const res = await plaidPost<{ accounts: PlaidAccount[] }>(cfg, token, '/accounts/get');
+			const itemAccountIds: string[] = [];
 			for (const a of res.accounts) {
 				const type = mapType(typeof a.type === 'string' ? a.type : a.type?.primary);
+				const externalId = a.account_id ?? a.id ?? '';
+				itemAccountIds.push(externalId);
 				accounts.push({
-					external_id: a.account_id ?? a.id ?? '',
+					external_id: externalId,
 					name: a.name,
 					type,
 					balance_cents: plaidBalanceCents(a, type)
 				});
 			}
 			transactions.push(...(await fetchItemTransactions(cfg, token, start, end)));
-			if (connectionId != null) noteItemOutcome(ctx.userId, connectionId, token, itemId, null);
+			syncedAccountExternalIds.push(...itemAccountIds.filter(Boolean));
+			if (connectionId != null) {
+				noteItemOutcome(ctx.userId, connectionId, token, itemId, null);
+				setItemAccountExternalIds(ctx.userId, token, itemAccountIds);
+			}
 		} catch (error) {
 			partialFailure = true;
 			const code = plaidErrorCode(error);
@@ -561,7 +585,7 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 				: 'Plaid could not sync any linked institution. Try again in a moment.'
 		);
 	}
-	return { accounts, transactions, partialFailure, reconnectNeeded };
+	return { accounts, transactions, partialFailure, reconnectNeeded, syncedAccountExternalIds };
 }
 
 /** Whether the last sync of this context had a per-item failure. */
@@ -569,6 +593,13 @@ export async function plaidSyncHadPartialFailure(ctx: ProviderContext): Promise<
 	const cached = itemSyncCache.get(ctx);
 	if (!cached) return false;
 	return (await cached).partialFailure;
+}
+
+/** Provider account ids that synced successfully in this context's Plaid pass. */
+export async function plaidSyncedAccountExternalIds(ctx: ProviderContext): Promise<string[]> {
+	const cached = itemSyncCache.get(ctx);
+	if (!cached) return [];
+	return (await cached).syncedAccountExternalIds;
 }
 
 /**

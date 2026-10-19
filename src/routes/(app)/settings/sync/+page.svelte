@@ -84,6 +84,7 @@
 
 	let reconnectForm = $state<HTMLFormElement | null>(null);
 	let reconnectItemId = $state('');
+	let reconnectSyncing = $state(false);
 	let removeOpen = $state(false);
 	let removeTarget = $state<PlaidItemInfo | null>(null);
 
@@ -378,9 +379,13 @@
 												{/if}
 											</div>
 											<div class="flex gap-2">
-												{#if item.needsReconnect}
-													<Button type="button" disabled={plaidOpening || data.demo} onclick={() => reconnectItem(item)}>
-														Reconnect
+												{#if item.needsReconnect || (reconnectSyncing && reconnectItemId === String(item.id))}
+													<Button
+														type="button"
+														disabled={plaidOpening || reconnectSyncing || data.demo}
+														onclick={() => reconnectItem(item)}
+													>
+														{reconnectSyncing && reconnectItemId === String(item.id) ? 'Syncing…' : 'Reconnect'}
 													</Button>
 												{/if}
 												<Button type="button" variant="secondary" disabled={data.demo} onclick={() => askRemove(item)}>
@@ -390,7 +395,19 @@
 										</li>
 									{/each}
 								</ul>
-								<form bind:this={reconnectForm} method="POST" action="?/reconnect-done" use:enhance class="hidden">
+								<form
+									bind:this={reconnectForm}
+									method="POST"
+									action="?/reconnect-done"
+									use:enhance={() => {
+										reconnectSyncing = true;
+										return async ({ update }) => {
+											await update({ reset: false });
+											reconnectSyncing = false;
+										};
+									}}
+									class="hidden"
+								>
 									<input type="hidden" name="item_id" value={reconnectItemId} />
 								</form>
 							{/if}

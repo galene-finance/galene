@@ -10,7 +10,7 @@ import {
 	savePlaidConfig
 } from '$lib/server/providers/plaid';
 import {
-	completePlaidReconnect,
+	finishPlaidReconnect,
 	connect,
 	countOpenSyncReviews,
 	disconnect,
@@ -126,16 +126,48 @@ export const actions = {
 		}
 	},
 
-	// Link update mode does not issue a new access token. Clearing the error
-	// is enough; the next sync uses the token already stored for this item.
+	// Link update mode does not issue a new access token. Clear the error and
+	// sync that one item right away so the card returns to healthy without Sync now.
 	'reconnect-done': async ({ request, locals }) => {
 		const form = await request.formData();
 		const itemId = Number(form.get('item_id'));
 		try {
-			completePlaidReconnect(locals.user!.id, itemId);
-			return { ok: true, message: 'Signed in again. Use Sync now to refresh this institution.' };
+			const summary = await finishPlaidReconnect(locals.user!.id, itemId);
+			if ('error' in summary && !('created' in summary)) {
+				// Hard failure for this item only — keep it as the item's error state.
+				return {
+					ok: true,
+					itemError: true,
+					message: summary.error
+				};
+			}
+			if ('error' in summary) {
+				return {
+					ok: true,
+					message: `Signed in again. ${summary.error}`,
+					accounts: summary.accounts,
+					created: summary.created,
+					updated: summary.updated,
+					merged: summary.merged,
+					lastSyncedAt: summary.lastSyncedAt
+				};
+			}
+			return {
+				ok: true,
+				message: `Signed in again. Synced ${summary.created} new transaction${summary.created === 1 ? '' : 's'}, ${summary.updated} updated.`,
+				accounts: summary.accounts,
+				created: summary.created,
+				updated: summary.updated,
+				merged: summary.merged,
+				lastSyncedAt: summary.lastSyncedAt
+			};
 		} catch (error) {
-			return { error: error instanceof Error ? error.message : 'Could not finish reconnecting.' };
+			// Never surface as a crash — record as an item-level message.
+			return {
+				ok: true,
+				itemError: true,
+				message: error instanceof Error ? error.message : 'Could not finish reconnecting.'
+			};
 		}
 	},
 

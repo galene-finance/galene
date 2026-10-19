@@ -947,6 +947,27 @@ CREATE TABLE IF NOT EXISTS oidc_identities (
 	UNIQUE (issuer, sub)
 );
 `
+},
+{
+	// Plaid item health (ADO-58). One row per linked item, keyed by a SHA-256
+	// of the access token so the token itself is not a join key. Additive —
+	// no parent rebuild. Deleting the connection cascades the rows.
+	sql: `
+CREATE TABLE IF NOT EXISTS plaid_items (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+	item_id TEXT NOT NULL,
+	token_hint TEXT NOT NULL,
+	institution_name TEXT,
+	error_code TEXT,
+	error_at TEXT,
+	needs_reconnect INTEGER NOT NULL DEFAULT 0 CHECK (needs_reconnect IN (0, 1)),
+	updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+	UNIQUE (user_id, token_hint)
+);
+CREATE INDEX IF NOT EXISTS idx_plaid_items_user ON plaid_items(user_id, connection_id);
+`
 }
 ];
 
@@ -966,6 +987,14 @@ export function categoryUniquenessMigrationIndex(): number {
 /** Target PRAGMA user_version after all migrations. */
 export function migrationCount(): number {
 	return MIGRATIONS.length;
+}
+
+/** user_version just before the named CREATE TABLE, so a fixture can re-run that step. */
+export function migrationIndexBefore(table: string): number {
+	const needle = `CREATE TABLE IF NOT EXISTS ${table}`;
+	const index = MIGRATIONS.findIndex((m) => (typeof m === 'string' ? m : m.sql).includes(needle));
+	if (index < 0) throw new Error(`migration for ${table} missing`);
+	return index;
 }
 
 /** Snapshot of category-linked rows — used to fail migrate if a rebuild wipes FKs (#20). */

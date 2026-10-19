@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { closeDbForTests, db, migrate, migrationCount } from './db';
+import { closeDbForTests, db, migrate, migrationCount, migrationIndexBefore } from './db';
 import { assertAllowed } from './loginThrottle';
 import { unlinkUserOidc } from './users';
 import {
@@ -322,7 +322,7 @@ describe('OIDC identity pinning (ADO-55)', () => {
 	test('upgrading an existing database keeps users and pins on first verified sign-in', () => {
 		// Rewind to the schema before ADO-55 with an existing user.
 		db().exec('DROP TABLE oidc_identities');
-		db().run(`PRAGMA user_version = ${migrationCount() - 1}`);
+		db().run(`PRAGMA user_version = ${migrationIndexBefore('oidc_identities')}`);
 		closeDbForTests();
 		const before = userCount();
 		expect(db().query(`SELECT name FROM sqlite_master WHERE name = 'oidc_identities'`).get()).toEqual({

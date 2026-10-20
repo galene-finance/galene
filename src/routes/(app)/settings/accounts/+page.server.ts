@@ -1,3 +1,4 @@
+import { fail } from '@sveltejs/kit';
 import {
 	accountBalanceAsOfExpr,
 	deleteAccount,
@@ -8,6 +9,7 @@ import {
 	saveAccount
 } from '$lib/server/finance';
 import { db } from '$lib/server/db';
+import { demoBlockedMessage, isDemoMode } from '$lib/server/demoMode';
 import type { AccountType } from '$lib/types';
 import { parseAmountToCents } from '$lib/utils';
 
@@ -31,7 +33,7 @@ export function load({ locals }) {
 			txn_count: txnCounts.get(a.id) ?? 0
 		};
 	});
-	return { accounts, viewer: locals.user?.role === 'viewer' };
+	return { accounts, viewer: locals.user?.role === 'viewer', demo: isDemoMode() };
 }
 
 function balancesAsOf(userId: number, asOf: string, accountIds: number[]): Map<number, number> {
@@ -140,6 +142,7 @@ export const actions = {
 	},
 
 	'delete-account-with-transactions': async ({ request, locals }) => {
+		if (isDemoMode()) return fail(403, { error: demoBlockedMessage('Accounts'), source: 'purge' as const });
 		const form = await request.formData();
 		const id = parseInt(String(form.get('id') ?? ''), 10);
 		if (!Number.isFinite(id)) {

@@ -12,6 +12,8 @@ import { deleteAccountWithTransactions, setSetting } from '../finance';
 import { createUser } from '../users';
 import { connect, finishPlaidReconnect, reconnectLinkToken, syncNow } from '../sync';
 import { setItemAccountExternalIds, tokenHint, upsertPlaidItem } from '../plaidItems';
+import { backfillMissingPlaidInstitutionIds, plainPlaidConnectError } from './plaid';
+import { ProviderHttpError } from './http';
 
 const ENV_KEYS = ['GALENE_DEMO', 'GALENE_DB_PATH', 'GALENE_DATA_DIR', 'GALENE_ALLOW_EPHEMERAL_DATA'] as const;
 const saved: Record<string, string | undefined> = {};
@@ -93,6 +95,10 @@ function storedTokens(): string[] {
 
 interface MockOpts {
 	institutionId?: string;
+	/** Per access token. Missing tokens use institutionId. */
+	institutionByToken?: Record<string, string | null>;
+	/** Access tokens whose /item/get fails. */
+	failItemGet?: string[];
 	accounts?: { account_id: string; name: string; mask?: string | null; subtype?: string | null; type?: string }[];
 	calls: { path: string; token?: string; publicToken?: string; products?: unknown; accessToken?: string }[];
 }
@@ -113,11 +119,16 @@ function mockPlaid(opts: MockOpts) {
 			return Response.json({ access_token: NEW_TOKEN });
 		}
 		if (path === '/item/get') {
+			if (access && opts.failItemGet?.includes(access)) {
+				return Response.json({ error_code: 'ITEM_GET_FAILED', error_message: 'nope' }, { status: 400 });
+			}
 			const existing = access === EXISTING;
+			const mapped = access && opts.institutionByToken ? opts.institutionByToken[access] : undefined;
+			const institutionId = mapped === undefined ? (opts.institutionId ?? 'ins_test_1') : mapped;
 			return Response.json({
 				item: {
 					item_id: existing ? 'item-existing' : 'item-new',
-					institution_id: opts.institutionId ?? 'ins_test_1'
+					institution_id: institutionId
 				}
 			});
 		}
@@ -141,21 +152,35 @@ function mockPlaid(opts: MockOpts) {
 	};
 }
 
-function seedExistingItem(userId: number, opts: { mask: string | null; institutionId?: string }) {
+function seedExistingItem(
+	userId: number,
+	opts: {
+		mask?: string | null;
+		subtype?: string | null;
+		institutionId?: string | null;
+		omitInstitution?: boolean;
+	}
+) {
 	const connectionId = link(userId, [EXISTING]);
 	upsertPlaidItem(userId, connectionId, {
 		accessToken: EXISTING,
 		itemId: 'item-existing',
 		institutionName: 'Example Bank',
-		institutionId: opts.institutionId ?? 'ins_test_1'
+		institutionId: opts.omitInstitution ? null : (opts.institutionId ?? 'ins_test_1')
 	});
+	if (opts.omitInstitution) {
+		db()
+			.query('UPDATE plaid_items SET institution_id = NULL WHERE user_id = ? AND token_hint = ?')
+			.run(userId, tokenHint(EXISTING));
+	}
 	setItemAccountExternalIds(userId, EXISTING, ['acc-existing']);
+	const subtype = opts.subtype === undefined ? 'checking' : opts.subtype;
 	db()
 		.query(
 			`INSERT INTO accounts (user_id, name, type, provider, external_id, mask, subtype)
-			 VALUES (?, 'Checking', 'bank', 'plaid', 'acc-existing', ?, 'checking')`
+			 VALUES (?, 'Checking', 'bank', 'plaid', 'acc-existing', ?, ?)`
 		)
-		.run(userId, opts.mask);
+		.run(userId, opts.mask ?? null, subtype);
 	db()
 		.query(
 			`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider, external_id)
@@ -390,6 +415,158 @@ describe('Plaid duplicate item guard (ADO-59)', () => {
 		expect(itemCols.some((c) => c.name === 'institution_id')).toBe(true);
 		expect(accountCols.some((c) => c.name === 'mask')).toBe(true);
 		expect(accountCols.some((c) => c.name === 'subtype')).toBe(true);
+	});
+
+	test('upgraded volume with NULL institution id is blocked before exchange and persisted', async () => {
+		const userId = user();
+		seedExistingItem(userId, { mask: '1234', omitInstitution: true });
+		const calls: MockOpts['calls'] = [];
+		const restore = mockPlaid({ calls, institutionByToken: { [EXISTING]: 'ins_test_1' } });
+		try {
+			const result = await connect(userId, 'plaid', {
+				public_token: 'public-sandbox-once',
+				plaid_metadata: metadata('ins_test_1', [{ name: 'Checking', mask: '1234' }])
+			});
+			expect(result && 'alreadyLinked' in result && result.alreadyLinked).toBe(true);
+			expect(result && 'alreadyLinked' in result && result.exchanged).toBe(false);
+		} finally {
+			restore();
+		}
+		expect(calls.some((c) => c.path === '/item/public_token/exchange')).toBe(false);
+		expect(calls.some((c) => c.path === '/item/get')).toBe(true);
+		expect(storedTokens()).toEqual([EXISTING]);
+		const item = db()
+			.query('SELECT institution_id FROM plaid_items WHERE token_hint = ?')
+			.get(tokenHint(EXISTING)) as { institution_id: string };
+		expect(item.institution_id).toBe('ins_test_1');
+	});
+
+	test('upgraded volume with NULL mask and subtype still blocks before exchange', async () => {
+		const userId = user();
+		seedExistingItem(userId, { mask: null, subtype: null, omitInstitution: true });
+		const calls: MockOpts['calls'] = [];
+		const restore = mockPlaid({ calls, institutionByToken: { [EXISTING]: 'ins_test_1' } });
+		try {
+			const result = await connect(userId, 'plaid', {
+				public_token: 'public-sandbox-once',
+				plaid_metadata: metadata('ins_test_1', [{ name: 'Checking', mask: '1234' }])
+			});
+			expect(result && 'alreadyLinked' in result && result.alreadyLinked).toBe(true);
+		} finally {
+			restore();
+		}
+		expect(calls.some((c) => c.path === '/item/public_token/exchange')).toBe(false);
+		const item = db()
+			.query('SELECT institution_id FROM plaid_items WHERE token_hint = ?')
+			.get(tokenHint(EXISTING)) as { institution_id: string };
+		expect(item.institution_id).toBe('ins_test_1');
+	});
+
+	test('safety net catches a NULL institution id when metadata is missing', async () => {
+		const userId = user();
+		seedExistingItem(userId, { mask: '1234', omitInstitution: true });
+		const calls: MockOpts['calls'] = [];
+		const restore = mockPlaid({
+			calls,
+			institutionByToken: { [EXISTING]: 'ins_test_1', [NEW_TOKEN]: 'ins_test_1' },
+			accounts: [{ account_id: 'acc-new', name: 'Checking', mask: '1234', subtype: 'checking', type: 'depository' }]
+		});
+		try {
+			const result = await connect(userId, 'plaid', { public_token: 'public-sandbox-once' });
+			expect(result && 'alreadyLinked' in result && result.alreadyLinked).toBe(true);
+			expect(result && 'alreadyLinked' in result && result.exchanged).toBe(true);
+		} finally {
+			restore();
+		}
+		expect(calls.some((c) => c.path === '/item/remove' && c.token === NEW_TOKEN)).toBe(true);
+		expect(storedTokens()).toEqual([EXISTING]);
+		expect(
+			(db().query('SELECT COUNT(*) AS n FROM plaid_items WHERE token_hint = ?').get(tokenHint(NEW_TOKEN)) as { n: number }).n
+		).toBe(0);
+		const item = db()
+			.query('SELECT institution_id FROM plaid_items WHERE token_hint = ?')
+			.get(tokenHint(EXISTING)) as { institution_id: string };
+		expect(item.institution_id).toBe('ins_test_1');
+	});
+
+	test('name mask and subtype fallback blocks when item get fails for the old item', async () => {
+		const userId = user();
+		seedExistingItem(userId, { mask: '1234', subtype: 'checking', omitInstitution: true });
+		const calls: MockOpts['calls'] = [];
+		const restore = mockPlaid({
+			calls,
+			failItemGet: [EXISTING],
+			institutionByToken: { [NEW_TOKEN]: 'ins_test_1' }
+		});
+		try {
+			const result = await connect(userId, 'plaid', {
+				public_token: 'public-sandbox-once',
+				plaid_metadata: JSON.stringify({
+					institution: { institution_id: 'ins_test_1', name: 'Example Bank' },
+					accounts: [{ name: 'Checking', mask: '1234', subtype: 'checking' }]
+				})
+			});
+			expect(result && 'alreadyLinked' in result && result.alreadyLinked).toBe(true);
+			expect(result && 'alreadyLinked' in result && result.exchanged).toBe(false);
+		} finally {
+			restore();
+		}
+		expect(calls.some((c) => c.path === '/item/public_token/exchange')).toBe(false);
+		const item = db()
+			.query('SELECT institution_id FROM plaid_items WHERE token_hint = ?')
+			.get(tokenHint(EXISTING)) as { institution_id: string | null };
+		expect(item.institution_id).toBeNull();
+	});
+
+	test('backfill fills NULL institution ids and survives a per-item failure', async () => {
+		const userId = user();
+		seedExistingItem(userId, { mask: '1234', omitInstitution: true });
+		const broken = 'access-sandbox-broken';
+		const connectionId = (
+			db().query('SELECT id FROM connections WHERE user_id = ? AND provider = ?').get(userId, 'plaid') as { id: number }
+		).id;
+		db()
+			.query('UPDATE connections SET credentials = ? WHERE id = ?')
+			.run(JSON.stringify({ access_tokens: JSON.stringify([EXISTING, broken]) }), connectionId);
+		upsertPlaidItem(userId, connectionId, {
+			accessToken: broken,
+			itemId: 'item-broken',
+			institutionName: 'Other Bank'
+		});
+		db()
+			.query('UPDATE plaid_items SET institution_id = NULL WHERE user_id = ? AND token_hint = ?')
+			.run(userId, tokenHint(broken));
+		const brokenId = (
+			db().query('SELECT id FROM plaid_items WHERE token_hint = ?').get(tokenHint(broken)) as { id: number }
+		).id;
+		const calls: MockOpts['calls'] = [];
+		const restore = mockPlaid({
+			calls,
+			institutionByToken: { [EXISTING]: 'ins_test_1' },
+			failItemGet: [broken]
+		});
+		try {
+			await backfillMissingPlaidInstitutionIds();
+		} finally {
+			restore();
+		}
+		const filled = db()
+			.query('SELECT institution_id FROM plaid_items WHERE token_hint = ?')
+			.get(tokenHint(EXISTING)) as { institution_id: string };
+		expect(filled.institution_id).toBe('ins_test_1');
+		const stillNull = db()
+			.query('SELECT institution_id FROM plaid_items WHERE id = ?')
+			.get(brokenId) as { institution_id: string | null };
+		expect(stillNull.institution_id).toBeNull();
+		expect(calls.some((c) => c.path === '/item/get')).toBe(true);
+	});
+
+	test('a spent public token override uses plain copy', () => {
+		const error = new ProviderHttpError('Plaid error: provided public token is expired');
+		error.code = 'INVALID_PUBLIC_TOKEN';
+		expect(plainPlaidConnectError(error)).toBe(
+			"That Plaid session expired. Open Link again and choose 'This is a different login'."
+		);
 	});
 
 	test('blank mask on a later sync does not wipe a stored mask', async () => {

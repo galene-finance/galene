@@ -9,6 +9,7 @@ import { assertDataDirOnVolume } from '$lib/server/db';
 import { db } from '$lib/server/db';
 import { ensureDemoBootstrap, isDemoMode } from '$lib/server/demoMode';
 import { guardDemoMode } from '$lib/server/demoGuard';
+import { backfillPlaidInstitutionIds } from '$lib/server/providers/plaid';
 import type { Handle } from '@sveltejs/kit';
 
 // Fail fast (before serving) if the data directory isn't on a persistent volume.
@@ -20,6 +21,10 @@ ensureDemoBootstrap();
 if (!isDemoMode()) {
 	startSyncScheduler();
 	startBackupScheduler();
+	// Upgraded volumes leave institution_id NULL until a sync. Fill it in the
+	// background so a duplicate Link is caught before that first sync. Never
+	// awaited here — a Plaid failure must not block the first request.
+	backfillPlaidInstitutionIds();
 }
 
 export const handle: Handle = async ({ event, resolve }) => {

@@ -57,6 +57,7 @@ export interface PlaidItemView {
 export interface PlaidDuplicateAccountHint {
 	name?: string | null;
 	mask?: string | null;
+	subtype?: string | null;
 }
 
 export interface PlaidDuplicateMatch {
@@ -64,6 +65,40 @@ export interface PlaidDuplicateMatch {
 	itemId: string;
 	institutionName: string | null;
 	needsReconnect: boolean;
+}
+
+/** Persist institution id and name once /item/get (or a sync) has them. */
+export function setPlaidItemInstitution(
+	userId: number,
+	itemRowId: number,
+	institutionId: string | null,
+	institutionName?: string | null
+): void {
+	const id = institutionId?.trim() || null;
+	if (!id) return;
+	if (ownedIds('plaid_items', userId, [itemRowId]).length !== 1) return;
+	db()
+		.query(
+			`UPDATE plaid_items
+			 SET institution_id = ?,
+			     institution_name = COALESCE(?, institution_name),
+			     updated_at = datetime('now')
+			 WHERE id = ? AND user_id = ? AND institution_id IS NULL`
+		)
+		.run(id, institutionName?.trim() || null, itemRowId, userId);
+}
+
+/** This user's Plaid items that still have no institution_id (upgraded volumes). */
+export function listPlaidItemsMissingInstitution(userId: number): { id: number; tokenHint: string }[] {
+	return (
+		db()
+			.query(
+				`SELECT id, token_hint AS tokenHint FROM plaid_items
+				 WHERE user_id = ? AND institution_id IS NULL
+				 ORDER BY id`
+			)
+			.all(userId) as { id: number; tokenHint: string }[]
+	);
 }
 
 export function tokenHint(accessToken: string): string {
@@ -219,6 +254,8 @@ function hasNameAndMask(account: { name?: string | null; mask?: string | null })
  * Same user + institution_id, then name+mask on any of that item's accounts
  * (via account_external_ids). When incoming name/mask is missing, or the
  * stored item has no masks yet, institution_id alone is enough.
+ * Items whose institution_id is still NULL are not considered here — the
+ * duplicate guard resolves those first, then uses the name fallback below.
  */
 export function findDuplicatePlaidItem(
 	userId: number,
@@ -254,6 +291,59 @@ export function findDuplicatePlaidItem(
 	return null;
 }
 
+/**
+ * Fallback when /item/get could not fill institution_id (Plaid error, missing
+ * token, or network). Match institution name (case-insensitive, trimmed) plus
+ * account name + mask + subtype on that item's accounts.
+ * Upgraded volumes may also have NULL accounts.mask and accounts.subtype. When
+ * both are NULL, the account name alone is enough together with the institution
+ * name. Items that already have an institution_id stay on findDuplicatePlaidItem.
+ */
+export function findDuplicateUnresolvedPlaidItem(
+	userId: number,
+	input: {
+		institutionName?: string | null;
+		accounts?: PlaidDuplicateAccountHint[] | null;
+	}
+): PlaidDuplicateMatch | null {
+	const institutionName = normalizeHint(input.institutionName);
+	if (!institutionName) return null;
+	const incoming = input.accounts ?? [];
+	const items = db()
+		.query(
+			`SELECT id, item_id, institution_name, institution_id, needs_reconnect, error_code, error_at, account_external_ids
+			 FROM plaid_items
+			 WHERE user_id = ? AND institution_id IS NULL
+			 ORDER BY id`
+		)
+		.all(userId) as ItemRow[];
+	for (const item of items) {
+		if (normalizeHint(item.institution_name) !== institutionName) continue;
+		const stored = accountsForExternalIds(userId, parseAccountExternalIds(item.account_external_ids));
+		const matched = incoming.some((incomingAccount) =>
+			stored.some((storedAccount) => unresolvedAccountMatches(incomingAccount, storedAccount))
+		);
+		if (matched) return matchFromItem(item);
+	}
+	return null;
+}
+
+/** Name, and mask + subtype when the stored account has them. */
+function unresolvedAccountMatches(
+	incoming: PlaidDuplicateAccountHint,
+	stored: { name: string; mask: string | null; subtype: string | null }
+): boolean {
+	if (!normalizeHint(stored.name) || normalizeHint(stored.name) !== normalizeHint(incoming.name)) return false;
+	const storedMask = normalizeHint(stored.mask);
+	const storedSubtype = normalizeHint(stored.subtype);
+	// Both empty: the upgraded row never stored a mask or subtype, so the
+	// institution name plus the account name is the whole comparison.
+	if (!storedMask && !storedSubtype) return true;
+	if (storedMask && storedMask !== normalizeHint(incoming.mask)) return false;
+	if (storedSubtype && storedSubtype !== normalizeHint(incoming.subtype)) return false;
+	return true;
+}
+
 function matchFromItem(item: ItemRow): PlaidDuplicateMatch {
 	return {
 		id: item.id,
@@ -266,15 +356,15 @@ function matchFromItem(item: ItemRow): PlaidDuplicateMatch {
 function accountsForExternalIds(
 	userId: number,
 	externalIds: string[]
-): { name: string; mask: string | null }[] {
+): { name: string; mask: string | null; subtype: string | null }[] {
 	if (externalIds.length === 0) return [];
 	const placeholders = externalIds.map(() => '?').join(',');
 	return db()
 		.query(
-			`SELECT name, mask FROM accounts
+			`SELECT name, mask, subtype FROM accounts
 			 WHERE user_id = ? AND provider = 'plaid' AND external_id IN (${placeholders})`
 		)
-		.all(userId, ...externalIds) as { name: string; mask: string | null }[];
+		.all(userId, ...externalIds) as { name: string; mask: string | null; subtype: string | null }[];
 }
 
 /** Drop one provider account id from every item that lists it (user-scoped). */

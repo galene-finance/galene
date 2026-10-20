@@ -356,7 +356,7 @@
 									<ul class="mt-1 list-disc pl-5">
 										{#each data.plaidItems as item (item.id)}
 											<li>
-												{item.label} — {item.needsReconnect ? 'needs sign-in' : 'connected'}
+												{item.label + ' — ' + (item.needsReconnect ? 'needs sign-in' : 'connected')}
 											</li>
 										{/each}
 									</ul>
@@ -468,7 +468,7 @@
 											<ul class="mt-1 list-disc pl-5">
 												{#each data.plaidItems as item (item.id)}
 													<li>
-														{item.label} — {item.needsReconnect ? 'needs sign-in' : 'connected'}
+														{item.label + ' — ' + (item.needsReconnect ? 'needs sign-in' : 'connected')}
 													</li>
 												{/each}
 											</ul>

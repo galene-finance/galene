@@ -7,6 +7,7 @@
 	import Input from '$lib/components/ui/Input.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
 	import Title from '$lib/components/Title.svelte';
+	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
 	import { toastFormResult } from '$lib/toasts';
 	import { ACCOUNT_TYPES } from '$lib/types';
 	import type { Account, AccountType } from '$lib/types';
@@ -32,7 +33,7 @@
 		form:
 			| { error?: string | null; ok?: boolean; message?: string | null; source?: string }
 			| undefined;
-		data: { accounts: AccountRow[]; viewer?: boolean; demo?: boolean };
+		data: { accounts: AccountRow[]; viewer?: boolean; demo: boolean };
 	} = $props();
 
 	function formatBankAsOf(s: string | null | undefined): string {
@@ -247,6 +248,7 @@
 <Title title="Accounts" />
 
 <div class="settings-stack mx-auto max-w-3xl 2xl:max-w-5xl">
+	<DemoReadonlyBanner demo={data.demo} feature="Account deletion" />
 	{#if !data.viewer}
 	<a href="/settings" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
 		>← Back to Settings</a
@@ -327,14 +329,15 @@
 							>
 								Delete
 							</button>
+							{#if !data.demo}
 							<button
 								type="button"
 								class="text-sm text-destructive hover:underline"
 								onclick={() => openPurge(account)}
-								disabled={Boolean(data.demo)}
 							>
 								Delete account and its transactions
 							</button>
+							{/if}
 							{/if}
 						</li>
 					{/each}
@@ -483,6 +486,7 @@
 	{/if}
 </Dialog>
 
+{#if !data.demo}
 <Dialog
 	bind:open={purgeOpen}
 	title={pendingPurge ? `Delete ${pendingPurge.name} and its transactions?` : 'Delete account and its transactions?'}
@@ -500,8 +504,9 @@
 			</Field>
 			<div class="flex justify-end gap-2">
 				<Button type="button" variant="secondary" onclick={closePurge}>Cancel</Button>
-				<Button type="submit" variant="destructive" disabled={!purgeMatches || Boolean(data.demo)}>Delete account and its transactions</Button>
+				<Button type="submit" variant="destructive" disabled={!purgeMatches}>Delete account and its transactions</Button>
 			</div>
 		</form>
 	{/if}
 </Dialog>
+{/if}

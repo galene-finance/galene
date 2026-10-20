@@ -7,6 +7,7 @@ import {
 	plaidConfigForClient,
 	plaidConfigured,
 	plaidLinkEnabled,
+	plainPlaidConnectError,
 	savePlaidConfig
 } from '$lib/server/providers/plaid';
 import {
@@ -228,7 +229,7 @@ export const actions = {
 			}
 			return { ok: true, message: `Connected to ${provider.label}.` };
 		} catch (error) {
-			return { error: error instanceof Error ? error.message : 'Could not connect.' };
+			return { error: plainPlaidConnectError(error) };
 		}
 	},
 

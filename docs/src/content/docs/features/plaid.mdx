@@ -67,9 +67,11 @@ Before **Connect with Plaid** or **Link another account**, Galene lists the inst
 
 If you finish Link for an institution that is already linked (same institution, and a matching account name and mask when those are known), Galene does not exchange the public token and does not import a second set of accounts. The page says **This bank is already linked**, with **Reconnect** for that institution.
 
-**This is a different login** is for a second login at the same institution (another person, or another set of accounts). It resubmits the same public token and stores a separate item; the token is still valid because it was never exchanged.
+An upgrade can leave an existing item without a stored institution id until the next sync. Before accepting a new Link, Galene asks Plaid for that id (`/item/get`) and saves it. If Plaid cannot answer, Galene still blocks a duplicate when the institution name matches and an account name matches, using the mask and subtype when those are stored. On startup Galene tries the same fill in the background. The public demo skips that fill.
 
-When Link does not report the institution, Galene still checks after the exchange: it reads the new item's institution and accounts, and on a match removes the new item at Plaid before storing anything. In that case **This is a different login** opens Link again so you can finish with a fresh session.
+**This is a different login** is for a second login at the same institution (another person, or another set of accounts). It resubmits the same public token and stores a separate item; the token is still valid because it was never exchanged. If that session was already used, Galene asks you to open Link again instead of showing the provider error.
+
+When Link does not report the institution, Galene still checks after the exchange: it reads the new item's institution and accounts, and on a match removes the new item at Plaid before storing anything. That check includes items that do not yet have a stored institution id. In that case **This is a different login** opens Link again so you can finish with a fresh session.
 
 ## Delete an account and its transactions
 

@@ -22,6 +22,7 @@
 		ledger_balance_cents: number;
 		earliest_txn_date: string | null;
 		txn_sum_cents: number;
+		txn_count: number;
 	};
 
 	let {
@@ -193,6 +194,30 @@
 		deleteError = '';
 	}
 
+	let purgeOpen = $state(false);
+	let pendingPurge = $state<AccountRow | null>(null);
+	let purgeConfirm = $state('');
+	let purgeError = $state('');
+
+	function openPurge(a: AccountRow) {
+		pendingPurge = a;
+		purgeConfirm = '';
+		purgeError = '';
+		purgeOpen = true;
+	}
+
+	function closePurge() {
+		purgeOpen = false;
+		pendingPurge = null;
+		purgeConfirm = '';
+		purgeError = '';
+	}
+
+	const purgePhrase = $derived(
+		pendingPurge ? `delete ${pendingPurge.txn_count} transaction${pendingPurge.txn_count === 1 ? '' : 's'}` : ''
+	);
+	const purgeMatches = $derived(purgeConfirm.trim().toLowerCase() === purgePhrase);
+
 	// Failed dialog submissions keep the dialog open and show the server message.
 	let lastError = $state<string | null>(null);
 	$effect(() => {
@@ -201,6 +226,7 @@
 			lastError = e;
 			if (form?.source === 'save') editError = e ?? '';
 			if (form?.source === 'delete') deleteError = e ?? '';
+			if (form?.source === 'purge') purgeError = e ?? '';
 		}
 	});
 
@@ -213,6 +239,7 @@
 		if (!form?.ok) return;
 		if (form.source === 'save') closeEdit();
 		if (form.source === 'delete') closeDelete();
+		if (form.source === 'purge') closePurge();
 	});
 </script>
 
@@ -298,6 +325,13 @@
 								onclick={() => openDelete(account)}
 							>
 								Delete
+							</button>
+							<button
+								type="button"
+								class="text-sm text-destructive hover:underline"
+								onclick={() => openPurge(account)}
+							>
+								Delete account and its transactions
 							</button>
 							{/if}
 						</li>
@@ -443,6 +477,29 @@
 					<Button type="button" variant="secondary" onclick={closeDelete}>Close</Button>
 				</div>
 			{/if}
+		</form>
+	{/if}
+</Dialog>
+
+<Dialog
+	bind:open={purgeOpen}
+	title={pendingPurge ? `Delete ${pendingPurge.name} and its transactions?` : 'Delete account and its transactions?'}
+	description="This removes the account and every transaction on it. Splits, tags, and sync reviews for those transactions go with them. This cannot be undone."
+>
+	{#if pendingPurge}
+		<form method="POST" action="?/delete-account-with-transactions" use:enhance class="flex flex-col gap-4">
+			<input type="hidden" name="id" value={pendingPurge.id} />
+			<p class="text-sm">
+				This account has {pendingPurge.txn_count} transaction{pendingPurge.txn_count === 1 ? '' : 's'}.
+				Type <span class="font-medium">{purgePhrase}</span> to confirm.
+			</p>
+			<Field label="Confirmation" error={purgeError || null}>
+				<Input type="text" bind:value={purgeConfirm} autocomplete="off" placeholder={purgePhrase} />
+			</Field>
+			<div class="flex justify-end gap-2">
+				<Button type="button" variant="secondary" onclick={closePurge}>Cancel</Button>
+				<Button type="submit" variant="destructive" disabled={!purgeMatches}>Delete account and its transactions</Button>
+			</div>
 		</form>
 	{/if}
 </Dialog>

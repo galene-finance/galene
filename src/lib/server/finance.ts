@@ -1,5 +1,7 @@
 import { db } from './db';
+import { demoBlockedMessage, isDemoMode } from './demoMode';
 import { emitDataChange } from './webhookNotify';
+import { dropAccountExternalIdFromPlaidItems, ownedIds } from './plaidItems';
 import type { GrantScope } from './advisor';
 import { scopeAccountIds, scopeDateRange } from './advisor';
 import { monthLabel, parseAmountToCents } from '../utils';
@@ -25,6 +27,7 @@ import type {
 	TransactionSplit
 } from '../types';
 
+export { ownedIds };
 
 /** Map a DB category row (type + is_transfer) to the public CategoryType. */
 function categoryTypeFromRow(type: string, isTransfer: number): CategoryType {
@@ -84,22 +87,6 @@ function rowById(table: string, userId: number, id: number, columns: string): Re
 }
 
 type OwnedTable = 'transactions' | 'scheduled' | 'accounts' | 'categories' | 'tags' | 'budgets' | 'plaid_items';
-
-/**
- * Positive ids that belong to this user in a user-scoped table.
- * Foreign or invalid ids are dropped — callers must never mutate them.
- */
-export function ownedIds(table: OwnedTable, userId: number, ids: number[]): number[] {
-	const unique = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))];
-	if (unique.length === 0) return [];
-	return (
-		db()
-			.query(
-				`SELECT id FROM ${table} WHERE user_id = ? AND id IN (${unique.map(() => '?').join(',')})`
-			)
-			.all(userId, ...unique) as { id: number }[]
-	).map((row) => row.id);
-}
 
 export function ownedTransactionIds(userId: number, ids: number[]): number[] {
 	return ownedIds('transactions', userId, ids);
@@ -391,6 +378,121 @@ export function deleteAccount(userId: number, id: number, reassignTo: number) {
 			} catch {
 				// Ignore malformed preference JSON.
 			}
+		}
+
+		d.run('COMMIT');
+		emitChange(userId, 'account', 'deleted', removed);
+	} catch (error) {
+		d.run('ROLLBACK');
+		throw error;
+	}
+}
+
+/**
+ * Delete an account and every transaction on it. Splits, tags, and open sync
+ * reviews for those transactions go with them. Scheduled items lose the
+ * account (same as ON DELETE SET NULL). Does not call Plaid.
+ */
+export function deleteAccountWithTransactions(userId: number, accountId: number) {
+	if (isDemoMode()) throw new Error(demoBlockedMessage('Accounts'));
+	if (ownedIds('accounts', userId, [accountId]).length !== 1) {
+		throw new Error('Account not found.');
+	}
+
+	const removed = rowById('accounts', userId, accountId, 'id, name, type, provider, external_id');
+	const d = db();
+	d.run('BEGIN');
+	try {
+		d.query(
+			`DELETE FROM transaction_splits
+			 WHERE transaction_id IN (SELECT id FROM transactions WHERE user_id = ? AND account_id = ?)`
+		).run(userId, accountId);
+		d.query(
+			`DELETE FROM transaction_tags
+			 WHERE transaction_id IN (SELECT id FROM transactions WHERE user_id = ? AND account_id = ?)`
+		).run(userId, accountId);
+		// orphan_transaction_id is the only FK to transactions(id) on this table.
+		// candidate_transaction_ids is a JSON list with no FK; drop those ids too
+		// so a review on another account does not point at a deleted row.
+		d.query(
+			`DELETE FROM sync_review_items
+			 WHERE user_id = ? AND orphan_transaction_id IN (
+			   SELECT id FROM transactions WHERE user_id = ? AND account_id = ?
+			 )`
+		).run(userId, userId, accountId);
+		const reviews = d
+			.query(
+				`SELECT id, candidate_transaction_ids FROM sync_review_items WHERE user_id = ?`
+			)
+			.all(userId) as { id: number; candidate_transaction_ids: string }[];
+		const gone = new Set(
+			(
+				d
+					.query('SELECT id FROM transactions WHERE user_id = ? AND account_id = ?')
+					.all(userId, accountId) as { id: number }[]
+			).map((row) => row.id)
+		);
+		for (const review of reviews) {
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(review.candidate_transaction_ids);
+			} catch {
+				continue;
+			}
+			if (!Array.isArray(parsed)) continue;
+			const next = parsed.filter((id) => !gone.has(Number(id)));
+			if (next.length === parsed.length) continue;
+			d.query(
+				`UPDATE sync_review_items SET candidate_transaction_ids = ? WHERE id = ? AND user_id = ?`
+			).run(JSON.stringify(next), review.id, userId);
+		}
+		d.query('DELETE FROM transactions WHERE user_id = ? AND account_id = ?').run(userId, accountId);
+
+		d.query('UPDATE scheduled SET account_id = NULL WHERE user_id = ? AND account_id = ?').run(
+			userId,
+			accountId
+		);
+		d.query(
+			`UPDATE scheduled_revisions SET account_id = NULL
+			 WHERE account_id = ? AND scheduled_id IN (SELECT id FROM scheduled WHERE user_id = ?)`
+		).run(accountId, userId);
+		d.query(
+			`UPDATE scheduled_exceptions SET account_id = NULL
+			 WHERE account_id = ? AND scheduled_id IN (SELECT id FROM scheduled WHERE user_id = ?)`
+		).run(accountId, userId);
+
+		const raw = d
+			.query('SELECT value FROM settings WHERE user_id = ? AND key = ?')
+			.get(userId, 'cashflow_filters') as { value: string } | undefined;
+		if (raw?.value) {
+			try {
+				const parsed = JSON.parse(raw.value) as { accountIds?: unknown; categoryIds?: unknown };
+				const accountIds = Array.isArray(parsed.accountIds)
+					? (parsed.accountIds as unknown[])
+							.map((n) => Number(n))
+							.filter((n) => Number.isFinite(n) && n !== accountId)
+					: [];
+				const next = JSON.stringify({
+					accountIds,
+					categoryIds: Array.isArray(parsed.categoryIds) ? parsed.categoryIds : []
+				});
+				d.query('UPDATE settings SET value = ? WHERE user_id = ? AND key = ?').run(
+					next,
+					userId,
+					'cashflow_filters'
+				);
+			} catch {
+				// Ignore malformed preference JSON.
+			}
+		}
+
+		const result = d.query('DELETE FROM accounts WHERE id = ? AND user_id = ?').run(accountId, userId);
+		if (result.changes === 0) throw new Error('Account could not be deleted.');
+
+		const externalId =
+			removed && typeof removed.external_id === 'string' ? removed.external_id.trim() : '';
+		if (removed?.provider === 'plaid' && externalId) {
+			dropAccountExternalIdFromPlaidItems(userId, externalId);
 		}
 
 		d.run('COMMIT');

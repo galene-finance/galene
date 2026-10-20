@@ -8,7 +8,7 @@
 	import Select from '$lib/components/ui/Select.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
-	import { openPlaidLink, preloadPlaidLink, type PlaidLinkHandler } from '$lib/plaidLink';
+	import { openPlaidLink, preloadPlaidLink, type PlaidLinkHandler, type PlaidLinkMetadata } from '$lib/plaidLink';
 	import AccountMapping from './AccountMapping.svelte';
 	import { mergedNote } from '$lib/utils';
 	import Dialog from '$lib/components/ui/Dialog.svelte';
@@ -39,9 +39,28 @@
 	// connect action for exchange.
 	let plaidForm = $state<HTMLFormElement | null>(null);
 	let plaidPublicToken = $state('');
+	let plaidMetadata = $state('');
+	let plaidAllowDuplicate = $state('');
 	let plaidError = $state('');
 	let plaidOpening = $state(false);
 	let plaidHandler = $state<PlaidLinkHandler | null>(null);
+	let alreadyLinked = $state<{ id: number; label: string; needsReconnect: boolean } | null>(null);
+
+	function metadataField(metadata?: PlaidLinkMetadata): string {
+		const accounts = (metadata?.accounts ?? []).map((account) => ({
+			name: account.name ?? null,
+			mask: account.mask ?? null,
+			type: account.type ?? null,
+			subtype: account.subtype ?? null
+		}));
+		return JSON.stringify({
+			institution: {
+				institution_id: metadata?.institution?.institution_id ?? null,
+				name: metadata?.institution?.name ?? null
+			},
+			accounts
+		});
+	}
 	onDestroy(() => plaidHandler?.destroy());
 	onMount(() => {
 		if (data.providers.some((p) => p.link)) preloadPlaidLink();
@@ -63,9 +82,12 @@
 			if (!d?.token) throw new Error(d?.error ?? 'Could not start a Plaid session.');
 			plaidHandler = await openPlaidLink({
 				token: d.token,
-				onSuccess: async (publicToken) => {
+				onSuccess: async (publicToken, metadata) => {
+					alreadyLinked = null;
+					plaidAllowDuplicate = '';
 					plaidPublicToken = publicToken;
-					await tick(); // let the hidden input pick up the token before submit
+					plaidMetadata = metadataField(metadata);
+					await tick(); // let the hidden inputs pick up the token before submit
 					plaidForm?.requestSubmit();
 					// Success never fires onExit, so clear the flag here or the button
 					// stays stuck on "Opening Plaid…" until a refresh.
@@ -88,7 +110,7 @@
 	let removeOpen = $state(false);
 	let removeTarget = $state<PlaidItemInfo | null>(null);
 
-	async function reconnectItem(item: PlaidItemInfo) {
+	async function reconnectItem(item: { id: number }) {
 		if (data.demo || plaidOpening) return;
 		plaidError = '';
 		plaidOpening = true;
@@ -122,6 +144,13 @@
 		}
 	}
 
+	function allowDuplicateLink() {
+		if (data.demo || !plaidPublicToken || !plaidForm) return;
+		plaidAllowDuplicate = '1';
+		alreadyLinked = null;
+		void tick().then(() => plaidForm?.requestSubmit());
+	}
+
 	function askRemove(item: PlaidItemInfo) {
 		if (data.demo) return;
 		removeTarget = item;
@@ -142,6 +171,7 @@
 					updated?: number;
 					merged?: number;
 					lastSyncedAt?: string;
+					alreadyLinked?: { id: number; label: string; needsReconnect: boolean };
 			  }
 			| undefined;
 		data: {
@@ -192,6 +222,11 @@
 	$effect(() => {
 		if (form === lastForm) return;
 		lastForm = form;
+		if (form?.alreadyLinked) {
+			alreadyLinked = form.alreadyLinked;
+			return;
+		}
+		if (form?.ok) alreadyLinked = null;
 		if (form?.error) toast(form.error, 'error');
 		else if (form?.message) toast(form.message, 'success');
 		else if (form?.lastSyncedAt)
@@ -289,8 +324,30 @@
 						<form bind:this={plaidForm} method="POST" action="?/connect" use:enhance class="flex flex-col gap-3">
 							<input type="hidden" name="provider" value={p.id} />
 							<input type="hidden" name="cred_public_token" value={plaidPublicToken} />
+							<input type="hidden" name="plaid_metadata" value={plaidMetadata} />
+							<input type="hidden" name="plaid_allow_duplicate" value={plaidAllowDuplicate} />
 							{#if plaidError}
 								<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{plaidError}</p>
+							{/if}
+							{#if alreadyLinked}
+								<div class="rounded-md border border-border bg-muted/40 px-3 py-3 text-sm">
+									<p>
+										This bank is already linked ({alreadyLinked.label}). Use Reconnect to refresh it
+										instead of linking it again.
+									</p>
+									<div class="mt-2 flex flex-wrap gap-2">
+										<Button
+											type="button"
+											disabled={plaidOpening || data.demo}
+											onclick={() => reconnectItem(alreadyLinked!)}
+										>
+											Reconnect
+										</Button>
+										<Button type="button" variant="secondary" disabled={data.demo} onclick={allowDuplicateLink}>
+											This is a different login
+										</Button>
+									</div>
+								</div>
 							{/if}
 							<div>
 								<Button type="button" disabled={plaidOpening} onclick={() => openPlaid(p)}>
@@ -355,12 +412,49 @@
 									<input type="hidden" name="provider" value={p.id} />
 									<Button type="submit">Sync now</Button>
 								</form>
-								<form bind:this={plaidForm} method="POST" action="?/connect" use:enhance>
+								<form bind:this={plaidForm} method="POST" action="?/connect" use:enhance class="flex flex-col gap-2">
 									<input type="hidden" name="provider" value={p.id} />
 									<input type="hidden" name="cred_public_token" value={plaidPublicToken} />
-									<Button type="button" variant="secondary" disabled={plaidOpening} onclick={() => openPlaid(p)}>
-										{plaidOpening ? 'Opening Plaid…' : 'Link another account'}
-									</Button>
+									<input type="hidden" name="plaid_metadata" value={plaidMetadata} />
+									<input type="hidden" name="plaid_allow_duplicate" value={plaidAllowDuplicate} />
+									{#if data.plaidItems.length}
+										<div class="w-full text-sm text-muted-foreground">
+											<p>Already linked:</p>
+											<ul class="mt-1 list-disc pl-5">
+												{#each data.plaidItems as item (item.id)}
+													<li>
+														{item.label}{#if item.needsReconnect}
+															— needs you to sign in again. Use Reconnect on that institution below.{/if}
+													</li>
+												{/each}
+											</ul>
+										</div>
+									{/if}
+									{#if alreadyLinked}
+										<div class="w-full rounded-md border border-border bg-muted/40 px-3 py-3 text-sm text-foreground">
+											<p>
+												This bank is already linked ({alreadyLinked.label}). Use Reconnect to refresh it
+												instead of linking it again.
+											</p>
+											<div class="mt-2 flex flex-wrap gap-2">
+												<Button
+													type="button"
+													disabled={plaidOpening || data.demo}
+													onclick={() => reconnectItem(alreadyLinked!)}
+												>
+													Reconnect
+												</Button>
+												<Button type="button" variant="secondary" disabled={data.demo} onclick={allowDuplicateLink}>
+													This is a different login
+												</Button>
+											</div>
+										</div>
+									{/if}
+									<div>
+										<Button type="button" variant="secondary" disabled={plaidOpening} onclick={() => openPlaid(p)}>
+											{plaidOpening ? 'Opening Plaid…' : 'Link another account'}
+										</Button>
+									</div>
 								</form>
 								<form method="POST" action="?/disconnect" use:enhance>
 									<input type="hidden" name="provider" value={p.id} />
@@ -379,15 +473,14 @@
 												{/if}
 											</div>
 											<div class="flex gap-2">
-												{#if item.needsReconnect || (reconnectSyncing && reconnectItemId === String(item.id))}
-													<Button
-														type="button"
-														disabled={plaidOpening || reconnectSyncing || data.demo}
-														onclick={() => reconnectItem(item)}
-													>
-														{reconnectSyncing && reconnectItemId === String(item.id) ? 'Syncing…' : 'Reconnect'}
-													</Button>
-												{/if}
+												<Button
+													type="button"
+													variant={item.needsReconnect ? 'primary' : 'secondary'}
+													disabled={plaidOpening || reconnectSyncing || data.demo}
+													onclick={() => reconnectItem(item)}
+												>
+													{reconnectSyncing && reconnectItemId === String(item.id) ? 'Syncing…' : 'Reconnect'}
+												</Button>
 												<Button type="button" variant="secondary" disabled={data.demo} onclick={() => askRemove(item)}>
 													Remove
 												</Button>

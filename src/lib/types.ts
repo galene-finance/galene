@@ -564,6 +564,12 @@ export interface PlaidItemInfo {
 export interface PlaidAlreadyLinked {
 	alreadyLinked: true;
 	item: Pick<PlaidItemInfo, 'id' | 'label' | 'needsReconnect'>;
+	/**
+	 * True when the match was found after the public token was exchanged (the
+	 * safety net removed the new item). That public token cannot be reused, so
+	 * a "different login" override must open a fresh Link session.
+	 */
+	exchanged?: boolean;
 }
 
 /** Result of a sync run. */

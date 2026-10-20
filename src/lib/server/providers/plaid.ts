@@ -462,9 +462,10 @@ export function parsePlaidConnectMetadata(raw: unknown): PlaidConnectMetadata {
 	return { institutionId, institutionName, accounts };
 }
 
-function alreadyLinkedResult(dup: PlaidDuplicateMatch): PlaidAlreadyLinked {
+function alreadyLinkedResult(dup: PlaidDuplicateMatch, exchanged = false): PlaidAlreadyLinked {
 	return {
 		alreadyLinked: true,
+		exchanged,
 		item: {
 			id: dup.id,
 			label: dup.institutionName?.trim() || 'A linked institution',
@@ -507,7 +508,7 @@ export async function linkNewPlaidItem(
 		const dup = await detectDuplicateAfterExchange(userId, added);
 		if (dup) {
 			await removePlaidItem(userId, added);
-			return alreadyLinkedResult(dup);
+			return alreadyLinkedResult(dup, true);
 		}
 	}
 	const merged = await mergeAccessToken(userId, input.existingTokens ?? [], added);

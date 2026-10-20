@@ -200,11 +200,12 @@ export const actions = {
 		try {
 			const linked = await connect(locals.user!.id, providerId, credentials);
 			if (linked && typeof linked === 'object' && 'alreadyLinked' in linked && linked.alreadyLinked) {
-				// Do not sync. The public token was not exchanged, so the client
+				// Do not sync. When the public token was not exchanged, the client
 				// may resubmit it with plaid_allow_duplicate=1.
 				return {
 					alreadyLinked: linked.item,
-					publicToken: credentials.public_token ?? '',
+					// After the safety net the token was already exchanged and cannot be reused.
+					publicToken: linked.exchanged ? '' : (credentials.public_token ?? ''),
 					plaidMetadata: metadata
 				};
 			}

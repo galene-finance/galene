@@ -1,6 +1,7 @@
 /**
  * ADO-59: refuse a second Plaid Item for a login that is already linked.
- * Plaid HTTP is mocked. No sandbox keys.
+ * Sandbox keys are not available in this environment, so Plaid HTTP is mocked
+ * (same pattern as the other Plaid tests).
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -74,7 +75,7 @@ function plaidBody(url: string, init?: RequestInit): { path: string; body: Recor
 	return { path, body };
 }
 
-function metadata(institutionId: string, accounts: { name: string; mask: string | null }[]) {
+function metadata(institutionId: string, accounts: { name: string | null; mask: string | null }[]) {
 	return JSON.stringify({
 		institution: { institution_id: institutionId, name: 'Example Bank' },
 		accounts
@@ -179,6 +180,7 @@ describe('Plaid duplicate item guard (ADO-59)', () => {
 			if (result && 'alreadyLinked' in result) {
 				expect(result.item.label).toBe('Example Bank');
 			}
+			expect(result && 'alreadyLinked' in result && result.exchanged).toBe(false);
 		} finally {
 			restore();
 		}
@@ -196,7 +198,25 @@ describe('Plaid duplicate item guard (ADO-59)', () => {
 		try {
 			const result = await connect(userId, 'plaid', {
 				public_token: 'public-sandbox-once',
-				plaid_metadata: metadata('ins_test_1', [{ name: 'Checking', mask: null }])
+				plaid_metadata: metadata('ins_test_1', [{ name: 'Checking', mask: '1234' }])
+			});
+			expect(result && 'alreadyLinked' in result && result.alreadyLinked).toBe(true);
+		} finally {
+			restore();
+		}
+		expect(calls.some((c) => c.path === '/item/public_token/exchange')).toBe(false);
+		expect(storedTokens()).toEqual([EXISTING]);
+	});
+
+	test('institution id alone matches when incoming name and mask are missing', async () => {
+		const userId = user();
+		seedExistingItem(userId, { mask: '1234' });
+		const calls: MockOpts['calls'] = [];
+		const restore = mockPlaid({ calls });
+		try {
+			const result = await connect(userId, 'plaid', {
+				public_token: 'public-sandbox-once',
+				plaid_metadata: metadata('ins_test_1', [{ name: null, mask: null }])
 			});
 			expect(result && 'alreadyLinked' in result && result.alreadyLinked).toBe(true);
 		} finally {
@@ -267,6 +287,8 @@ describe('Plaid duplicate item guard (ADO-59)', () => {
 		try {
 			const result = await connect(userId, 'plaid', { public_token: 'public-sandbox-once' });
 			expect(result && 'alreadyLinked' in result && result.alreadyLinked).toBe(true);
+			// The spent public token cannot be resubmitted; the UI must relink.
+			expect(result && 'alreadyLinked' in result && result.exchanged).toBe(true);
 		} finally {
 			restore();
 		}
@@ -362,6 +384,14 @@ describe('Plaid duplicate item guard (ADO-59)', () => {
 		expect(account).toEqual({ mask: '4321', subtype: 'savings' });
 	});
 
+	test('migration adds institution_id and account mask/subtype', () => {
+		const itemCols = db().query('PRAGMA table_info(plaid_items)').all() as { name: string }[];
+		const accountCols = db().query('PRAGMA table_info(accounts)').all() as { name: string }[];
+		expect(itemCols.some((c) => c.name === 'institution_id')).toBe(true);
+		expect(accountCols.some((c) => c.name === 'mask')).toBe(true);
+		expect(accountCols.some((c) => c.name === 'subtype')).toBe(true);
+	});
+
 	test('blank mask on a later sync does not wipe a stored mask', async () => {
 		const userId = user();
 		link(userId, [EXISTING]);
@@ -434,7 +464,7 @@ describe('deleteAccountWithTransactions', () => {
 		const userId = user();
 		const target = seedAccount(userId, 'acc-a', 'Cafe');
 		const otherUser = user('other@example.com');
-		// second user has its own food category; the first user's other account:
+		const otherUserAccount = seedAccount(otherUser, 'acc-other', 'Diner');
 		db()
 			.query(`INSERT INTO accounts (user_id, name, type) VALUES (?, 'Cash', 'cash')`)
 			.run(userId);
@@ -456,6 +486,43 @@ describe('deleteAccountWithTransactions', () => {
 				 VALUES (?, ?, 'plaid', ?)`
 			)
 			.run(userId, keptTxn, JSON.stringify([target.txnId, keptTxn]));
+		db()
+			.query(
+				`INSERT INTO scheduled (user_id, name, account_id, amount_cents, start_date, repeat_interval, repeat_unit)
+				 VALUES (?, 'Rent', ?, -1000, '2026-09-01', 1, 'month')`
+			)
+			.run(userId, target.accountId);
+		const scheduledId = (
+			db().query('SELECT id FROM scheduled WHERE user_id = ? AND account_id = ?').get(userId, target.accountId) as {
+				id: number;
+			}
+		).id;
+		db()
+			.query(
+				`INSERT INTO scheduled_revisions (scheduled_id, effective_date, name, account_id, amount_cents)
+				 VALUES (?, '2026-10-01', 'Rent', ?, -1100)`
+			)
+			.run(scheduledId, target.accountId);
+		const revisionId = (
+			db().query('SELECT id FROM scheduled_revisions WHERE scheduled_id = ?').get(scheduledId) as { id: number }
+		).id;
+		db()
+			.query(
+				`INSERT INTO scheduled_exceptions (scheduled_id, occurrence_date, display_date, name, account_id, amount_cents)
+				 VALUES (?, '2026-11-01', '2026-11-03', 'Rent', ?, -1000)`
+			)
+			.run(scheduledId, target.accountId);
+		const exceptionId = (
+			db().query('SELECT id FROM scheduled_exceptions WHERE scheduled_id = ?').get(scheduledId) as { id: number }
+		).id;
+		const connectionId = link(userId, [EXISTING]);
+		upsertPlaidItem(userId, connectionId, {
+			accessToken: EXISTING,
+			itemId: 'item-existing',
+			institutionName: 'Example Bank',
+			institutionId: 'ins_test_1'
+		});
+		setItemAccountExternalIds(userId, EXISTING, ['acc-a', 'acc-keep']);
 
 		deleteAccountWithTransactions(userId, target.accountId);
 
@@ -486,7 +553,34 @@ describe('deleteAccountWithTransactions', () => {
 			.query('SELECT candidate_transaction_ids AS c FROM sync_review_items WHERE orphan_transaction_id = ?')
 			.get(keptTxn) as { c: string };
 		expect(JSON.parse(review.c)).toEqual([keptTxn]);
-		expect(otherUser).toBeGreaterThan(0);
+		expect(
+			(db().query('SELECT account_id AS a FROM scheduled WHERE id = ?').get(scheduledId) as { a: number | null }).a
+		).toBe(null);
+		expect(
+			(db().query('SELECT account_id AS a FROM scheduled_revisions WHERE id = ?').get(revisionId) as {
+				a: number | null;
+			}).a
+		).toBe(null);
+		expect(
+			(db().query('SELECT account_id AS a FROM scheduled_exceptions WHERE id = ?').get(exceptionId) as {
+				a: number | null;
+			}).a
+		).toBe(null);
+		expect(
+			JSON.parse(
+				(
+					db().query('SELECT account_external_ids AS ids FROM plaid_items WHERE user_id = ?').get(userId) as {
+						ids: string;
+					}
+				).ids
+			)
+		).toEqual(['acc-keep']);
+		expect((db().query('SELECT COUNT(*) AS n FROM accounts WHERE id = ?').get(otherUserAccount.accountId) as { n: number }).n).toBe(
+			1
+		);
+		expect((db().query('SELECT COUNT(*) AS n FROM transactions WHERE id = ?').get(otherUserAccount.txnId) as { n: number }).n).toBe(
+			1
+		);
 	});
 
 	test('refuses another user account id', () => {

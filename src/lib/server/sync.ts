@@ -3,7 +3,7 @@ import { db } from './db';
 import { getProvider } from './providers';
 import { applyCategorizationRules } from './finance';
 import { notifySyncFailed, notifySyncRecovered } from './notifications';
-import type { Connection, LinkedAccount, PlaidItemInfo, SyncSummary } from '../types';
+import type { Connection, LinkedAccount, PlaidAlreadyLinked, PlaidItemInfo, SyncSummary } from '../types';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
 import { ownedIds } from './finance';
 import {
@@ -114,7 +114,11 @@ function getConnection(userId: number, provider: string): ConnectionRow | null {
  * replacement credential set (e.g. SimpleFIN's setup token exchanged for an
  * access URL), that is what gets stored.
  */
-export async function connect(userId: number, providerId: string, credentials: Record<string, string>): Promise<void> {
+export async function connect(
+	userId: number,
+	providerId: string,
+	credentials: Record<string, string>
+): Promise<void | PlaidAlreadyLinked> {
 	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
 	const provider = getProvider(providerId);
 	if (!provider) throw new Error('Unknown provider.');
@@ -124,6 +128,9 @@ export async function connect(userId: number, providerId: string, credentials: R
 	const row = getConnection(userId, providerId);
 	const existing = row ? (JSON.parse(row.credentials) as Record<string, string>) : {};
 	const result = await provider.connect(credentials, { userId, credentials, existing });
+	if (result && typeof result === 'object' && 'alreadyLinked' in result && result.alreadyLinked) {
+		return result as PlaidAlreadyLinked;
+	}
 	const stored = result && typeof result === 'object' ? result : credentials;
 	db()
 		.query(
@@ -212,29 +219,48 @@ export async function syncNow(
 			const providerBalanceAsOf = hasBalance
 				? (pa.balance_as_of && String(pa.balance_as_of).trim()) || fetchedAt
 				: null;
+			const mask = pa.mask?.trim() || null;
+			const subtype = pa.subtype?.trim() || null;
 			if (existing) {
 				// The provider is the source of truth for the account's type and its
 				// own name (source_name). A user-chosen display name (name_locked)
 				// is preserved; otherwise the display name tracks the provider.
+				// mask/subtype are only written when present so a later empty
+				// response cannot wipe a stored value.
 				if (existing.name_locked) {
 					if (hasBalance) {
 						db()
 							.query(
 								`UPDATE accounts SET source_name = ?, type = ?,
-								 provider_balance_cents = ?, provider_balance_as_of = ?
+								 provider_balance_cents = ?, provider_balance_as_of = ?,
+								 mask = COALESCE(?, mask), subtype = COALESCE(?, subtype)
 								 WHERE id = ? AND user_id = ?`
 							)
-							.run(pa.name, pa.type, providerBalanceCents, providerBalanceAsOf, existing.id, userId);
+							.run(
+								pa.name,
+								pa.type,
+								providerBalanceCents,
+								providerBalanceAsOf,
+								mask,
+								subtype,
+								existing.id,
+								userId
+							);
 					} else {
 						db()
-							.query('UPDATE accounts SET source_name = ?, type = ? WHERE id = ? AND user_id = ?')
-							.run(pa.name, pa.type, existing.id, userId);
+							.query(
+								`UPDATE accounts SET source_name = ?, type = ?,
+								 mask = COALESCE(?, mask), subtype = COALESCE(?, subtype)
+								 WHERE id = ? AND user_id = ?`
+							)
+							.run(pa.name, pa.type, mask, subtype, existing.id, userId);
 					}
 				} else if (hasBalance) {
 					db()
 						.query(
 							`UPDATE accounts SET source_name = ?, type = ?, name = ?,
-							 provider_balance_cents = ?, provider_balance_as_of = ?
+							 provider_balance_cents = ?, provider_balance_as_of = ?,
+							 mask = COALESCE(?, mask), subtype = COALESCE(?, subtype)
 							 WHERE id = ? AND user_id = ?`
 						)
 						.run(
@@ -243,21 +269,27 @@ export async function syncNow(
 							pa.name,
 							providerBalanceCents,
 							providerBalanceAsOf,
+							mask,
+							subtype,
 							existing.id,
 							userId
 						);
 				} else {
 					db()
-						.query('UPDATE accounts SET source_name = ?, type = ?, name = ? WHERE id = ? AND user_id = ?')
-						.run(pa.name, pa.type, pa.name, existing.id, userId);
+						.query(
+							`UPDATE accounts SET source_name = ?, type = ?, name = ?,
+							 mask = COALESCE(?, mask), subtype = COALESCE(?, subtype)
+							 WHERE id = ? AND user_id = ?`
+						)
+						.run(pa.name, pa.type, pa.name, mask, subtype, existing.id, userId);
 				}
 				accountMap.set(pa.external_id, existing.id);
 			} else {
 				const result = db()
 					.query(
 						`INSERT INTO accounts (user_id, name, type, provider, external_id, source_name, name_locked,
-						 provider_balance_cents, provider_balance_as_of)
-						 VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`
+						 provider_balance_cents, provider_balance_as_of, mask, subtype)
+						 VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`
 					)
 					.run(
 						userId,
@@ -267,7 +299,9 @@ export async function syncNow(
 						pa.external_id,
 						pa.name,
 						providerBalanceCents,
-						providerBalanceAsOf
+						providerBalanceAsOf,
+						mask,
+						subtype
 					);
 				accountMap.set(pa.external_id, Number(result.lastInsertRowid));
 			}

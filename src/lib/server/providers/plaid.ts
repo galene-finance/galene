@@ -1,14 +1,29 @@
-import type { BankProvider, ProviderAccount, ProviderContext, ProviderTransaction } from '../../types';
+import type {
+	BankProvider,
+	PlaidAlreadyLinked,
+	ProviderAccount,
+	ProviderContext,
+	ProviderTransaction
+} from '../../types';
 import { getSetting, setSetting } from '../finance';
 import {
+	accessTokenForItem,
 	clearItemErrorByToken,
+	findDuplicatePlaidItem,
+	findDuplicateUnresolvedPlaidItem,
 	isReconnectCode,
+	listPlaidItemsMissingInstitution,
 	recordItemFailure,
 	setItemAccountExternalIds,
+	setPlaidItemInstitution,
 	tokenHint,
 	upsertPlaidItem,
+	type PlaidDuplicateAccountHint,
+	type PlaidDuplicateMatch,
 	type ReconnectErrorCode
 } from '../plaidItems';
+import { isDemoMode } from '../demoMode';
+import { db } from '../db';
 import { fetchJson, ProviderHttpError } from './http';
 
 const NAME = 'Plaid';
@@ -20,6 +35,8 @@ interface PlaidAccount {
 	id?: string;
 	account_id?: string;
 	name: string;
+	mask?: string | null;
+	subtype?: string | null;
 	type: { primary?: string; subclass?: string } | string;
 	balances?: {
 		available?: number | null;
@@ -313,6 +330,10 @@ function ctxOrThrow(ctx?: ProviderContext): ProviderContext {
 /**
  * Exchange a one-time Plaid Link public token for the long-lived access
  * token that every later sync uses.
+ *
+ * Module-private on purpose. Callers must use `linkNewPlaidItem`, which runs
+ * the duplicate-item guard before and after this exchange. Calling this
+ * directly would store a second Item for a login that is already linked.
  */
 async function exchangePublicToken(userId: number, publicToken: string): Promise<string> {
 	const cfg = getPlaidConfig(userId);
@@ -346,11 +367,16 @@ interface PlaidItemMeta {
 export async function fetchItemIdentity(
 	cfg: PlaidConfig,
 	accessToken: string
-): Promise<{ itemId: string; institutionName: string | null; errorCode: string | null }> {
+): Promise<{
+	itemId: string;
+	institutionId: string | null;
+	institutionName: string | null;
+	errorCode: string | null;
+}> {
 	const res = await plaidPost<PlaidItemMeta>(cfg, accessToken, '/item/get');
 	const itemId = String(res.item?.item_id ?? '').trim() || `unknown:${tokenHint(accessToken).slice(0, 12)}`;
 	let institutionName: string | null = null;
-	const institutionId = res.item?.institution_id;
+	const institutionId = String(res.item?.institution_id ?? '').trim() || null;
 	if (institutionId && cfg.clientId && cfg.clientSecret) {
 		try {
 			const inst = await fetchJson<{ institution?: { name?: string } }>(
@@ -372,7 +398,7 @@ export async function fetchItemIdentity(
 			institutionName = null;
 		}
 	}
-	return { itemId, institutionName, errorCode: res.item?.error?.error_code ?? null };
+	return { itemId, institutionId, institutionName, errorCode: res.item?.error?.error_code ?? null };
 }
 
 /** Ask Plaid to drop one item. A missing item is success — the local token is going either way. */
@@ -400,6 +426,249 @@ export async function sandboxResetLogin(userId: number, accessToken: string): Pr
 	const cfg = getPlaidConfig(userId);
 	if (cfg.env === 'production') throw new ProviderHttpError('Login reset is only available in the Plaid sandbox.');
 	await plaidPost(cfg, accessToken, '/sandbox/item/reset_login');
+}
+
+export interface PlaidConnectMetadata {
+	institutionId: string | null;
+	institutionName: string | null;
+	accounts: { name: string | null; mask: string | null; type?: string | null; subtype?: string | null }[];
+}
+
+/** Parse the hidden JSON field the Link onSuccess handler posts with the public token. */
+export function parsePlaidConnectMetadata(raw: unknown): PlaidConnectMetadata {
+	const empty: PlaidConnectMetadata = { institutionId: null, institutionName: null, accounts: [] };
+	if (raw == null) return empty;
+	let parsed: unknown = raw;
+	if (typeof raw === 'string') {
+		const trimmed = raw.trim();
+		if (!trimmed) return empty;
+		try {
+			parsed = JSON.parse(trimmed);
+		} catch {
+			return empty;
+		}
+	}
+	if (!parsed || typeof parsed !== 'object') return empty;
+	const obj = parsed as Record<string, unknown>;
+	const institution =
+		obj.institution && typeof obj.institution === 'object'
+			? (obj.institution as Record<string, unknown>)
+			: obj;
+	const institutionId = String(institution.institution_id ?? obj.institution_id ?? '').trim() || null;
+	const institutionName = String(institution.name ?? obj.institution_name ?? '').trim() || null;
+	const accountsRaw = Array.isArray(obj.accounts) ? obj.accounts : [];
+	const accounts = accountsRaw.map((entry) => {
+		const a = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {};
+		return {
+			name: String(a.name ?? '').trim() || null,
+			mask: String(a.mask ?? '').trim() || null,
+			type: String(a.type ?? '').trim() || null,
+			subtype: String(a.subtype ?? '').trim() || null
+		};
+	});
+	return { institutionId, institutionName, accounts };
+}
+
+function alreadyLinkedResult(dup: PlaidDuplicateMatch, exchanged = false): PlaidAlreadyLinked {
+	return {
+		alreadyLinked: true,
+		exchanged,
+		item: {
+			id: dup.id,
+			label: dup.institutionName?.trim() || 'A linked institution',
+			needsReconnect: dup.needsReconnect
+		}
+	};
+}
+
+/**
+ * Look up a stored access token by its hash. The token is never logged.
+ * Callers pass the connection's token list; only the matching token is returned.
+ */
+export function accessTokenByHint(tokens: string[], hint: string): string | null {
+	const wanted = hint.trim();
+	if (!wanted) return null;
+	return tokens.find((token) => tokenHint(token) === wanted) ?? null;
+}
+
+/** Stored Plaid access tokens for one user. Empty when there is no connection. */
+export function storedPlaidAccessTokens(userId: number): string[] {
+	const row = db()
+		.query('SELECT credentials FROM connections WHERE user_id = ? AND provider = ?')
+		.get(userId, 'plaid') as { credentials: string } | undefined;
+	if (!row) return [];
+	try {
+		return accessTokens(JSON.parse(row.credentials) as Record<string, string>);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Fill institution_id on this user's items that still have NULL (an upgraded
+ * volume, before the first sync). Each item's token is resolved from the
+ * connection by token_hint and is never logged. A Plaid, token, or network
+ * failure leaves that row NULL so the name fallback can still match it.
+ * One helper for the pre-exchange check and the post-exchange safety net.
+ */
+export async function resolveMissingInstitutionIds(userId: number): Promise<void> {
+	const missing = listPlaidItemsMissingInstitution(userId);
+	if (missing.length === 0) return;
+	if (!plaidConfigured(userId)) return;
+	const cfg = getPlaidConfig(userId);
+	const tokens = storedPlaidAccessTokens(userId);
+	for (const item of missing) {
+		const token = accessTokenForItem(userId, item.id, tokens) ?? accessTokenByHint(tokens, item.tokenHint);
+		if (!token) continue;
+		try {
+			const identity = await fetchItemIdentity(cfg, token);
+			if (!identity.institutionId) continue;
+			setPlaidItemInstitution(userId, item.id, identity.institutionId, identity.institutionName);
+		} catch (error) {
+			console.error(
+				`[Plaid] could not resolve institution for item ${item.id}: ${plaidErrorCode(error) ?? 'request failed'}`
+			);
+		}
+	}
+}
+
+/**
+ * Duplicate check used by both link paths. Resolves NULL institution ids
+ * first, then the known-id rule, then the name+mask+subtype fallback for
+ * any item /item/get could not fill.
+ */
+export async function matchExistingPlaidItem(
+	userId: number,
+	input: {
+		institutionId?: string | null;
+		institutionName?: string | null;
+		accounts?: PlaidDuplicateAccountHint[] | null;
+	}
+): Promise<PlaidDuplicateMatch | null> {
+	await resolveMissingInstitutionIds(userId);
+	const byId = findDuplicatePlaidItem(userId, {
+		institutionId: input.institutionId,
+		accounts: input.accounts
+	});
+	if (byId) return byId;
+	return findDuplicateUnresolvedPlaidItem(userId, {
+		institutionName: input.institutionName,
+		accounts: input.accounts
+	});
+}
+
+function accountsFromPlaid(accounts: PlaidAccount[]): PlaidDuplicateAccountHint[] {
+	return accounts.map((a) => ({
+		name: a.name ?? null,
+		mask: a.mask ?? null,
+		subtype: accountSubtype(a)
+	}));
+}
+
+function accountSubtype(account: PlaidAccount): string | null {
+	const fromType = typeof account.type === 'object' ? account.type?.subclass : null;
+	return String(fromType ?? account.subtype ?? '').trim() || null;
+}
+
+/**
+ * The only way to turn a Link public token into a stored Plaid Item.
+ * Pre-exchange: when Link sent an institution id, refuse a match before
+ * `/item/public_token/exchange` (the public token stays unused). NULL
+ * institution ids on existing items are resolved with /item/get first.
+ * Post-exchange: always read `/item/get` and `/accounts/get` and refuse a
+ * match, then `/item/remove` the new access token before anything is stored.
+ * `plaid_allow_duplicate=1` skips both checks (a second login at the same
+ * institution). `exchangePublicToken` is not exported.
+ */
+export async function linkNewPlaidItem(
+	userId: number,
+	input: {
+		publicToken: string;
+		metadata?: unknown;
+		allowDuplicate?: boolean;
+		existingTokens?: string[];
+	}
+): Promise<{ access_tokens: string } | PlaidAlreadyLinked> {
+	const allowDuplicate = input.allowDuplicate === true;
+	const meta = parsePlaidConnectMetadata(input.metadata);
+	if (!allowDuplicate && (meta.institutionId || meta.institutionName)) {
+		const dup = await matchExistingPlaidItem(userId, {
+			institutionId: meta.institutionId,
+			institutionName: meta.institutionName,
+			accounts: meta.accounts
+		});
+		if (dup) return alreadyLinkedResult(dup);
+	}
+	const added = await exchangePublicToken(userId, input.publicToken);
+	// Safety net for a missing or forged institution id: never store the new
+	// item when /item/get + /accounts/get match a login that is already linked,
+	// including an upgraded item whose institution_id is still NULL.
+	if (!allowDuplicate) {
+		const dup = await detectDuplicateAfterExchange(userId, added);
+		if (dup) {
+			await removePlaidItem(userId, added);
+			return alreadyLinkedResult(dup, true);
+		}
+	}
+	const merged = await mergeAccessToken(userId, input.existingTokens ?? [], added);
+	return { access_tokens: JSON.stringify(merged) };
+}
+
+async function detectDuplicateAfterExchange(userId: number, accessToken: string): Promise<PlaidDuplicateMatch | null> {
+	const cfg = getPlaidConfig(userId);
+	const identity = await fetchItemIdentity(cfg, accessToken);
+	if (!identity.institutionId && !identity.institutionName) return null;
+	const res = await plaidPost<{ accounts: PlaidAccount[] }>(cfg, accessToken, '/accounts/get');
+	return matchExistingPlaidItem(userId, {
+		institutionId: identity.institutionId,
+		institutionName: identity.institutionName,
+		accounts: accountsFromPlaid(res.accounts ?? [])
+	});
+}
+
+const SPENT_PUBLIC_TOKEN =
+	"That Plaid session expired. Open Link again and choose 'This is a different login'.";
+
+/** Plain copy when an override resubmits a public token Plaid already consumed. */
+export function plainPlaidConnectError(error: unknown): string {
+	const code = plaidErrorCode(error);
+	if (code === 'INVALID_PUBLIC_TOKEN' || code === 'INVALID_PUBLIC_TOKEN_FORMAT') return SPENT_PUBLIC_TOKEN;
+	const message = error instanceof Error ? error.message : '';
+	if (/invalid public token/i.test(message)) return SPENT_PUBLIC_TOKEN;
+	return message || 'Could not connect.';
+}
+
+/**
+ * Best-effort fill of NULL plaid_items.institution_id. Skipped in demo mode
+ * and for users without Plaid configured. Per-item failures are logged with
+ * the row id only and do not throw.
+ */
+export async function backfillMissingPlaidInstitutionIds(): Promise<void> {
+	if (isDemoMode()) return;
+	const users = db().query('SELECT DISTINCT user_id AS id FROM plaid_items').all() as { id: number }[];
+	for (const user of users) {
+		if (!plaidConfigured(user.id)) continue;
+		try {
+			await resolveMissingInstitutionIds(user.id);
+		} catch (error) {
+			console.error(
+				`[Plaid] institution backfill failed for user ${user.id}: ${plaidErrorCode(error) ?? 'request failed'}`
+			);
+		}
+	}
+}
+
+/**
+ * Startup hook. Not awaited on the request path — a Plaid failure must not
+ * block boot. Demo mode returns before any request.
+ */
+export function backfillPlaidInstitutionIds(): void {
+	if (isDemoMode()) return;
+	void backfillMissingPlaidInstitutionIds().catch((error) => {
+		console.error(
+			`[Plaid] institution backfill stopped: ${error instanceof Error ? error.name : 'error'}`
+		);
+	});
 }
 
 export function noteItemOutcome(
@@ -442,13 +711,15 @@ export const plaidProvider: BankProvider = {
 	async connect(c, ctx) {
 		const publicToken = String(c.public_token ?? '').trim();
 		if (publicToken) {
-			// New bank from Plaid Link: the exchange is the validation — Plaid
-			// rejects unknown or already-used public tokens.
+			// New bank from Plaid Link. Exchange only happens inside
+			// linkNewPlaidItem, which always runs the duplicate guard.
 			if (!ctx) throw new ProviderHttpError('Missing provider context.');
-			const added = await exchangePublicToken(ctx.userId, publicToken);
-			const tokens = accessTokens(ctx.existing ?? {});
-			const merged = await mergeAccessToken(ctx.userId, tokens, added);
-			return { access_tokens: JSON.stringify(merged) };
+			return linkNewPlaidItem(ctx.userId, {
+				publicToken,
+				metadata: c.plaid_metadata,
+				allowDuplicate: String(c.plaid_allow_duplicate ?? '').trim() === '1',
+				existingTokens: accessTokens(ctx.existing ?? {})
+			});
 		}
 		// The submitted form only carries a (possibly empty) public token; the
 		// stored tokens live in ctx.existing. syncNow passes the stored
@@ -527,7 +798,8 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 					upsertPlaidItem(ctx.userId, connectionId, {
 						accessToken: token,
 						itemId,
-						institutionName: identity.institutionName
+						institutionName: identity.institutionName,
+						institutionId: identity.institutionId
 					});
 					if (isReconnectCode(identity.errorCode)) {
 						recordItemFailure(ctx.userId, connectionId, token, itemId, identity.errorCode);
@@ -543,6 +815,7 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 						reconnectNeeded = true;
 						continue;
 					}
+					// A failed institution lookup must not skip /accounts/get.
 				}
 			}
 			const res = await plaidPost<{ accounts: PlaidAccount[] }>(cfg, token, '/accounts/get');
@@ -551,11 +824,18 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 				const type = mapType(typeof a.type === 'string' ? a.type : a.type?.primary);
 				const externalId = a.account_id ?? a.id ?? '';
 				itemAccountIds.push(externalId);
+				const mask = String(a.mask ?? '').trim() || null;
+				const subtype =
+					(typeof a.type === 'object' ? a.type?.subclass : null) ||
+					String(a.subtype ?? '').trim() ||
+					null;
 				accounts.push({
 					external_id: externalId,
 					name: a.name,
 					type,
-					balance_cents: plaidBalanceCents(a, type)
+					balance_cents: plaidBalanceCents(a, type),
+					mask,
+					subtype: subtype ? String(subtype).trim() || null : null
 				});
 			}
 			transactions.push(...(await fetchItemTransactions(cfg, token, start, end)));

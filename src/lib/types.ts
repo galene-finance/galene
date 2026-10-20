@@ -415,6 +415,10 @@ export interface ProviderAccount {
 	 * Omit to let the sync engine stamp fetch time.
 	 */
 	balance_as_of?: string | null;
+	/** Last-four (or similar) mask from the provider. Omit when unknown. */
+	mask?: string | null;
+	/** Provider subtype (checking, savings, credit card, …). Omit when unknown. */
+	subtype?: string | null;
 }
 
 /** A bank transaction as reported by a provider. Amounts are signed cents (negative = expense). */
@@ -495,7 +499,7 @@ export interface BankProvider {
 	connect(
 		credentials: Record<string, string>,
 		ctx?: ProviderContext
-	): void | Promise<void | Record<string, string>>;
+	): void | Promise<void | Record<string, string> | PlaidAlreadyLinked>;
 	listAccounts(ctx?: ProviderContext): ProviderAccount[] | Promise<ProviderAccount[]>;
 	fetchTransactions(since?: string, ctx?: ProviderContext): ProviderTransaction[] | Promise<ProviderTransaction[]>;
 }
@@ -554,6 +558,18 @@ export interface PlaidItemInfo {
 	label: string;
 	needsReconnect: boolean;
 	message: string | null;
+}
+
+/** Connect refused because this login is already linked. */
+export interface PlaidAlreadyLinked {
+	alreadyLinked: true;
+	item: Pick<PlaidItemInfo, 'id' | 'label' | 'needsReconnect'>;
+	/**
+	 * True when the match was found after the public token was exchanged (the
+	 * safety net removed the new item). That public token cannot be reused, so
+	 * a "different login" override must open a fresh Link session.
+	 */
+	exchanged?: boolean;
 }
 
 /** Result of a sync run. */

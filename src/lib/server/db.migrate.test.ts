@@ -210,8 +210,9 @@ describe('migrate Plaid item health (ADO-58)', () => {
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		// Rewind one migration and recreate plaid_items without the new column.
-		db.run(`PRAGMA user_version = ${migrationCount() - 1}`);
+		// Rewind to just before account_external_ids (the following migration is
+		// institution_id) and recreate plaid_items without that column.
+		db.run(`PRAGMA user_version = ${migrationCount() - 2}`);
 		db.exec('DROP TABLE plaid_items');
 		db.exec(`
 CREATE TABLE plaid_items (
@@ -231,6 +232,56 @@ CREATE TABLE plaid_items (
 		const cols = db.query('PRAGMA table_info(plaid_items)').all() as { name: string }[];
 		expect(cols.some((c) => c.name === 'account_external_ids')).toBe(true);
 		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
+		db.close();
+	});
+
+	test('adds institution_id and account mask/subtype without dropping rows', () => {
+		const db = new Database(':memory:');
+		db.exec('PRAGMA foreign_keys = ON');
+		migrate(db);
+		db.run(`PRAGMA user_version = ${migrationCount() - 1}`);
+		db.exec('DROP TABLE plaid_items');
+		db.exec(`
+CREATE TABLE plaid_items (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+	item_id TEXT NOT NULL,
+	token_hint TEXT NOT NULL,
+	institution_name TEXT,
+	error_code TEXT,
+	error_at TEXT,
+	needs_reconnect INTEGER NOT NULL DEFAULT 0 CHECK (needs_reconnect IN (0, 1)),
+	account_external_ids TEXT,
+	updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+	UNIQUE (user_id, token_hint)
+);`);
+		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
+		db.query(
+			`INSERT INTO connections (id, user_id, provider, credentials) VALUES (7, 1, 'plaid', '{"access_tokens":"[]"}')`
+		).run();
+		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (3, 1, 'Checking', 'bank')`).run();
+		db.query(
+			`INSERT INTO plaid_items (id, user_id, connection_id, item_id, token_hint, institution_name)
+			 VALUES (4, 1, 7, 'item-1', 'hint', 'Example Bank')`
+		).run();
+
+		migrate(db);
+
+		const itemCols = db.query('PRAGMA table_info(plaid_items)').all() as { name: string }[];
+		expect(itemCols.some((c) => c.name === 'institution_id')).toBe(true);
+		const accountCols = db.query('PRAGMA table_info(accounts)').all() as { name: string }[];
+		expect(accountCols.some((c) => c.name === 'mask')).toBe(true);
+		expect(accountCols.some((c) => c.name === 'subtype')).toBe(true);
+		expect(db.query('SELECT id, institution_name FROM plaid_items').get()).toEqual({
+			id: 4,
+			institution_name: 'Example Bank'
+		});
+		expect(db.query('SELECT id FROM accounts').get()).toEqual({ id: 3 });
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
+		// Replay is idempotent.
+		db.run(`PRAGMA user_version = ${migrationCount() - 1}`);
+		expect(() => migrate(db)).not.toThrow();
 		db.close();
 	});
 

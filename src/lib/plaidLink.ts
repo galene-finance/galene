@@ -23,17 +23,28 @@ interface PlaidLinkError {
 	[key: string]: unknown;
 }
 
-interface PlaidLinkMetadata {
+export interface PlaidLinkAccount {
+	id?: string;
+	name?: string | null;
+	mask?: string | null;
+	type?: string | null;
+	subtype?: string | null;
+}
+
+/** Subset of Link onSuccess metadata the connect form posts to the server. */
+export interface PlaidLinkMetadata {
 	link_session_id?: string;
 	status?: string;
 	request_id?: string;
+	institution?: { name?: string | null; institution_id?: string | null } | null;
+	accounts?: PlaidLinkAccount[] | null;
 }
 
 export interface PlaidLinkOptions {
 	/** One-time-use link token from /link/token/create. */
 	token: string;
-	/** Called with the one-time public token once the user completes Link. */
-	onSuccess: (publicToken: string) => void;
+	/** Called with the one-time public token and Link metadata once the user completes Link. */
+	onSuccess: (publicToken: string, metadata?: PlaidLinkMetadata) => void;
 	/**
 	 * Called when Link closes. `message` is null when the user simply closed a
 	 * working session; otherwise it explains why the connection failed.
@@ -108,8 +119,8 @@ export async function openPlaidLink(options: PlaidLinkOptions): Promise<PlaidLin
 	await loadScript();
 	const handler = window.Plaid!.create({
 		token: options.token,
-		onSuccess: (publicToken) => {
-			if (publicToken) options.onSuccess(publicToken);
+		onSuccess: (publicToken, metadata) => {
+			if (publicToken) options.onSuccess(publicToken, metadata);
 		},
 		onExit: (error, metadata) => {
 			const message = errorMessage(error);

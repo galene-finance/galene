@@ -1,6 +1,7 @@
 import {
 	accountBalanceAsOfExpr,
 	deleteAccount,
+	deleteAccountWithTransactions,
 	getAccountBalances,
 	getAccountTxnAnchors,
 	getAccounts,
@@ -16,6 +17,7 @@ export function load({ locals }) {
 	const userId = locals.user!.id;
 	const scope = locals.viewer?.scope ?? null;
 	const balances = scope ? balancesAsOf(userId, scope.dateTo, scope.accountIds) : getAccountBalances(userId);
+	const txnCounts = transactionCounts(userId);
 	const anchors = getAccountTxnAnchors(userId);
 	const accounts = getAccounts(userId)
 		.filter((a) => !scope || scope.accountIds.length === 0 || scope.accountIds.includes(a.id))
@@ -25,7 +27,8 @@ export function load({ locals }) {
 			...a,
 			ledger_balance_cents: balances.get(a.id) ?? 0,
 			earliest_txn_date: anchor?.earliestDate ?? null,
-			txn_sum_cents: anchor?.sumAllCents ?? 0
+			txn_sum_cents: anchor?.sumAllCents ?? 0,
+			txn_count: txnCounts.get(a.id) ?? 0
 		};
 	});
 	return { accounts, viewer: locals.user?.role === 'viewer' };
@@ -43,6 +46,15 @@ function balancesAsOf(userId: number, asOf: string, accountIds: number[]): Map<n
 		)
 		.all(asOf, userId, ...accountIds) as { id: number; balance_cents: number }[];
 	return new Map(rows.map((r) => [r.id, Math.round(r.balance_cents)]));
+}
+
+function transactionCounts(userId: number): Map<number, number> {
+	const rows = db()
+		.query(
+			`SELECT account_id AS id, COUNT(*) AS n FROM transactions WHERE user_id = ? GROUP BY account_id`
+		)
+		.all(userId) as { id: number; n: number }[];
+	return new Map(rows.map((r) => [r.id, r.n]));
 }
 
 export const actions = {
@@ -125,5 +137,22 @@ export const actions = {
 			};
 		}
 		return { ok: true, source: 'delete' as const, message: 'Account deleted.' };
+	},
+
+	'delete-account-with-transactions': async ({ request, locals }) => {
+		const form = await request.formData();
+		const id = parseInt(String(form.get('id') ?? ''), 10);
+		if (!Number.isFinite(id)) {
+			return { error: 'Account not found.', source: 'purge' as const };
+		}
+		try {
+			deleteAccountWithTransactions(locals.user!.id, id);
+		} catch (error) {
+			return {
+				error: (error as Error).message || 'Account could not be deleted.',
+				source: 'purge' as const
+			};
+		}
+		return { ok: true, source: 'purge' as const, message: 'Account and its transactions deleted.' };
 	}
 };

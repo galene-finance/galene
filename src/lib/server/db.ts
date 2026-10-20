@@ -1007,6 +1007,31 @@ CREATE INDEX IF NOT EXISTS idx_plaid_items_user ON plaid_items(user_id, connecti
 			   )
 		`);
 	}
+},
+{
+	// ADO-59: remember which institution a Plaid item belongs to, and the
+	// provider mask/subtype on accounts, so a second Link of the same login
+	// can be detected without exchanging a new public token.
+	sql: `-- plaid_items.institution_id + accounts.mask/subtype (ADO-59)`,
+	// Additive ALTER only (no parent rebuild). afterFkOff so a replay that
+	// rewinds user_version still adds the columns with foreign keys off,
+	// matching the hook used for schema changes that must not run inside the
+	// migration transaction's foreign_keys=ON window.
+	afterFkOff(database) {
+		const plaidCols = database.query('PRAGMA table_info(plaid_items)').all() as { name: string }[];
+		const plaidNames = new Set(plaidCols.map((c) => c.name));
+		if (!plaidNames.has('institution_id')) {
+			database.exec('ALTER TABLE plaid_items ADD COLUMN institution_id TEXT');
+		}
+		const accountCols = database.query('PRAGMA table_info(accounts)').all() as { name: string }[];
+		const accountNames = new Set(accountCols.map((c) => c.name));
+		if (!accountNames.has('mask')) {
+			database.exec('ALTER TABLE accounts ADD COLUMN mask TEXT');
+		}
+		if (!accountNames.has('subtype')) {
+			database.exec('ALTER TABLE accounts ADD COLUMN subtype TEXT');
+		}
+	}
 }
 ];
 
@@ -1033,6 +1058,13 @@ export function migrationIndexBefore(table: string): number {
 	const needle = `CREATE TABLE IF NOT EXISTS ${table}`;
 	const index = MIGRATIONS.findIndex((m) => (typeof m === 'string' ? m : m.sql).includes(needle));
 	if (index < 0) throw new Error(`migration for ${table} missing`);
+	return index;
+}
+
+/** user_version of the first migration whose SQL contains `snippet` (that step has not run yet). */
+export function migrationIndexContaining(snippet: string): number {
+	const index = MIGRATIONS.findIndex((m) => (typeof m === 'string' ? m : m.sql).includes(snippet));
+	if (index < 0) throw new Error(`migration containing ${JSON.stringify(snippet)} missing`);
 	return index;
 }
 

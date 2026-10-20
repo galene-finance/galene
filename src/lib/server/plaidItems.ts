@@ -5,7 +5,25 @@
  */
 import { createHash } from 'node:crypto';
 import { db } from './db';
-import { ownedIds } from './finance';
+
+type OwnedTable = 'transactions' | 'scheduled' | 'accounts' | 'categories' | 'tags' | 'budgets' | 'plaid_items';
+
+/**
+ * Positive ids that belong to this user in a user-scoped table.
+ * Foreign or invalid ids are dropped — callers must never mutate them.
+ * Lives here (not finance.ts) so finance can call Plaid helpers without a cycle.
+ */
+export function ownedIds(table: OwnedTable, userId: number, ids: number[]): number[] {
+	const unique = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))];
+	if (unique.length === 0) return [];
+	return (
+		db()
+			.query(
+				`SELECT id FROM ${table} WHERE user_id = ? AND id IN (${unique.map(() => '?').join(',')})`
+			)
+			.all(userId, ...unique) as { id: number }[]
+	).map((row) => row.id);
+}
 
 /**
  * Item error codes that only the account holder can clear, by signing in
@@ -35,6 +53,19 @@ export interface PlaidItemView {
 	accountNames: string[];
 }
 
+/** Incoming Link metadata (or post-exchange /accounts/get) used to detect a duplicate item. */
+export interface PlaidDuplicateAccountHint {
+	name?: string | null;
+	mask?: string | null;
+}
+
+export interface PlaidDuplicateMatch {
+	id: number;
+	itemId: string;
+	institutionName: string | null;
+	needsReconnect: boolean;
+}
+
 export function tokenHint(accessToken: string): string {
 	return createHash('sha256').update(accessToken).digest('hex');
 }
@@ -53,6 +84,7 @@ interface ItemRow {
 	item_id: string;
 	token_hint: string;
 	institution_name: string | null;
+	institution_id: string | null;
 	error_code: string | null;
 	error_at: string | null;
 	needs_reconnect: number;
@@ -69,21 +101,28 @@ function stateFromRow(row: Pick<ItemRow, 'error_code' | 'error_at' | 'needs_reco
 export function upsertPlaidItem(
 	userId: number,
 	connectionId: number,
-	input: { accessToken: string; itemId: string; institutionName?: string | null }
+	input: {
+		accessToken: string;
+		itemId: string;
+		institutionName?: string | null;
+		institutionId?: string | null;
+	}
 ): number {
 	const hint = tokenHint(input.accessToken);
 	const itemId = input.itemId.trim() || `unknown:${hint.slice(0, 12)}`;
+	const institutionId = input.institutionId?.trim() || null;
 	db()
 		.query(
-			`INSERT INTO plaid_items (user_id, connection_id, item_id, token_hint, institution_name, updated_at)
-			 VALUES (?, ?, ?, ?, ?, datetime('now'))
+			`INSERT INTO plaid_items (user_id, connection_id, item_id, token_hint, institution_name, institution_id, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
 			 ON CONFLICT (user_id, token_hint) DO UPDATE SET
 			     connection_id = excluded.connection_id,
 			     item_id = CASE WHEN excluded.item_id LIKE 'unknown:%' THEN plaid_items.item_id ELSE excluded.item_id END,
 			     institution_name = COALESCE(excluded.institution_name, plaid_items.institution_name),
+			     institution_id = COALESCE(excluded.institution_id, plaid_items.institution_id),
 			     updated_at = datetime('now')`
 		)
-		.run(userId, connectionId, itemId, hint, input.institutionName?.trim() || null);
+		.run(userId, connectionId, itemId, hint, input.institutionName?.trim() || null, institutionId);
 	const row = db()
 		.query('SELECT id FROM plaid_items WHERE user_id = ? AND token_hint = ?')
 		.get(userId, hint) as { id: number };
@@ -123,8 +162,7 @@ export function recordItemFailure(
 }
 
 export function clearItemError(userId: number, itemRowId: number): void {
-	const owned = ownedIds('plaid_items', userId, [itemRowId]);
-	if (owned.length !== 1) return;
+	if (ownedIds('plaid_items', userId, [itemRowId]).length !== 1) return;
 	db()
 		.query(
 			`UPDATE plaid_items
@@ -165,6 +203,98 @@ export function parseAccountExternalIds(raw: string | null | undefined): string[
 		return parsed.map((v) => String(v)).filter(Boolean);
 	} catch {
 		return [];
+	}
+}
+
+function normalizeHint(value: string | null | undefined): string {
+	return (value ?? '').trim().toLowerCase();
+}
+
+function hasNameAndMask(account: { name?: string | null; mask?: string | null }): boolean {
+	return !!normalizeHint(account.name) && !!normalizeHint(account.mask);
+}
+
+/**
+ * Existing linked item that matches a new Link of the same institution.
+ * Same user + institution_id, then name+mask on any of that item's accounts
+ * (via account_external_ids). When incoming name/mask is missing, or the
+ * stored item has no masks yet, institution_id alone is enough.
+ */
+export function findDuplicatePlaidItem(
+	userId: number,
+	input: { institutionId?: string | null; accounts?: PlaidDuplicateAccountHint[] | null }
+): PlaidDuplicateMatch | null {
+	const institutionId = (input.institutionId ?? '').trim();
+	if (!institutionId) return null;
+	const incoming = input.accounts ?? [];
+	const items = db()
+		.query(
+			`SELECT id, item_id, institution_name, institution_id, needs_reconnect, error_code, error_at, account_external_ids
+			 FROM plaid_items WHERE user_id = ? AND institution_id = ?
+			 ORDER BY id`
+		)
+		.all(userId, institutionId) as ItemRow[];
+	const incomingComparable = incoming.filter(hasNameAndMask);
+	for (const item of items) {
+		const externalIds = parseAccountExternalIds(item.account_external_ids);
+		const stored = accountsForExternalIds(userId, externalIds);
+		const storedComparable = stored.filter(hasNameAndMask);
+		if (incomingComparable.length === 0 || storedComparable.length === 0) {
+			return matchFromItem(item);
+		}
+		const matched = incomingComparable.some((incomingAccount) =>
+			storedComparable.some(
+				(storedAccount) =>
+					normalizeHint(storedAccount.name) === normalizeHint(incomingAccount.name) &&
+					normalizeHint(storedAccount.mask) === normalizeHint(incomingAccount.mask)
+			)
+		);
+		if (matched) return matchFromItem(item);
+	}
+	return null;
+}
+
+function matchFromItem(item: ItemRow): PlaidDuplicateMatch {
+	return {
+		id: item.id,
+		itemId: item.item_id,
+		institutionName: item.institution_name,
+		needsReconnect: stateFromRow(item).needsReconnect
+	};
+}
+
+function accountsForExternalIds(
+	userId: number,
+	externalIds: string[]
+): { name: string; mask: string | null }[] {
+	if (externalIds.length === 0) return [];
+	const placeholders = externalIds.map(() => '?').join(',');
+	return db()
+		.query(
+			`SELECT name, mask FROM accounts
+			 WHERE user_id = ? AND provider = 'plaid' AND external_id IN (${placeholders})`
+		)
+		.all(userId, ...externalIds) as { name: string; mask: string | null }[];
+}
+
+/** Drop one provider account id from every item that lists it (user-scoped). */
+export function dropAccountExternalIdFromPlaidItems(userId: number, externalId: string): void {
+	const id = externalId.trim();
+	if (!id) return;
+	const items = db()
+		.query('SELECT id, account_external_ids FROM plaid_items WHERE user_id = ?')
+		.all(userId) as { id: number; account_external_ids: string | null }[];
+	for (const item of items) {
+		const ids = parseAccountExternalIds(item.account_external_ids);
+		if (!ids.includes(id)) continue;
+		const next = ids.filter((value) => value !== id);
+		db()
+			.query(
+				`UPDATE plaid_items
+				 SET account_external_ids = ?, updated_at = datetime('now')
+				 WHERE id = ? AND user_id = ?`
+			)
+			.run(JSON.stringify(next), item.id, userId);
 	}
 }
 
@@ -247,7 +377,7 @@ export function getItemById(userId: number, itemRowId: number): (ItemRow & { sta
 	if (ownedIds('plaid_items', userId, [itemRowId]).length !== 1) return null;
 	const row = db()
 		.query(
-			`SELECT id, item_id, token_hint, institution_name, error_code, error_at, needs_reconnect
+			`SELECT id, item_id, token_hint, institution_name, institution_id, error_code, error_at, needs_reconnect, account_external_ids
 			 FROM plaid_items WHERE id = ? AND user_id = ?`
 		)
 		.get(itemRowId, userId) as ItemRow | undefined;
@@ -271,7 +401,7 @@ export function listPlaidItemViews(
 	const hints = new Set(tokens.map(tokenHint));
 	const rows = db()
 		.query(
-			`SELECT id, item_id, token_hint, institution_name, error_code, error_at, needs_reconnect
+			`SELECT id, item_id, token_hint, institution_name, institution_id, error_code, error_at, needs_reconnect, account_external_ids
 			 FROM plaid_items WHERE user_id = ? AND connection_id = ? ORDER BY id`
 		)
 		.all(userId, connectionId) as ItemRow[];
@@ -297,20 +427,8 @@ export function deletePlaidItem(userId: number, itemRowId: number): ItemRow | nu
 	return row;
 }
 
-/** Exhaustiveness helper: a reconnect-needed state must carry a known code. */
+/** Plain-language line when the item needs a sign-in. Null when it is healthy. */
 export function assertReconnectHandled(state: PlaidItemState): string | null {
 	if (!state.needsReconnect) return null;
-	switch (state.errorCode) {
-		case 'ITEM_LOGIN_REQUIRED':
-		case 'PENDING_EXPIRATION':
-		case 'PENDING_DISCONNECT':
-		case 'USER_PERMISSION_REVOKED':
-		case 'USER_ACCOUNT_REVOKED':
-		case 'ITEM_LOCKED':
-			return reconnectMessage();
-		default: {
-			const _never: never = state.errorCode;
-			return _never;
-		}
-	}
+	return isReconnectCode(state.errorCode) ? reconnectMessage() : null;
 }

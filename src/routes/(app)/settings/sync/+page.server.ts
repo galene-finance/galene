@@ -192,8 +192,22 @@ export const actions = {
 		if (!provider) return { error: 'Unknown provider.' };
 		const credentials: Record<string, string> = {};
 		for (const f of provider.credentialFields) credentials[f.key] = String(form.get(`cred_${f.key}`) ?? '').trim();
+		const metadata = String(form.get('plaid_metadata') ?? '').trim();
+		if (metadata) credentials.plaid_metadata = metadata;
+		if (String(form.get('plaid_allow_duplicate') ?? '').trim() === '1') {
+			credentials.plaid_allow_duplicate = '1';
+		}
 		try {
-			await connect(locals.user!.id, providerId, credentials);
+			const linked = await connect(locals.user!.id, providerId, credentials);
+			if (linked && typeof linked === 'object' && 'alreadyLinked' in linked && linked.alreadyLinked) {
+				// Do not sync. The public token was not exchanged, so the client
+				// may resubmit it with plaid_allow_duplicate=1.
+				return {
+					alreadyLinked: linked.item,
+					publicToken: credentials.public_token ?? '',
+					plaidMetadata: metadata
+				};
+			}
 			if (provider.autoSyncOnConnect) {
 				// Plaid links one bank per Link session; pull the newly linked
 				// account(s) in right away so the user sees them without a

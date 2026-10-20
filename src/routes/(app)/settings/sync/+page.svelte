@@ -45,6 +45,9 @@
 	let plaidOpening = $state(false);
 	let plaidHandler = $state<PlaidLinkHandler | null>(null);
 	let alreadyLinked = $state<{ id: number; label: string; needsReconnect: boolean } | null>(null);
+	// Set when "This is a different login" must open a fresh Link session (the
+	// earlier public token was already exchanged by the safety net).
+	let overrideNextLink = $state(false);
 
 	function metadataField(metadata?: PlaidLinkMetadata): string {
 		const accounts = (metadata?.accounts ?? []).map((account) => ({
@@ -84,7 +87,8 @@
 				token: d.token,
 				onSuccess: async (publicToken, metadata) => {
 					alreadyLinked = null;
-					plaidAllowDuplicate = '';
+					plaidAllowDuplicate = overrideNextLink ? '1' : '';
+					overrideNextLink = false;
 					plaidPublicToken = publicToken;
 					plaidMetadata = metadataField(metadata);
 					await tick(); // let the hidden inputs pick up the token before submit
@@ -95,6 +99,7 @@
 				},
 				onExit: (message) => {
 					plaidOpening = false;
+					overrideNextLink = false;
 					if (message) plaidError = message;
 				}
 			});
@@ -144,10 +149,16 @@
 		}
 	}
 
-	function allowDuplicateLink() {
-		if (data.demo || !plaidPublicToken || !plaidForm) return;
-		plaidAllowDuplicate = '1';
+	function allowDuplicateLink(p: ProviderInfo) {
+		if (data.demo || !plaidForm) return;
 		alreadyLinked = null;
+		if (!plaidPublicToken) {
+			// The token was spent; link again with the override already chosen.
+			overrideNextLink = true;
+			void openPlaid(p);
+			return;
+		}
+		plaidAllowDuplicate = '1';
 		void tick().then(() => plaidForm?.requestSubmit());
 	}
 
@@ -172,6 +183,8 @@
 					merged?: number;
 					lastSyncedAt?: string;
 					alreadyLinked?: { id: number; label: string; needsReconnect: boolean };
+					publicToken?: string;
+					plaidMetadata?: string;
 			  }
 			| undefined;
 		data: {
@@ -224,6 +237,8 @@
 		lastForm = form;
 		if (form?.alreadyLinked) {
 			alreadyLinked = form.alreadyLinked;
+			plaidPublicToken = form.publicToken ?? '';
+			if (form.plaidMetadata) plaidMetadata = form.plaidMetadata;
 			return;
 		}
 		if (form?.ok) alreadyLinked = null;
@@ -321,13 +336,37 @@
 						<p class="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">{p.configureHint}</p>
 					{:else if !conn}
 						<div class="my-4 border-t border-border"></div>
-						<form bind:this={plaidForm} method="POST" action="?/connect" use:enhance class="flex flex-col gap-3">
+						<form
+							bind:this={plaidForm}
+							method="POST"
+							action="?/connect"
+							use:enhance={() => ({ update }) => update({ reset: false })}
+							class="flex flex-col gap-3"
+						>
 							<input type="hidden" name="provider" value={p.id} />
 							<input type="hidden" name="cred_public_token" value={plaidPublicToken} />
 							<input type="hidden" name="plaid_metadata" value={plaidMetadata} />
 							<input type="hidden" name="plaid_allow_duplicate" value={plaidAllowDuplicate} />
 							{#if plaidError}
 								<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{plaidError}</p>
+							{/if}
+							{#if data.plaidItems.length}
+								<div class="text-sm text-muted-foreground">
+									<p>Already linked:</p>
+									<ul class="mt-1 list-disc pl-5">
+										{#each data.plaidItems as item (item.id)}
+											<li>
+												{item.label} — {item.needsReconnect ? 'needs sign-in' : 'connected'}
+											</li>
+										{/each}
+									</ul>
+									{#each data.plaidItems.filter((item) => item.needsReconnect) as item (item.id)}
+										<p class="mt-2 text-foreground">
+											{item.label} needs you to sign in again — use Reconnect instead of linking it
+											again.
+										</p>
+									{/each}
+								</div>
 							{/if}
 							{#if alreadyLinked}
 								<div class="rounded-md border border-border bg-muted/40 px-3 py-3 text-sm">
@@ -343,7 +382,7 @@
 										>
 											Reconnect
 										</Button>
-										<Button type="button" variant="secondary" disabled={data.demo} onclick={allowDuplicateLink}>
+										<Button type="button" variant="secondary" disabled={data.demo} onclick={() => allowDuplicateLink(p)}>
 											This is a different login
 										</Button>
 									</div>
@@ -412,7 +451,13 @@
 									<input type="hidden" name="provider" value={p.id} />
 									<Button type="submit">Sync now</Button>
 								</form>
-								<form bind:this={plaidForm} method="POST" action="?/connect" use:enhance class="flex flex-col gap-2">
+								<form
+									bind:this={plaidForm}
+									method="POST"
+									action="?/connect"
+									use:enhance={() => ({ update }) => update({ reset: false })}
+									class="flex flex-col gap-2"
+								>
 									<input type="hidden" name="provider" value={p.id} />
 									<input type="hidden" name="cred_public_token" value={plaidPublicToken} />
 									<input type="hidden" name="plaid_metadata" value={plaidMetadata} />
@@ -423,11 +468,16 @@
 											<ul class="mt-1 list-disc pl-5">
 												{#each data.plaidItems as item (item.id)}
 													<li>
-														{item.label}{#if item.needsReconnect}
-															— needs you to sign in again. Use Reconnect on that institution below.{/if}
+														{item.label} — {item.needsReconnect ? 'needs sign-in' : 'connected'}
 													</li>
 												{/each}
 											</ul>
+											{#each data.plaidItems.filter((item) => item.needsReconnect) as item (item.id)}
+												<p class="mt-2 text-foreground">
+													{item.label} needs you to sign in again — use Reconnect instead of linking it
+													again.
+												</p>
+											{/each}
 										</div>
 									{/if}
 									{#if alreadyLinked}
@@ -444,7 +494,7 @@
 												>
 													Reconnect
 												</Button>
-												<Button type="button" variant="secondary" disabled={data.demo} onclick={allowDuplicateLink}>
+												<Button type="button" variant="secondary" disabled={data.demo} onclick={() => allowDuplicateLink(p)}>
 													This is a different login
 												</Button>
 											</div>

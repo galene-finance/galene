@@ -4,7 +4,13 @@
  */
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { categoryUniquenessMigrationIndex, migrate, migrationCount, migrationIndexBefore } from './db';
+import {
+	categoryUniquenessMigrationIndex,
+	migrate,
+	migrationCount,
+	migrationIndexBefore,
+	migrationIndexContaining
+} from './db';
 
 function seedPreCategoryUniqueness(db: Database) {
 	// Build schema as of just before the #17 category-uniqueness migration:
@@ -212,7 +218,7 @@ describe('migrate Plaid item health (ADO-58)', () => {
 		migrate(db);
 		// Rewind to just before account_external_ids (the following migration is
 		// institution_id) and recreate plaid_items without that column.
-		db.run(`PRAGMA user_version = ${migrationCount() - 2}`);
+		db.run(`PRAGMA user_version = ${migrationIndexContaining('account_external_ids')}`);
 		db.exec('DROP TABLE plaid_items');
 		db.exec(`
 CREATE TABLE plaid_items (
@@ -239,23 +245,6 @@ CREATE TABLE plaid_items (
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		db.run(`PRAGMA user_version = ${migrationCount() - 1}`);
-		db.exec('DROP TABLE plaid_items');
-		db.exec(`
-CREATE TABLE plaid_items (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-	connection_id INTEGER NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
-	item_id TEXT NOT NULL,
-	token_hint TEXT NOT NULL,
-	institution_name TEXT,
-	error_code TEXT,
-	error_at TEXT,
-	needs_reconnect INTEGER NOT NULL DEFAULT 0 CHECK (needs_reconnect IN (0, 1)),
-	account_external_ids TEXT,
-	updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-	UNIQUE (user_id, token_hint)
-);`);
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(
 			`INSERT INTO connections (id, user_id, provider, credentials) VALUES (7, 1, 'plaid', '{"access_tokens":"[]"}')`
@@ -265,6 +254,21 @@ CREATE TABLE plaid_items (
 			`INSERT INTO plaid_items (id, user_id, connection_id, item_id, token_hint, institution_name)
 			 VALUES (4, 1, 7, 'item-1', 'hint', 'Example Bank')`
 		).run();
+
+		const ado59 = migrationIndexContaining('institution_id');
+		db.run(`PRAGMA user_version = ${ado59}`);
+		// Simulate a pre-ADO-59 schema without dropping the parent table.
+		db.exec('PRAGMA foreign_keys = OFF');
+		try {
+			db.exec('ALTER TABLE plaid_items DROP COLUMN institution_id');
+			db.exec('ALTER TABLE accounts DROP COLUMN mask');
+			db.exec('ALTER TABLE accounts DROP COLUMN subtype');
+		} finally {
+			db.exec('PRAGMA foreign_keys = ON');
+		}
+		expect(
+			(db.query('PRAGMA table_info(plaid_items)').all() as { name: string }[]).some((c) => c.name === 'institution_id')
+		).toBe(false);
 
 		migrate(db);
 
@@ -279,9 +283,9 @@ CREATE TABLE plaid_items (
 		});
 		expect(db.query('SELECT id FROM accounts').get()).toEqual({ id: 3 });
 		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
-		// Replay is idempotent.
-		db.run(`PRAGMA user_version = ${migrationCount() - 1}`);
+		db.run(`PRAGMA user_version = ${ado59}`);
 		expect(() => migrate(db)).not.toThrow();
+		expect(db.query('SELECT id FROM plaid_items').get()).toEqual({ id: 4 });
 		db.close();
 	});
 

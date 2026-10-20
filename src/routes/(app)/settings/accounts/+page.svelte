@@ -32,7 +32,7 @@
 		form:
 			| { error?: string | null; ok?: boolean; message?: string | null; source?: string }
 			| undefined;
-		data: { accounts: AccountRow[]; viewer?: boolean };
+		data: { accounts: AccountRow[]; viewer?: boolean; demo?: boolean };
 	} = $props();
 
 	function formatBankAsOf(s: string | null | undefined): string {
@@ -200,6 +200,7 @@
 	let purgeError = $state('');
 
 	function openPurge(a: AccountRow) {
+		if (data.demo) return;
 		pendingPurge = a;
 		purgeConfirm = '';
 		purgeError = '';
@@ -330,6 +331,7 @@
 								type="button"
 								class="text-sm text-destructive hover:underline"
 								onclick={() => openPurge(account)}
+								disabled={Boolean(data.demo)}
 							>
 								Delete account and its transactions
 							</button>
@@ -352,7 +354,7 @@
 	<form method="POST" action="?/save-account" use:enhance class="flex flex-col gap-4">
 		<input type="hidden" name="id" value={accEditId ?? ''} />
 		<Field label="Name" error={editError || null}>
-			<Input type="text" name="name" bind:value={accName} required placeholder="e.g. Chase Checking" />
+			<Input type="text" name="name" bind:value={accName} required placeholder="e.g. Checking" />
 		</Field>
 		<Field label="Type">
 			<Select name="type" bind:value={accType} items={typeItems} />
@@ -484,7 +486,7 @@
 <Dialog
 	bind:open={purgeOpen}
 	title={pendingPurge ? `Delete ${pendingPurge.name} and its transactions?` : 'Delete account and its transactions?'}
-	description="This removes the account and every transaction on it. Splits, tags, and sync reviews for those transactions go with them. This cannot be undone."
+	description="This permanently deletes the account and every transaction on it. Splits, tags, and sync reviews for those transactions go with them. This cannot be undone."
 >
 	{#if pendingPurge}
 		<form method="POST" action="?/delete-account-with-transactions" use:enhance class="flex flex-col gap-4">
@@ -498,7 +500,7 @@
 			</Field>
 			<div class="flex justify-end gap-2">
 				<Button type="button" variant="secondary" onclick={closePurge}>Cancel</Button>
-				<Button type="submit" variant="destructive" disabled={!purgeMatches}>Delete account and its transactions</Button>
+				<Button type="submit" variant="destructive" disabled={!purgeMatches || Boolean(data.demo)}>Delete account and its transactions</Button>
 			</div>
 		</form>
 	{/if}

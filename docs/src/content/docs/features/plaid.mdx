@@ -67,7 +67,9 @@ Before **Connect with Plaid** or **Link another account**, Galene lists the inst
 
 If you finish Link for an institution that is already linked (same institution, and a matching account name and mask when those are known), Galene does not exchange the public token and does not import a second set of accounts. The page says **This bank is already linked**, with **Reconnect** for that institution.
 
-**This is a different login** is for a second login at the same institution (another person, or another set of accounts). That resubmits the same public token and stores a separate item. The first Link session was not exchanged, so the token is still valid.
+**This is a different login** is for a second login at the same institution (another person, or another set of accounts). It resubmits the same public token and stores a separate item; the token is still valid because it was never exchanged.
+
+When Link does not report the institution, Galene still checks after the exchange: it reads the new item's institution and accounts, and on a match removes the new item at Plaid before storing anything. In that case **This is a different login** opens Link again so you can finish with a fresh session.
 
 ## Delete an account and its transactions
 

@@ -149,6 +149,7 @@
 >
 	{#if pending}
 		<form
+			id="data-delete-form"
 			method="POST"
 			action={pending === 'all' ? '?/delete-all' : '?/delete'}
 			use:enhance
@@ -166,12 +167,16 @@
 					spellcheck="false"
 				/>
 			</Field>
+		</form>
+	{/if}
+	{#snippet footer()}
+		{#if pending}
 			<div class="flex justify-end gap-2">
 				<Button type="button" variant="secondary" onclick={close}>Cancel</Button>
-				<Button type="submit" variant="destructive" disabled={!matches}>
+				<Button type="submit" form="data-delete-form" variant="destructive" disabled={!matches}>
 					{pending === 'all' ? 'Delete everything' : `Delete ${pending.label}`}
 				</Button>
 			</div>
-		</form>
-	{/if}
+		{/if}
+	{/snippet}
 </Dialog>

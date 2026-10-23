@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Dialog as BitsDialog } from 'bits-ui';
 	import type { Snippet } from 'svelte';
+	import { lockPageScroll, unlockPageScroll } from '$lib/dialogScrollLock';
 
 	let {
 		open = $bindable(false),
@@ -11,6 +12,7 @@
 		class: className = '',
 		onOpenAutoFocus,
 		onCloseAutoFocus,
+		footer,
 		children
 	}: {
 		open?: boolean;
@@ -22,32 +24,61 @@
 		class?: string;
 		onOpenAutoFocus?: (e: Event) => void;
 		onCloseAutoFocus?: (e: Event) => void;
+		/**
+		 * Cancel / Save row rendered outside the scroll body. Submit buttons
+		 * inside it use form="id" to submit the form in `children`.
+		 */
+		footer?: Snippet;
 		children: Snippet;
 	} = $props();
 
 	const sizes = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl' };
+
+	/**
+	 * Height: 100vh is the large viewport on iOS (toolbar hidden), so a box
+	 * capped with it and centered with translate overflows the visible area.
+	 * 100dvh tracks the visible viewport; vh remains as a fallback.
+	 *
+	 * `footer` renders outside the scroll body (the footer element carries
+	 * .dialog-actions). A .dialog-actions row left inside children sticks to
+	 * the bottom of that body instead and stays in its form.
+	 */
+	// bits-ui keeps Content mounted after close (presence transition), so the
+	// lock follows `open`, not mount. Nested dialogs each take a count.
+	$effect(() => {
+		if (!open) return;
+		lockPageScroll();
+		return () => unlockPageScroll();
+	});
 </script>
 
 <BitsDialog.Root bind:open>
 	<BitsDialog.Portal>
 		<BitsDialog.Overlay class="fixed inset-0 z-50 bg-black/60" />
 		<BitsDialog.Content
-			class="fixed left-1/2 top-1/2 z-50 max-h-[calc(100vh-2rem)] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-border bg-surface p-5 shadow-xl {sizes[size]} {className}"
+			class="dialog-content fixed left-1/2 top-1/2 z-50 flex w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-xl {sizes[size]} {className}"
 			{onOpenAutoFocus}
 			{onCloseAutoFocus}
 			interactOutsideBehavior={busy ? 'ignore' : 'close'}
 			escapeKeydownBehavior={busy ? 'ignore' : 'close'}
 			aria-busy={busy ? 'true' : undefined}
 		>
-			{#if title}
-				<BitsDialog.Title class="pr-8 text-lg font-semibold">{title}</BitsDialog.Title>
-			{/if}
-			{#if description}
-				<BitsDialog.Description class="mt-1 text-sm text-muted-foreground">{description}</BitsDialog.Description>
-			{/if}
-			<div class="mt-4">
+			<div class="dialog-header shrink-0 px-5 pb-0 pt-5">
+				{#if title}
+					<BitsDialog.Title class="pr-8 text-lg font-semibold">{title}</BitsDialog.Title>
+				{/if}
+				{#if description}
+					<BitsDialog.Description class="mt-1 text-sm text-muted-foreground">{description}</BitsDialog.Description>
+				{/if}
+			</div>
+			<div class="dialog-body min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
 				{@render children()}
 			</div>
+			{#if footer}
+				<div class="dialog-footer dialog-actions shrink-0">
+					{@render footer()}
+				</div>
+			{/if}
 			{#if !busy}
 				<BitsDialog.Close
 					class="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"

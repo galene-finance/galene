@@ -270,6 +270,7 @@
 >
 	{#if pending}
 		<form
+			id="user-dialog-form"
 			method="POST"
 			action={pending.kind === 'delete' ? '?/delete' : '?/reset-password'}
 			use:enhance
@@ -299,16 +300,21 @@
 					/>
 				</Field>
 			{/if}
+		</form>
+	{/if}
+	{#snippet footer()}
+		{#if pending}
 			<div class="flex justify-end gap-2">
 				<Button type="button" variant="secondary" onclick={close}>Cancel</Button>
 				<Button
 					type="submit"
+					form="user-dialog-form"
 					variant={pending.kind === 'delete' ? 'destructive' : 'primary'}
 					disabled={pending.kind === 'delete' ? !matches : newPass.length === 0}
 				>
 					{pending.kind === 'delete' ? 'Delete account' : 'Update password'}
 				</Button>
 			</div>
-		</form>
-	{/if}
+		{/if}
+	{/snippet}
 </Dialog>

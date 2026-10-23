@@ -143,7 +143,7 @@
 			<input type="hidden" name="unsplit" value="1" />
 		</form>
 	{/if}
-	<form method="POST" action="?/split" use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+	<form id="split-dialog-form" method="POST" action="?/split" use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
 		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 		{#if transaction}
 			<div class="flex flex-col gap-2">
@@ -194,15 +194,17 @@
 			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
 		{/if}
 
+		</fieldset>
+	</form>
+	{#snippet footer()}
 		<div class="flex items-center gap-2">
 			{#if transaction?.splits && transaction.splits.length > 0}
 				<Button variant="destructive" type="button" class="mr-auto" disabled={saving} onclick={unsplit}>
 					Unsplit
 				</Button>
 			{/if}
-			<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
-			<Button type="submit" pending={saving}>{saving ? 'Saving…' : 'Save split'}</Button>
+			<Button variant="secondary" type="button" class="ml-auto" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
+			<Button type="submit" form="split-dialog-form" pending={saving}>{saving ? 'Saving…' : 'Save split'}</Button>
 		</div>
-		</fieldset>
-	</form>
+	{/snippet}
 </Dialog>

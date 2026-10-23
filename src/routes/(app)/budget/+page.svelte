@@ -300,7 +300,7 @@
 	title={editing ? 'Edit budget' : 'Add budget'}
 	description={editing ? undefined : 'Set a spending limit for a category.'}
 >
-	<form method="POST" action="?/save" use:enhance={handleSubmit} class="flex flex-col gap-4">
+	<form id="budget-dialog-form" method="POST" action="?/save" use:enhance={handleSubmit} class="flex flex-col gap-4">
 		<div class="flex gap-2" role="radiogroup" aria-label="Budget type">
 			<button
 				type="button"
@@ -357,9 +357,11 @@
 			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
 		{/if}
 
+	</form>
+	{#snippet footer()}
 		<div class="flex justify-end gap-2">
 			<Button variant="secondary" type="button" onclick={() => (dialogOpen = false)}>Cancel</Button>
-			<Button type="submit">{editing ? 'Save changes' : 'Add budget'}</Button>
+			<Button type="submit" form="budget-dialog-form">{editing ? 'Save changes' : 'Add budget'}</Button>
 		</div>
-	</form>
+	{/snippet}
 </Dialog>

@@ -690,21 +690,25 @@
 		description="Imported accounts and transactions stay. Other linked institutions are not affected."
 		size="sm"
 	>
-		<div class="mt-4 flex justify-end gap-2">
-			<Button type="button" variant="secondary" onclick={() => (removeOpen = false)}>Cancel</Button>
-			<form
-				method="POST"
-				action="?/remove-item"
-				use:enhance={() => {
-					return async ({ update }) => {
-						removeOpen = false;
-						await update();
-					};
-				}}
-			>
-				<input type="hidden" name="item_id" value={removeTarget?.id ?? ''} />
-				<Button type="submit" variant="destructive" disabled={data.demo}>Remove</Button>
-			</form>
-		</div>
+		<form
+			id="sync-remove-form"
+			method="POST"
+			action="?/remove-item"
+			use:enhance={() => {
+				return async ({ update }) => {
+					removeOpen = false;
+					await update();
+				};
+			}}
+			class="hidden"
+		>
+			<input type="hidden" name="item_id" value={removeTarget?.id ?? ''} />
+		</form>
+		{#snippet footer()}
+			<div class="flex justify-end gap-2">
+				<Button type="button" variant="secondary" onclick={() => (removeOpen = false)}>Cancel</Button>
+				<Button type="submit" form="sync-remove-form" variant="destructive" disabled={data.demo}>Remove</Button>
+			</div>
+		{/snippet}
 	</Dialog>
 </div>

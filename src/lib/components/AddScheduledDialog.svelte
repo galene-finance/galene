@@ -255,8 +255,8 @@
 			<input type="hidden" name="id" value={editing.id} />
 		</form>
 	{/if}
-	<form bind:this={formEl} method="POST" action={action} use:enhance={handleSubmit} class="{scopeStep ? 'hidden' : 'flex'} flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
-		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
+	<form id="scheduled-dialog-form" bind:this={formEl} method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0" hidden={scopeStep ? true : undefined}>
 		{#each Object.entries(extraHidden) as [k, v] (k)}
 			<input type="hidden" name={k} value={v} />
 		{/each}
@@ -401,58 +401,61 @@
 			</Field>
 		</div>
 
-		{#if form?.error}
+		{#if !scopeStep && form?.error}
 			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
 		{/if}
 
-		<div class="flex items-center gap-2">
-			{#if editing && deleteAction}
-				<Button
-					variant="destructive"
-					type="button"
-					class="mr-auto"
-					disabled={saving}
-					onclick={() => (document.getElementById('sched-delete-form') as HTMLFormElement | null)?.requestSubmit()}
-				>
-					Delete
-				</Button>
-			{/if}
-			<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
-			{#if editing}
-				<Button type="button" pending={saving} onclick={() => { editScope = 'following'; scopeStep = true; }}>Save changes</Button>
-			{:else}
-				<Button type="submit" pending={saving}>{saving ? 'Saving…' : 'Add expectation'}</Button>
-			{/if}
-		</div>
 		</fieldset>
-	</form>
-	{#if scopeStep}
-		<p class="text-sm text-muted-foreground">{scopeContext}</p>
-		<p class="mt-3 text-sm font-medium">Apply this change to:</p>
-		<fieldset disabled={saving} class="m-0 mt-2 flex flex-col gap-2 border-0 p-0">
-			<label class="flex items-start gap-2 text-sm">
-				<input type="radio" name="schedule_edit_scope" value="once" bind:group={editScope} />
-				<span>Just this date (exception on that one occurrence; rest of the series unchanged)</span>
-			</label>
-			<label class="flex items-start gap-2 text-sm">
-				<input type="radio" name="schedule_edit_scope" value="following" bind:group={editScope} />
-				<span>This date and everything after (default)</span>
-			</label>
-			<label class="flex items-start gap-2 text-sm">
-				<input type="radio" name="schedule_edit_scope" value="all" bind:group={editScope} />
-				<span>The whole series, including the past</span>
-			</label>
-			<label class="flex items-start gap-2 text-sm">
-				<input type="radio" name="schedule_edit_scope" value="new" bind:group={editScope} />
-				<span>Keep the old series and start a new one from here (past stays as it was; new schedule from this date)</span>
-			</label>
-		</fieldset>
-		{#if form?.error}
-			<p class="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
+		{#if scopeStep}
+			<p class="text-sm text-muted-foreground">{scopeContext}</p>
+			<p class="mt-3 text-sm font-medium">Apply this change to:</p>
+			<fieldset disabled={saving} class="m-0 mt-2 flex flex-col gap-2 border-0 p-0">
+				<label class="flex items-start gap-2 text-sm">
+					<input type="radio" name="schedule_edit_scope" value="once" bind:group={editScope} />
+					<span>Just this date (exception on that one occurrence; rest of the series unchanged)</span>
+				</label>
+				<label class="flex items-start gap-2 text-sm">
+					<input type="radio" name="schedule_edit_scope" value="following" bind:group={editScope} />
+					<span>This date and everything after (default)</span>
+				</label>
+				<label class="flex items-start gap-2 text-sm">
+					<input type="radio" name="schedule_edit_scope" value="all" bind:group={editScope} />
+					<span>The whole series, including the past</span>
+				</label>
+				<label class="flex items-start gap-2 text-sm">
+					<input type="radio" name="schedule_edit_scope" value="new" bind:group={editScope} />
+					<span>Keep the old series and start a new one from here (past stays as it was; new schedule from this date)</span>
+				</label>
+			</fieldset>
+			{#if form?.error}
+				<p class="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
+			{/if}
 		{/if}
-		<div class="mt-4 flex items-center justify-end gap-2">
-			<Button variant="secondary" type="button" disabled={saving} onclick={() => (scopeStep = false)}>Cancel</Button>
-			<Button type="button" pending={saving} onclick={() => formEl?.requestSubmit()}>{saving ? 'Saving…' : 'Save'}</Button>
+	</form>
+	{#snippet footer()}
+		<div class="flex items-center gap-2">
+			{#if scopeStep}
+				<Button variant="secondary" type="button" class="ml-auto" disabled={saving} onclick={() => (scopeStep = false)}>Cancel</Button>
+				<Button type="submit" form="scheduled-dialog-form" pending={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+			{:else}
+				{#if editing && deleteAction}
+					<Button
+						variant="destructive"
+						type="button"
+						class="mr-auto"
+						disabled={saving}
+						onclick={() => (document.getElementById('sched-delete-form') as HTMLFormElement | null)?.requestSubmit()}
+					>
+						Delete
+					</Button>
+				{/if}
+				<Button variant="secondary" type="button" class="ml-auto" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
+				{#if editing}
+					<Button type="button" pending={saving} onclick={() => { editScope = 'following'; scopeStep = true; }}>Save changes</Button>
+				{:else}
+					<Button type="submit" form="scheduled-dialog-form" pending={saving}>{saving ? 'Saving…' : 'Add expectation'}</Button>
+				{/if}
+			{/if}
 		</div>
-	{/if}
+	{/snippet}
 </Dialog>

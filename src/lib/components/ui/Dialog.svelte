@@ -35,6 +35,15 @@
 	const sizes = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl' };
 
 	/**
+	 * Desktop (sm+): centered with translate. Below 640px: a bottom sheet.
+	 * Positioning is Tailwind utilities, not unlayered CSS — lightningcss
+	 * drops `translate: none` from a hand-written rule, and the -translate-*
+	 * utilities (layered) then keep the sheet shifted by half its size.
+	 */
+	const sheet =
+		'max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-b-none';
+
+	/**
 	 * Height: 100vh is the large viewport on iOS (toolbar hidden), so a box
 	 * capped with it and centered with translate overflows the visible area.
 	 * 100dvh tracks the visible viewport; vh remains as a fallback.
@@ -56,7 +65,7 @@
 	<BitsDialog.Portal>
 		<BitsDialog.Overlay class="fixed inset-0 z-50 bg-black/60" />
 		<BitsDialog.Content
-			class="dialog-content fixed left-1/2 top-1/2 z-50 flex w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-xl {sizes[size]} {className}"
+			class="dialog-content fixed left-1/2 top-1/2 z-50 flex w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-xl {sizes[size]} {sheet} {className}"
 			{onOpenAutoFocus}
 			{onCloseAutoFocus}
 			interactOutsideBehavior={busy ? 'ignore' : 'close'}

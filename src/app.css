@@ -142,23 +142,15 @@ body {
 }
 
 /*
- * Narrow screens: bottom sheet, still inside the visible viewport.
- * Each property is listed twice so it beats the single-class Tailwind
- * utilities (top-1/2, left-1/2, w-[…], -translate-*) on the same element.
+ * Narrow screens: leave a strip of overlay above the sheet so a backdrop
+ * tap can still dismiss. Position, width, translate, and corner radius are
+ * Tailwind utilities on Dialog Content (max-sm:). An unlayered translate/transform
+ * here is dropped by lightningcss (`translate: none` → nothing) while the
+ * utilities stay in @layer, so the sheet kept the desktop -50%/-50% shift.
  */
 @media (width < 640px) {
-	.dialog-content.dialog-content {
-		top: auto;
-		right: 0;
-		bottom: 0;
-		left: 0;
-		width: 100%;
-		/* Leave a strip of overlay so a backdrop tap can still dismiss. */
+	.dialog-content {
 		max-height: calc(100vh - 2rem - env(safe-area-inset-top, 0px));
 		max-height: calc(100dvh - 2rem - env(safe-area-inset-top, 0px));
-		translate: none;
-		transform: none;
-		border-bottom-left-radius: 0;
-		border-bottom-right-radius: 0;
 	}
 }

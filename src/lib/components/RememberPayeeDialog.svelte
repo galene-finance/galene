@@ -51,7 +51,7 @@
 	description="Future imports and uncategorized transactions whose merchant matches will get this category. Already-categorized rows stay unchanged unless you opt in below."
 >
 	{#if transaction}
-		<form method="POST" {action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+		<form id="remember-payee-form" method="POST" {action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
 			<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 			<input type="hidden" name="id" value={transaction.id} />
 			<input type="hidden" name="merchant" value={transaction.merchant ?? ''} />
@@ -86,11 +86,15 @@
 			{#if form?.error}
 				<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
 			{/if}
-			<div class="flex justify-end gap-2">
-				<Button type="button" variant="secondary" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
-				<Button type="submit" pending={saving}>{saving ? 'Saving…' : 'Remember payee'}</Button>
-			</div>
 			</fieldset>
 		</form>
 	{/if}
+	{#snippet footer()}
+		{#if transaction}
+			<div class="flex justify-end gap-2">
+				<Button type="button" variant="secondary" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
+				<Button type="submit" form="remember-payee-form" pending={saving}>{saving ? 'Saving…' : 'Remember payee'}</Button>
+			</div>
+		{/if}
+	{/snippet}
 </Dialog>

@@ -139,6 +139,7 @@
 >
 	{#if ready}
 	<form
+		id="webhook-dialog-form"
 		method="POST"
 		action={editing ? '?/update-webhook' : '?/create-webhook'}
 		use:enhance={handleSubmit}
@@ -260,21 +261,27 @@
 				<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.webhookError}</p>
 			{/if}
 
-			<div class="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-				<Button type="submit" pending={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create webhook'}</Button>
+		</fieldset>
+	</form>
+	{/if}
+	{#snippet footer()}
+		{#if ready}
+			<div class="flex flex-wrap items-center gap-2">
+				<Button type="submit" form="webhook-dialog-form" pending={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create webhook'}</Button>
 				<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
 				{#if editing}
 					<Button
 						type="submit"
+						form="webhook-dialog-form"
 						variant="ghost"
 						class="ml-auto text-destructive hover:bg-destructive/10"
+						disabled={saving}
 						formaction="?/delete-webhook"
 					>
 						Delete webhook
 					</Button>
 				{/if}
 			</div>
-		</fieldset>
-	</form>
-	{/if}
+		{/if}
+	{/snippet}
 </Dialog>

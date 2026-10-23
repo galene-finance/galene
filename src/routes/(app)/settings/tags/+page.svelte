@@ -136,16 +136,18 @@
 	title={tagEditId ? 'Edit tag' : 'Add tag'}
 	description={tagEditId ? 'Rename this tag. Transactions keep the same tag.' : 'Create a free-form label for transactions.'}
 >
-	<form method="POST" action="?/save-tag" use:enhance class="flex flex-col gap-4">
+	<form id="tag-edit-form" method="POST" action="?/save-tag" use:enhance class="flex flex-col gap-4">
 		<input type="hidden" name="id" value={tagEditId ?? ''} />
 		<Field label="Name" error={editError || null}>
 			<Input type="text" name="name" bind:value={tagName} required placeholder="e.g. trip" />
 		</Field>
+	</form>
+	{#snippet footer()}
 		<div class="flex justify-end gap-2">
 			<Button type="button" variant="secondary" onclick={closeEdit}>Cancel</Button>
-			<Button type="submit">{tagEditId ? 'Save changes' : 'Add tag'}</Button>
+			<Button type="submit" form="tag-edit-form">{tagEditId ? 'Save changes' : 'Add tag'}</Button>
 		</div>
-	</form>
+	{/snippet}
 </Dialog>
 
 <Dialog
@@ -154,15 +156,17 @@
 	description="This tag is removed from all transactions and scheduled items, then deleted. Transactions themselves stay."
 >
 	{#if pendingDelete}
-		<form method="POST" action="?/delete-tag" use:enhance class="flex flex-col gap-4">
+		<form id="tag-delete-form" method="POST" action="?/delete-tag" use:enhance class="flex flex-col gap-4">
 			<input type="hidden" name="id" value={pendingDelete.id} />
 			{#if deleteError}
 				<p class="text-sm text-destructive">{deleteError}</p>
 			{/if}
-			<div class="flex justify-end gap-2">
-				<Button type="button" variant="secondary" onclick={closeDelete}>Cancel</Button>
-				<Button type="submit" variant="destructive">Delete tag</Button>
-			</div>
 		</form>
 	{/if}
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button type="button" variant="secondary" onclick={closeDelete}>Cancel</Button>
+			<Button type="submit" form="tag-delete-form" variant="destructive">Delete tag</Button>
+		</div>
+	{/snippet}
 </Dialog>

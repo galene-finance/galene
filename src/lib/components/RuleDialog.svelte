@@ -126,7 +126,7 @@
 	title={editing ? 'Edit categorization rule' : 'New categorization rule'}
 	description="Matching transactions are auto-assigned this category when they come in without one."
 >
-	<form method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+	<form id="rule-dialog-form" method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
 		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 		<Field label="Rule name">
 			<Input type="text" bind:value={name} placeholder='e.g. "Whole Foods → Groceries"' required />
@@ -184,10 +184,12 @@
 			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
 		{/if}
 
-		<div class="flex justify-end gap-2">
-			<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
-			<Button type="submit" pending={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create rule'}</Button>
-		</div>
 		</fieldset>
 	</form>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
+			<Button type="submit" form="rule-dialog-form" pending={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create rule'}</Button>
+		</div>
+	{/snippet}
 </Dialog>

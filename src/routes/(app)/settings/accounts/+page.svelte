@@ -354,7 +354,7 @@
 		? 'Update name, type, color, or opening balance.'
 		: 'Create a bank, credit, cash, investment, or other account.'}
 >
-	<form method="POST" action="?/save-account" use:enhance class="flex flex-col gap-4">
+	<form id="account-edit-form" method="POST" action="?/save-account" use:enhance class="flex flex-col gap-4">
 		<input type="hidden" name="id" value={accEditId ?? ''} />
 		<Field label="Name" error={editError || null}>
 			<Input type="text" name="name" bind:value={accName} required placeholder="e.g. Checking" />
@@ -453,11 +453,13 @@
 				</div>
 			{/if}
 		</div>
+	</form>
+	{#snippet footer()}
 		<div class="flex justify-end gap-2">
 			<Button type="button" variant="secondary" onclick={closeEdit}>Cancel</Button>
-			<Button type="submit">{accEditId ? 'Save changes' : 'Add account'}</Button>
+			<Button type="submit" form="account-edit-form">{accEditId ? 'Save changes' : 'Add account'}</Button>
 		</div>
-	</form>
+	{/snippet}
 </Dialog>
 
 <Dialog
@@ -466,24 +468,27 @@
 	description="Every transaction must stay on an account. Choose where to move this account’s transactions (and scheduled items), then the account is removed."
 >
 	{#if pendingDelete}
-		<form method="POST" action="?/delete-account" use:enhance class="flex flex-col gap-4">
+		<form id="account-delete-form" method="POST" action="?/delete-account" use:enhance class="flex flex-col gap-4">
 			<input type="hidden" name="id" value={pendingDelete.id} />
 			{#if canReassign}
 				<Field label="Move transactions to…" error={deleteError || null}>
 					<Select name="reassign_to" bind:value={reassignTo} items={reassignItems} />
 				</Field>
-				<div class="flex justify-end gap-2">
-					<Button type="button" variant="secondary" onclick={closeDelete}>Cancel</Button>
-					<Button type="submit" variant="destructive">Delete account</Button>
-				</div>
 			{:else}
 				<p class="text-sm text-destructive">{deleteError}</p>
-				<div class="flex justify-end gap-2">
-					<Button type="button" variant="secondary" onclick={closeDelete}>Close</Button>
-				</div>
 			{/if}
 		</form>
 	{/if}
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			{#if canReassign}
+				<Button type="button" variant="secondary" onclick={closeDelete}>Cancel</Button>
+				<Button type="submit" form="account-delete-form" variant="destructive">Delete account</Button>
+			{:else}
+				<Button type="button" variant="secondary" onclick={closeDelete}>Close</Button>
+			{/if}
+		</div>
+	{/snippet}
 </Dialog>
 
 {#if !data.demo}
@@ -493,7 +498,7 @@
 	description="This permanently deletes the account and every transaction on it. Splits, tags, and sync reviews for those transactions go with them. This cannot be undone."
 >
 	{#if pendingPurge}
-		<form method="POST" action="?/delete-account-with-transactions" use:enhance class="flex flex-col gap-4">
+		<form id="account-purge-form" method="POST" action="?/delete-account-with-transactions" use:enhance class="flex flex-col gap-4">
 			<input type="hidden" name="id" value={pendingPurge.id} />
 			<p class="text-sm">
 				This account has {pendingPurge.txn_count} transaction{pendingPurge.txn_count === 1 ? '' : 's'}.
@@ -502,11 +507,13 @@
 			<Field label="Confirmation" error={purgeError || null}>
 				<Input type="text" bind:value={purgeConfirm} autocomplete="off" placeholder={purgePhrase} />
 			</Field>
-			<div class="flex justify-end gap-2">
-				<Button type="button" variant="secondary" onclick={closePurge}>Cancel</Button>
-				<Button type="submit" variant="destructive" disabled={!purgeMatches}>Delete account and its transactions</Button>
-			</div>
 		</form>
 	{/if}
+	{#snippet footer()}
+		<div class="flex flex-wrap justify-end gap-2">
+			<Button type="button" variant="secondary" onclick={closePurge}>Cancel</Button>
+			<Button type="submit" form="account-purge-form" variant="destructive" disabled={!purgeMatches}>Delete account and its transactions</Button>
+		</div>
+	{/snippet}
 </Dialog>
 {/if}

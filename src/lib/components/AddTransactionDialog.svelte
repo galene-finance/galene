@@ -165,7 +165,7 @@
 	title={editing ? 'Edit transaction' : 'Add transaction'}
 	description={editing ? undefined : 'Record a one-time income or expense.'}
 >
-	<form method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+	<form id="transaction-dialog-form" method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
 		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 		<div class="flex gap-2" role="radiogroup" aria-label="Transaction type">
 			<button
@@ -260,11 +260,15 @@
 			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
 		{/if}
 
-		<div class="flex flex-wrap justify-end gap-2">
+		</fieldset>
+	</form>
+	{#snippet footer()}
+		<div class="flex flex-wrap items-center justify-end gap-2">
 			{#if editing && merchant.trim() && categoryId && onRememberPayee}
 				<Button
 					type="button"
 					variant="secondary"
+					class="mr-auto"
 					disabled={saving}
 					onclick={() => {
 						const cat = categories.find((c) => String(c.id) === categoryId);
@@ -278,8 +282,7 @@
 				>Remember this payee</Button>
 			{/if}
 			<Button variant="secondary" type="button" disabled={saving} onclick={() => (open = false)}>Cancel</Button>
-			<Button type="submit" pending={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Add transaction'}</Button>
+			<Button type="submit" form="transaction-dialog-form" pending={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Add transaction'}</Button>
 		</div>
-		</fieldset>
-	</form>
+	{/snippet}
 </Dialog>

@@ -78,15 +78,17 @@
 		</p>
 	</div>
 
-	<div class="mt-5 flex items-center gap-2">
-		<Button variant="ghost" onclick={reset}>Reset</Button>
-		<span class="flex-1"></span>
-		<Button variant="secondary" onclick={() => (open = false)}>Cancel</Button>
-		<Button
-			onclick={() => {
-				onSave(buildFilters());
-				open = false;
-			}}>Save</Button
-		>
-	</div>
+	{#snippet footer()}
+		<div class="flex items-center gap-2">
+			<Button variant="ghost" onclick={reset}>Reset</Button>
+			<span class="flex-1"></span>
+			<Button variant="secondary" onclick={() => (open = false)}>Cancel</Button>
+			<Button
+				onclick={() => {
+					onSave(buildFilters());
+					open = false;
+				}}>Save</Button
+			>
+		</div>
+	{/snippet}
 </Dialog>

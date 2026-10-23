@@ -235,7 +235,7 @@
 		? 'Update this category. Transfer categories stay out of cashflow income/expense by default.'
 		: 'Create a named category bucket (or a transfer). Optional subcategory and color.'}
 >
-	<form method="POST" action="?/save-category" use:enhance class="flex flex-col gap-4">
+	<form id="category-edit-form" method="POST" action="?/save-category" use:enhance class="flex flex-col gap-4">
 		<input type="hidden" name="id" value={catEditId ?? ''} />
 		<Field label="Name" error={editError || null}>
 			<Input type="text" name="name" bind:value={catName} required placeholder="e.g. Groceries" />
@@ -252,11 +252,13 @@
 		<Field label="Color">
 			<ColorPicker name="color" bind:value={catColor} />
 		</Field>
+	</form>
+	{#snippet footer()}
 		<div class="flex justify-end gap-2">
 			<Button type="button" variant="secondary" onclick={closeEdit}>Cancel</Button>
-			<Button type="submit">{catEditId ? 'Save changes' : 'Add category'}</Button>
+			<Button type="submit" form="category-edit-form">{catEditId ? 'Save changes' : 'Add category'}</Button>
 		</div>
-	</form>
+	{/snippet}
 </Dialog>
 
 <Dialog
@@ -265,15 +267,17 @@
 	description="Transactions on this category (and any subcategories) move to the choice below, then the category is removed. Subcategories are deleted with it."
 >
 	{#if pendingDelete}
-		<form method="POST" action="?/delete-category" use:enhance class="flex flex-col gap-4">
+		<form id="category-delete-form" method="POST" action="?/delete-category" use:enhance class="flex flex-col gap-4">
 			<input type="hidden" name="id" value={pendingDelete.id} />
 			<Field label="Move transactions to…" error={deleteError || null}>
 				<Select name="reassign_to" bind:value={reassignTo} items={reassignItems} />
 			</Field>
-			<div class="flex justify-end gap-2">
-				<Button type="button" variant="secondary" onclick={closeDelete}>Cancel</Button>
-				<Button type="submit" variant="destructive">Delete category</Button>
-			</div>
 		</form>
 	{/if}
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button type="button" variant="secondary" onclick={closeDelete}>Cancel</Button>
+			<Button type="submit" form="category-delete-form" variant="destructive">Delete category</Button>
+		</div>
+	{/snippet}
 </Dialog>

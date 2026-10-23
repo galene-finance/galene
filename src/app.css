@@ -93,3 +93,72 @@ body {
 		font-size: 16px !important;
 	}
 }
+
+/*
+ * Dialog height and scroll. Unlayered on purpose: bits-ui sets
+ * `contain: layout` on Dialog.Content, and a Svelte-scoped rule inside that
+ * box is dropped, so max-height never applied.
+ *
+ * 100vh is the large viewport on iOS (toolbar hidden). A box capped with it
+ * and centered with translate overflows the visible area. 100dvh tracks the
+ * visible viewport; the vh line stays as a fallback.
+ */
+.dialog-content {
+	max-height: calc(100vh - 2rem);
+	max-height: calc(100dvh - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+}
+
+.dialog-body {
+	-webkit-overflow-scrolling: touch;
+}
+
+/*
+ * A .dialog-actions row left inside children sticks to the bottom of the
+ * only scroller and stays in its form. The footer slot is also .dialog-actions
+ * but is excluded here — it sits outside the scroller.
+ */
+.dialog-body .dialog-actions:not(.dialog-footer) {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	display: flex;
+	margin: 1rem -1.25rem -1rem;
+	padding: 0.75rem 1.25rem;
+	padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+	background: var(--surface);
+	border-top: 1px solid var(--border);
+}
+
+.dialog-footer:not(:has(*)) {
+	display: none;
+}
+
+.dialog-footer.dialog-actions {
+	display: block;
+	padding: 0.75rem 1.25rem;
+	padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+	background: var(--surface);
+	border-top: 1px solid var(--border);
+}
+
+/*
+ * Narrow screens: bottom sheet, still inside the visible viewport.
+ * Each property is listed twice so it beats the single-class Tailwind
+ * utilities (top-1/2, left-1/2, w-[…], -translate-*) on the same element.
+ */
+@media (width < 640px) {
+	.dialog-content.dialog-content {
+		top: auto;
+		right: 0;
+		bottom: 0;
+		left: 0;
+		width: 100%;
+		/* Leave a strip of overlay so a backdrop tap can still dismiss. */
+		max-height: calc(100vh - 2rem - env(safe-area-inset-top, 0px));
+		max-height: calc(100dvh - 2rem - env(safe-area-inset-top, 0px));
+		translate: none;
+		transform: none;
+		border-bottom-left-radius: 0;
+		border-bottom-right-radius: 0;
+	}
+}

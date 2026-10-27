@@ -18,7 +18,6 @@ import type {
 	ForecastBehavior,
 	RepeatUnit,
 	RuleCondition,
-	ScheduleDeleteScope,
 	ScheduleEditScope,
 	Scheduled,
 	ScheduledException,
@@ -1886,20 +1885,20 @@ export function scheduledInputFromForm(userId: number, form: FormData): { input?
 	};
 }
 
-/** Delete form: `id`, `delete_scope` (once | following | all; default all), optional `occurrence_date`. */
+/**
+ * Delete form: `id`, `delete_scope` (once | following | all), optional `occurrence_date`.
+ * A missing scope is passed through as undefined; deleteScheduledScoped decides whether that is allowed.
+ */
 export function scheduledDeleteFromForm(
 	userId: number,
 	form: FormData
-): { id?: number; scope?: ScheduleDeleteScope; occurrenceDate?: string | null; error?: string } {
+): { id?: number; scope?: string; occurrenceDate?: string | null; error?: string } {
 	const id = parseInt(String(form.get('id') ?? ''), 10);
 	if (!Number.isFinite(id) || !ownsId('scheduled', userId, id)) {
 		return { error: 'Scheduled expectation not found.' };
 	}
-	const raw = String(form.get('delete_scope') ?? '').trim() || 'all';
-	if (raw !== 'once' && raw !== 'following' && raw !== 'all') {
-		return { error: 'Choose what to delete.' };
-	}
-	const scope: ScheduleDeleteScope = raw;
+	const rawScope = form.get('delete_scope');
+	const scope = rawScope == null ? undefined : String(rawScope).trim();
 	const occ = String(form.get('occurrence_date') ?? '').trim();
 	if (occ && !/^\d{4}-\d{2}-\d{2}$/.test(occ)) return { error: 'Enter a valid occurrence date.' };
 	return { id, scope, occurrenceDate: occ || null };
@@ -2029,6 +2028,34 @@ function endSeriesBefore(userId: number, id: number, anchor: string) {
 	d.query('DELETE FROM scheduled_exceptions WHERE scheduled_id = ? AND occurrence_date >= ?').run(id, anchor);
 }
 
+/**
+ * Split a series at `anchor` (edit scope "new"): the old series ends the day before, a new series starts at
+ * `anchor`. Per-date exceptions on or after the split (skips, and one-off overrides after the edited date) move
+ * to the new series when that date is still one of its occurrences; earlier ones stay on the old series.
+ * The only split path: UI edits and the write API both reach it through applyScheduledEdit.
+ */
+function splitSeries(userId: number, id: number, anchor: string, input: ScheduledInput): number {
+	const d = db();
+	const created = persistScheduled(userId, { ...input, id: undefined, startDate: anchor, editScope: undefined });
+	setScheduledTags(userId, created, input.tags);
+	const carried = d
+		.query(
+			`SELECT id, occurrence_date FROM scheduled_exceptions
+			 WHERE scheduled_id = ? AND occurrence_date >= ? AND (skipped = 1 OR occurrence_date > ?)
+			 ORDER BY occurrence_date`
+		)
+		.all(id, anchor, anchor) as { id: number; occurrence_date: string }[];
+	if (carried.length) {
+		const fresh = getScheduled(userId).find((s) => s.id === created);
+		const last = carried[carried.length - 1].occurrence_date;
+		const dates = new Set(fresh ? expandScheduled(fresh, anchor, last).map((o) => o.date) : []);
+		const move = d.query('UPDATE scheduled_exceptions SET scheduled_id = ? WHERE id = ?');
+		for (const ex of carried) if (dates.has(ex.occurrence_date)) move.run(created, ex.id);
+	}
+	endSeriesBefore(userId, id, anchor);
+	return created;
+}
+
 function applyScheduledEdit(userId: number, id: number, input: ScheduledInput): number {
 	const existing = getScheduled(userId).find((s) => s.id === id);
 	if (!existing) throw new Error('Scheduled expectation not found.');
@@ -2094,10 +2121,7 @@ function applyScheduledEdit(userId: number, id: number, input: ScheduledInput): 
 				);
 			setChildTags(userId, 'scheduled_revision_tags', 'revision_id', Number(inserted.lastInsertRowid), input.tags);
 		} else if (scope === 'new') {
-			endSeriesBefore(userId, id, anchor);
-			const created = persistScheduled(userId, { ...input, id: undefined, startDate: anchor, editScope: undefined });
-			setScheduledTags(userId, created, input.tags);
-			resultId = created;
+			resultId = splitSeries(userId, id, anchor, input);
 		}
 		d.run('COMMIT');
 		return resultId;
@@ -2150,18 +2174,31 @@ export interface ScheduledDeleteResult {
 export function deleteScheduledScoped(
 	userId: number,
 	id: number,
-	scope: ScheduleDeleteScope,
+	scope: string | null | undefined,
 	occurrenceDate?: string | null
 ): ScheduledDeleteResult {
 	const existing = getScheduled(userId).find((s) => s.id === id);
 	if (!existing) throw new Error('Scheduled expectation not found.');
-	if (scope !== 'once' && scope !== 'following' && scope !== 'all') throw new Error('Choose what to delete.');
-	if (!existing.recurring || scope === 'all') {
+	if (scope != null && scope !== 'once' && scope !== 'following' && scope !== 'all') {
+		throw new Error('scope must be once, following, or all.');
+	}
+	const dates = expandScheduled(existing, existing.start_date, '9999-12-31').map((o) => o.date);
+	if (occurrenceDate != null && !dates.includes(occurrenceDate)) {
+		throw new Error('That date is not part of this schedule.');
+	}
+	if ((scope === 'once' || scope === 'following') && !occurrenceDate) {
+		throw new Error(`occurrence_date is required for scope ${scope}.`);
+	}
+	if (!existing.recurring) {
+		deleteScheduled(userId, id);
+		return { removed: 'series', id };
+	}
+	if (scope == null) throw new Error('scope is required for a recurring schedule: once, following, or all.');
+	if (scope === 'all' || !occurrenceDate) {
 		deleteScheduled(userId, id);
 		return { removed: 'series', id };
 	}
 	const anchor = resolveScopeAnchor(existing, occurrenceDate);
-	const dates = expandScheduled(existing, existing.start_date, '9999-12-31').map((o) => o.date);
 	const first = dates[0];
 	if (scope === 'following' && anchor <= first) {
 		deleteScheduled(userId, id);

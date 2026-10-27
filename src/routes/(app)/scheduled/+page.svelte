@@ -22,6 +22,7 @@
 			accounts: Account[];
 			categories: Category[];
 			tags: Tag[];
+			demo?: boolean;
 		};
 	} = $props();
 
@@ -208,6 +209,6 @@
 	categories={data.categories}
 	tags={data.tags}
 	{form}
-	deleteAction="?/delete-scheduled"
+	deleteAction={data.demo ? null : '?/delete-scheduled'}
 	onclose={closeScheduled}
 />

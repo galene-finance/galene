@@ -36,7 +36,28 @@ curl -X POST -H "Authorization: Bearer galene_…" -H "Content-Type: application
   http://localhost:3000/api/v1/transactions
 ```
 
-`PATCH` and `DELETE` use the row id, for example `/api/v1/transactions/42`. Account delete requires `reassign_to`. Schedule updates accept `edit_scope` of `once`, `following`, `all`, or `new` when changing an existing series. Schedule deletes accept `scope` of `once` (skip one date), `following` (end the series before that date), or `all` (the default), plus `occurrence_date` for the first two, as query parameters or a JSON body. Deleting a schedule never changes posted transactions.
+`PATCH` and `DELETE` use the row id, for example `/api/v1/transactions/42`. Account delete requires `reassign_to`. Schedule updates accept `edit_scope` of `once`, `following`, `all`, or `new` when changing an existing series. With `new`, skipped dates and one-off changes on later dates move to the new series; earlier ones stay on the old series.
+
+### Deleting a schedule
+
+`DELETE /api/v1/scheduled/:id` takes `scope` and `occurrence_date` (`YYYY-MM-DD`) as query parameters or a JSON body.
+
+| Request | Result |
+| --- | --- |
+| Recurring, `scope=once` with a date in the series | 200. Skips that one date. The series stays. |
+| Recurring, `scope=following` with a date in the series | 200. Ends the series before that date. On the first date, deletes the whole series. |
+| Recurring, `scope=all` | 200. Deletes the whole series. A date is optional; if sent, it must be in the series. |
+| Recurring, no `scope` | 400 |
+| One-time, no `scope` | 200. Deletes it. |
+| One-time, any `scope` with its own date | 200. Deletes it. |
+| One-time, `occurrence_date` that is not its date | 400 |
+| Empty or unknown `scope` (scope values are lowercase) | 400 |
+| `once` or `following` without `occurrence_date`, recurring or one-time | 400 |
+| `occurrence_date` that is not a date of the schedule, or not `YYYY-MM-DD` | 400 |
+| Unknown id, or a schedule owned by another user | 404 |
+| Demo mode | 403 |
+
+A 400, 403, or 404 changes nothing. Deleting a schedule never changes posted transactions.
 
 ## Webhooks
 

@@ -17,6 +17,7 @@ const { closeDbForTests, db } = await import('./db');
 const { deleteScheduledScoped, getOccurrences, getScheduled, saveScheduled, scheduledDeleteFromForm } = await import(
 	'./finance'
 );
+const { deleteScheduledAction } = await import('./scheduledDeleteAction');
 
 afterAll(() => {
 	closeDbForTests();
@@ -101,13 +102,91 @@ describe('schedule delete scopes', () => {
 		expect(getScheduled(uid())).toHaveLength(0);
 	});
 
-	test('a non-recurring item is deleted whatever the scope', () => {
-		db().query('DELETE FROM scheduled').run();
-		saveScheduled(uid(), input({ repeats: false, repeatInterval: null, repeatUnit: null, untilDate: null }));
-		const row = getScheduled(uid())[0];
+	test('a non-recurring item: no scope or its own date deletes it; another date is refused', () => {
+		const oneTime = () => {
+			db().query('DELETE FROM scheduled').run();
+			saveScheduled(uid(), input({ repeats: false, repeatInterval: null, repeatUnit: null, untilDate: null }));
+			return getScheduled(uid())[0];
+		};
+		let row = oneTime();
 		expect(row.recurring).toBe(false);
+		expect(() => deleteScheduledScoped(uid(), row.id, 'once', '2026-02-01')).toThrow('That date is not part of this schedule.');
+		expect(getScheduled(uid())).toHaveLength(1);
 		expect(deleteScheduledScoped(uid(), row.id, 'once', '2026-01-01').removed).toBe('series');
+		row = oneTime();
+		expect(deleteScheduledScoped(uid(), row.id, undefined).removed).toBe('series');
 		expect(getScheduled(uid())).toHaveLength(0);
+	});
+
+	test('a recurring item needs a valid scope, and once/following need a date', () => {
+		const id = reset();
+		expect(() => deleteScheduledScoped(uid(), id, undefined)).toThrow('scope is required');
+		expect(() => deleteScheduledScoped(uid(), id, '')).toThrow('scope must be once, following, or all.');
+		expect(() => deleteScheduledScoped(uid(), id, 'everything')).toThrow('scope must be once, following, or all.');
+		expect(() => deleteScheduledScoped(uid(), id, 'once')).toThrow('occurrence_date is required');
+		expect(() => deleteScheduledScoped(uid(), id, 'following', null)).toThrow('occurrence_date is required');
+		expect(() => deleteScheduledScoped(uid(), id, 'all', '2026-03-15')).toThrow('That date is not part of this schedule.');
+		expect(dates()).toHaveLength(6);
+	});
+
+	test('splitting with edit scope new moves later skips to the new series (QA repro)', () => {
+		db().query('DELETE FROM scheduled').run();
+		saveScheduled(uid(), input({ startDate: '2026-10-25', repeatUnit: 'week', untilDate: null }));
+		const oldId = getScheduled(uid())[0].id;
+		deleteScheduledScoped(uid(), oldId, 'once', '2026-11-08');
+		deleteScheduledScoped(uid(), oldId, 'once', '2026-11-29');
+		const newId = saveScheduled(
+			uid(),
+			input({ id: oldId, startDate: '2026-11-22', repeatUnit: 'week', untilDate: null, amountCents: -12000, editScope: 'new', occurrenceDate: '2026-11-22' })
+		);
+		expect(newId).not.toBe(oldId);
+		const occ = (sid: number) => {
+			const row = getScheduled(uid()).find((r) => r.id === sid)!;
+			return getOccurrences(row, '2026-10-01', '2026-12-31');
+		};
+		expect(occ(oldId)).toEqual(['2026-10-25', '2026-11-01', '2026-11-15']);
+		expect(occ(newId)).toEqual(['2026-11-22', '2026-12-06', '2026-12-13', '2026-12-20', '2026-12-27']);
+		const skips = db()
+			.query('SELECT scheduled_id, occurrence_date FROM scheduled_exceptions WHERE skipped = 1 ORDER BY occurrence_date')
+			.all();
+		expect(skips).toEqual([
+			{ scheduled_id: oldId, occurrence_date: '2026-11-08' },
+			{ scheduled_id: newId, occurrence_date: '2026-11-29' }
+		]);
+	});
+
+	test('a split carries a one-off override after the split date, not the edited date', () => {
+		db().query('DELETE FROM scheduled').run();
+		saveScheduled(uid(), input({ startDate: '2026-10-25', repeatUnit: 'week', untilDate: '2026-12-13' }));
+		const oldId = getScheduled(uid())[0].id;
+		saveScheduled(uid(), input({ id: oldId, startDate: '2026-11-22', repeatUnit: 'week', untilDate: '2026-12-13', amountCents: -1, editScope: 'once', occurrenceDate: '2026-11-22' }));
+		saveScheduled(uid(), input({ id: oldId, startDate: '2026-12-06', repeatUnit: 'week', untilDate: '2026-12-13', amountCents: -2, editScope: 'once', occurrenceDate: '2026-12-06' }));
+		const newId = saveScheduled(
+			uid(),
+			input({ id: oldId, startDate: '2026-11-22', repeatUnit: 'week', untilDate: '2026-12-13', amountCents: -500, editScope: 'new', occurrenceDate: '2026-11-22' })
+		);
+		const rows = db()
+			.query('SELECT scheduled_id, occurrence_date, amount_cents FROM scheduled_exceptions ORDER BY occurrence_date')
+			.all();
+		expect(rows).toEqual([{ scheduled_id: newId, occurrence_date: '2026-12-06', amount_cents: -2 }]);
+	});
+
+	test('the delete form action is refused in demo mode and writes nothing', async () => {
+		const id = reset();
+		const form = new FormData();
+		form.set('id', String(id));
+		form.set('delete_scope', 'all');
+		const request = new Request('http://localhost/scheduled?/delete-scheduled', { method: 'POST', body: form });
+		process.env.GALENE_DEMO = '1';
+		try {
+			const result = (await deleteScheduledAction({ request, locals: { user: { id: uid() } } as App.Locals })) as { status?: number };
+			expect(result.status).toBe(403);
+		} finally {
+			delete process.env.GALENE_DEMO;
+		}
+		expect(dates()).toHaveLength(6);
+		const again = new Request('http://localhost/scheduled?/delete-scheduled', { method: 'POST', body: form });
+		expect(await deleteScheduledAction({ request: again, locals: { user: { id: uid() } } as App.Locals })).toEqual({ ok: true, removed: 'series' });
 	});
 
 	test('a date outside the series does not write', () => {
@@ -141,13 +220,13 @@ describe('schedule delete scopes', () => {
 		expect(snapshot()).toBe(before);
 	});
 
-	test('form parser defaults to all and rejects bad input', () => {
+	test('form parser passes scope through and rejects bad input', () => {
 		const id = reset();
 		const form = new FormData();
 		form.set('id', String(id));
-		expect(scheduledDeleteFromForm(uid(), form)).toEqual({ id, scope: 'all', occurrenceDate: null });
-		form.set('delete_scope', 'everything');
-		expect(scheduledDeleteFromForm(uid(), form).error).toBe('Choose what to delete.');
+		expect(scheduledDeleteFromForm(uid(), form)).toEqual({ id, scope: undefined, occurrenceDate: null });
+		form.set('delete_scope', '');
+		expect(scheduledDeleteFromForm(uid(), form).scope).toBe('');
 		form.set('delete_scope', 'once');
 		form.set('occurrence_date', '03/01/2026');
 		expect(scheduledDeleteFromForm(uid(), form).error).toBe('Enter a valid occurrence date.');

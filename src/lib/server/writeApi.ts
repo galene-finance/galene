@@ -411,8 +411,7 @@ function applyDelete(userId: number, resource: WriteResource, id: number, body: 
 	if (resource === 'schedule') {
 		const before = mustSnapshot('scheduled', userId, id);
 		const rawScope = body.scope ?? body.delete_scope;
-		const scope = rawScope == null || rawScope === '' ? 'all' : String(rawScope);
-		if (scope !== 'once' && scope !== 'following' && scope !== 'all') throw new Error('scope must be once, following, or all.');
+		const scope = rawScope == null ? undefined : String(rawScope).trim();
 		const occurrence = body.occurrence_date == null || body.occurrence_date === '' ? null : String(body.occurrence_date);
 		if (occurrence != null && !/^\d{4}-\d{2}-\d{2}$/.test(occurrence)) throw new Error('occurrence_date must be YYYY-MM-DD.');
 		const result = deleteScheduledScoped(userId, id, scope, occurrence);

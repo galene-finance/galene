@@ -36,7 +36,7 @@ curl -X POST -H "Authorization: Bearer galene_…" -H "Content-Type: application
   http://localhost:3000/api/v1/transactions
 ```
 
-`PATCH` and `DELETE` use the row id, for example `/api/v1/transactions/42`. Account delete requires `reassign_to`. Schedule updates accept `edit_scope` of `once`, `following`, `all`, or `new` when changing an existing series.
+`PATCH` and `DELETE` use the row id, for example `/api/v1/transactions/42`. Account delete requires `reassign_to`. Schedule updates accept `edit_scope` of `once`, `following`, `all`, or `new` when changing an existing series. Schedule deletes accept `scope` of `once` (skip one date), `following` (end the series before that date), or `all` (the default), plus `occurrence_date` for the first two, as query parameters or a JSON body. Deleting a schedule never changes posted transactions.
 
 ## Webhooks
 

@@ -103,6 +103,7 @@ export interface Budget {
 
 /** How an edit of an existing schedule is applied. Occurrences are not stored as transactions. */
 export type ScheduleEditScope = 'once' | 'following' | 'all' | 'new';
+export type ScheduleDeleteScope = 'once' | 'following' | 'all';
 
 /** Fields that replace the series on and after `effective_date`. Earlier dates keep the base row. */
 export interface ScheduledRevision {
@@ -136,6 +137,8 @@ export interface ScheduledException {
 	forecast_behavior: ForecastBehavior;
 	color: string | null;
 	notes: string | null;
+	/** 1 when this occurrence is deleted ('once'); expansion then emits nothing for it. */
+	skipped?: number;
 	account_name?: string | null;
 	category_name?: string | null;
 	tags?: string[];
@@ -162,6 +165,8 @@ export interface Scheduled {
 	/** Loaded for expansion. Not a second recurrence engine. */
 	revisions?: ScheduledRevision[];
 	exceptions?: ScheduledException[];
+	/** True when the base series or any revision repeats. Set by getScheduled. */
+	recurring?: boolean;
 }
 
 export interface RecurringSuggestion {

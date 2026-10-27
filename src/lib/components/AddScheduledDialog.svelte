@@ -89,6 +89,15 @@
 	let saving = $state(false);
 	let scopeStep = $state(false);
 	let editScope = $state<'once' | 'following' | 'all' | 'new'>('following');
+	let deleteStep = $state(false);
+	let deleteScope = $state<'once' | 'following' | 'all'>('once');
+	let deleteError = $state<string | null>(null);
+	/** Base series or any revision repeats. Non-recurring items get a plain confirm. */
+	const recurring = $derived(
+		!!editing &&
+			(editing.recurring ??
+				(editing.repeat_unit != null || (editing.revisions ?? []).some((r) => r.repeat_unit != null)))
+	);
 	let formEl = $state<HTMLFormElement | null>(null);
 
 	const scopeContext = $derived.by(() => {
@@ -137,7 +146,11 @@
 	});
 
 	$effect(() => {
-		if (!open) scopeStep = false;
+		if (!open) {
+			scopeStep = false;
+			deleteStep = false;
+			deleteError = null;
+		}
 	});
 
 	$effect(() => {
@@ -237,13 +250,34 @@
 		};
 		}
 	);
+
+	const handleDelete: SubmitFunction = withPending(
+		(v) => (saving = v),
+		() => {
+			deleteError = null;
+			return async ({ result, update }) => {
+				if (result.type === 'failure') {
+					deleteError = String(result.data?.error ?? 'Could not delete.');
+					return;
+				}
+				await update();
+				if (result.type === 'success' && result.data?.error) {
+					deleteError = String(result.data.error);
+				} else if (result.type === 'redirect' || result.type === 'success') {
+					deleteStep = false;
+					open = false;
+					onclose?.();
+				}
+			};
+		}
+	);
 </script>
 
 <Dialog
 	bind:open
 	size="lg"
 	busy={saving}
-	title={scopeStep ? 'Edit scheduled transaction' : editing ? 'Edit scheduled expectation' : 'New scheduled expectation'}
+	title={scopeStep ? 'Edit scheduled transaction' : deleteStep ? 'Delete scheduled transaction' : editing ? 'Edit scheduled expectation' : 'New scheduled expectation'}
 	description={
 		editing
 			? undefined
@@ -251,12 +285,14 @@
 	}
 >
 	{#if editing && deleteAction}
-		<form id="sched-delete-form" method="POST" action={deleteAction} class="hidden">
+		<form id="sched-delete-form" method="POST" action={deleteAction} use:enhance={handleDelete} class="hidden">
 			<input type="hidden" name="id" value={editing.id} />
+			<input type="hidden" name="delete_scope" value={recurring ? deleteScope : 'all'} />
+			<input type="hidden" name="occurrence_date" value={occurrenceDate ?? ''} />
 		</form>
 	{/if}
 	<form id="scheduled-dialog-form" bind:this={formEl} method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
-		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0" hidden={scopeStep ? true : undefined}>
+		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0" hidden={scopeStep || deleteStep ? true : undefined}>
 		{#each Object.entries(extraHidden) as [k, v] (k)}
 			<input type="hidden" name={k} value={v} />
 		{/each}
@@ -432,11 +468,40 @@
 			{/if}
 		{/if}
 	</form>
+	{#if deleteStep}
+		<p class="text-sm text-muted-foreground">{scopeContext}</p>
+		{#if recurring}
+			<p class="mt-3 text-sm font-medium">Delete:</p>
+			<fieldset disabled={saving} class="m-0 mt-2 flex flex-col gap-2 border-0 p-0">
+				<label class="flex items-start gap-2 text-sm">
+					<input type="radio" name="schedule_delete_scope" value="once" bind:group={deleteScope} />
+					<span>Just this date (skip that one occurrence; rest of the series unchanged)</span>
+				</label>
+				<label class="flex items-start gap-2 text-sm">
+					<input type="radio" name="schedule_delete_scope" value="following" bind:group={deleteScope} />
+					<span>This date and everything after (earlier dates stay)</span>
+				</label>
+				<label class="flex items-start gap-2 text-sm">
+					<input type="radio" name="schedule_delete_scope" value="all" bind:group={deleteScope} />
+					<span>The whole series, including the past</span>
+				</label>
+			</fieldset>
+		{:else}
+			<p class="mt-3 text-sm">Delete this scheduled expectation?</p>
+		{/if}
+		<p class="mt-3 text-xs text-muted-foreground">Posted transactions are not changed.</p>
+		{#if deleteError}
+			<p class="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{deleteError}</p>
+		{/if}
+	{/if}
 	{#snippet footer()}
 		<div class="flex items-center gap-2">
 			{#if scopeStep}
 				<Button variant="secondary" type="button" class="ml-auto" disabled={saving} onclick={() => (scopeStep = false)}>Cancel</Button>
 				<Button type="submit" form="scheduled-dialog-form" pending={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+			{:else if deleteStep}
+				<Button variant="secondary" type="button" class="ml-auto" disabled={saving} onclick={() => (deleteStep = false)}>Cancel</Button>
+				<Button variant="destructive" type="submit" form="sched-delete-form" pending={saving}>{saving ? 'Deleting…' : 'Delete'}</Button>
 			{:else}
 				{#if editing && deleteAction}
 					<Button
@@ -444,7 +509,11 @@
 						type="button"
 						class="mr-auto"
 						disabled={saving}
-						onclick={() => (document.getElementById('sched-delete-form') as HTMLFormElement | null)?.requestSubmit()}
+						onclick={() => {
+							deleteScope = 'once';
+							deleteError = null;
+							deleteStep = true;
+						}}
 					>
 						Delete
 					</Button>

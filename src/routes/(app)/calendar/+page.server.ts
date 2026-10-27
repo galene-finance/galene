@@ -1,5 +1,5 @@
+import { deleteScheduledAction } from '$lib/server/scheduledDeleteAction';
 import {
-	deleteScheduled,
 	getAccounts,
 	getCategories,
 	expandScheduled,
@@ -63,12 +63,7 @@ export const actions = {
 		}
 	},
 
-	'delete-scheduled': async ({ request, locals }) => {
-		const form = await request.formData();
-		const id = parseInt(String(form.get('id') ?? ''), 10);
-		if (Number.isFinite(id)) deleteScheduled(locals.user!.id, id);
-		return { ok: true };
-	},
+	'delete-scheduled': deleteScheduledAction,
 
 	'set-hide-actuals': async ({ request, locals }) => {
 		const form = await request.formData();

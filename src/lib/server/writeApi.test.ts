@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApiToken, resolveApiToken } from './apiTokens';
 import { closeDbForTests, db, migrate } from './db';
-import { saveAccount, saveCategory, saveScheduled, saveTransaction } from './finance';
+import { getOccurrences, getScheduled, saveAccount, saveCategory, saveScheduled, saveTransaction } from './finance';
 import { flushDataChanges } from './webhookNotify';
 import { createUser } from './users';
 import {
 	createWebhook,
 	executeWrite,
+	handleWriteRequest,
 	httpsWebhookUrl,
 	isWriteApiEnabled,
 	legacyFiltersToConditions,
@@ -438,3 +439,168 @@ describe('app edits and new series id', () => {
 	});
 });
 
+describe('schedule delete scopes over the API', () => {
+	function setup() {
+		const id = userId();
+		expect(saveWriteApiSettings(true).ok).toBe(true);
+		const { info } = createApiToken(id, 'writer', 'write');
+		const sched = saveScheduled(id, {
+			name: 'Rent',
+			amountCents: -10000,
+			startDate: '2026-01-01',
+			account: null,
+			category: null,
+			notes: null,
+			color: null,
+			repeats: true,
+			repeatInterval: 1,
+			repeatUnit: 'month',
+			untilDate: '2026-06-01',
+			forecastBehavior: 'bill',
+			tags: []
+		});
+		const caller = { userId: id, token: { id: info.id, scope: 'write' as const } };
+		const dates = () => {
+			const row = getScheduled(id)[0];
+			return row ? getOccurrences(row, '2026-01-01', '2026-12-31') : [];
+		};
+		return { id, info, sched, caller, dates };
+	}
+
+	test('once, following, and all through executeWrite', async () => {
+		const { sched, caller, dates } = setup();
+		let result = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: sched, body: { scope: 'once', occurrence_date: '2026-03-01' } });
+		expect(result.status).toBe(200);
+		expect((result.body as { action: string }).action).toBe('updated');
+		expect(dates()).toEqual(['2026-01-01', '2026-02-01', '2026-04-01', '2026-05-01', '2026-06-01']);
+		result = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: sched, body: { scope: 'following', occurrence_date: '2026-05-01' } });
+		expect(result.status).toBe(200);
+		expect(dates()).toEqual(['2026-01-01', '2026-02-01', '2026-04-01']);
+		result = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: sched, body: { scope: 'all' } });
+		expect(result.status).toBe(200);
+		expect((result.body as { action: string }).action).toBe('deleted');
+		expect(dates()).toEqual([]);
+	});
+
+	test('bad scope or date is a 400 and writes nothing', async () => {
+		const { sched, caller, dates } = setup();
+		const bad = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: sched, body: { scope: 'some' } });
+		expect(bad.status).toBe(400);
+		const off = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: sched, body: { scope: 'once', occurrence_date: '2026-03-15' } });
+		expect(off.status).toBe(400);
+		expect(dates()).toHaveLength(6);
+	});
+
+	test('recurring deletes need a scope, and once/following need an occurrence date', async () => {
+		const { sched, caller, dates } = setup();
+		const cases: Record<string, unknown>[] = [
+			{},
+			{ scope: '' },
+			{ scope: 'ALL' },
+			{ scope: 'once' },
+			{ scope: 'following' },
+			{ scope: 'once', occurrence_date: '' },
+			{ scope: 'all', occurrence_date: '2026-03-15' }
+		];
+		for (const body of cases) {
+			const result = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: sched, body });
+			expect([JSON.stringify(body), result.status]).toEqual([JSON.stringify(body), 400]);
+		}
+		expect(dates()).toHaveLength(6);
+	});
+
+	test('one-time deletes: no scope is a plain delete, a wrong date is a 400', async () => {
+		const { id, caller } = setup();
+		const oneTime = () =>
+			saveScheduled(id, {
+				name: 'Fee',
+				amountCents: -500,
+				startDate: '2026-04-10',
+				account: null,
+				category: null,
+				notes: null,
+				color: null,
+				repeats: false,
+				repeatInterval: null,
+				repeatUnit: null,
+				untilDate: null,
+				forecastBehavior: 'bill',
+				tags: []
+			});
+		const exists = (sid: number) => getScheduled(id).some((s) => s.id === sid);
+		let sid = oneTime();
+		const wrong = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: sid, body: { scope: 'once', occurrence_date: '2026-04-11' } });
+		expect(wrong.status).toBe(400);
+		const undated = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: sid, body: { scope: 'once' } });
+		expect(undated.status).toBe(400);
+		expect(exists(sid)).toBe(true);
+		const plain = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: sid, body: {} });
+		expect(plain.status).toBe(200);
+		expect(exists(sid)).toBe(false);
+		sid = oneTime();
+		const own = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: sid, body: { scope: 'once', occurrence_date: '2026-04-10' } });
+		expect(own.status).toBe(200);
+		expect(exists(sid)).toBe(false);
+	});
+
+	test('edit_scope new over the API moves later skips to the new series (QA repro)', async () => {
+		const { id, caller } = setup();
+		const weekly = saveScheduled(id, {
+			name: 'Gym',
+			amountCents: -2500,
+			startDate: '2026-10-25',
+			account: null,
+			category: null,
+			notes: null,
+			color: null,
+			repeats: true,
+			repeatInterval: 1,
+			repeatUnit: 'week',
+			untilDate: null,
+			forecastBehavior: 'bill',
+			tags: []
+		});
+		for (const date of ['2026-11-08', '2026-11-29']) {
+			const skip = await executeWrite({ caller, resource: 'schedule', method: 'DELETE', id: weekly, body: { scope: 'once', occurrence_date: date } });
+			expect(skip.status).toBe(200);
+		}
+		const result = await executeWrite({
+			caller,
+			resource: 'schedule',
+			method: 'PATCH',
+			id: weekly,
+			body: { name: 'Gym', amount_cents: -3000, start_date: '2026-11-22', repeat_unit: 'week', repeat_interval: 1, edit_scope: 'new', occurrence_date: '2026-11-22' }
+		});
+		expect(result.status).toBe(200);
+		const newId = (result.body as { id: number }).id;
+		const occ = (sid: number) => getOccurrences(getScheduled(id).find((s) => s.id === sid)!, '2026-10-01', '2026-12-31');
+		expect(occ(weekly)).toEqual(['2026-10-25', '2026-11-01', '2026-11-15']);
+		expect(occ(newId)).not.toContain('2026-11-29');
+		expect(occ(newId).slice(0, 2)).toEqual(['2026-11-22', '2026-12-06']);
+	});
+
+	test('DELETE reads scope from the query string', async () => {
+		const { info, sched, dates, id } = setup();
+		const response = await handleWriteRequest(
+			{
+				request: new Request(`http://localhost/api/v1/scheduled/${sched}?scope=once&occurrence_date=2026-02-01`, { method: 'DELETE' }),
+				locals: { user: { id }, apiToken: { id: info.id, scope: 'write' } },
+				params: { id: String(sched) }
+			},
+			'schedule'
+		);
+		expect(response.status).toBe(200);
+		expect(dates()).not.toContain('2026-02-01');
+		expect(dates()).toHaveLength(5);
+		const empty = await handleWriteRequest(
+			{
+				request: new Request(`http://localhost/api/v1/scheduled/${sched}?scope=`, { method: 'DELETE' }),
+				locals: { user: { id }, apiToken: { id: info.id, scope: 'write' } },
+				params: { id: String(sched) }
+			},
+			'schedule'
+		);
+		expect(empty.status).toBe(400);
+		expect(dates()).toHaveLength(5);
+	});
+});

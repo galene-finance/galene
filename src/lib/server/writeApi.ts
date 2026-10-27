@@ -6,7 +6,7 @@ import {
 	deleteBudget,
 	deleteCategory,
 	deleteRule,
-	deleteScheduled,
+	deleteScheduledScoped,
 	deleteTag,
 	deleteTransaction,
 	saveAccount,
@@ -236,19 +236,18 @@ export async function handleWriteRequest(
 	if (method === 'POST' && id != null && resource !== 'split') {
 		return jsonResponse(400, { error: 'POST creates a new row. Use PATCH to update.' });
 	}
-	let body: Record<string, unknown> = {};
-	if (method !== 'DELETE') {
-		const text = await event.request.text();
-		if (text.trim()) {
-			try {
-				const parsed = JSON.parse(text);
-				if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-					return jsonResponse(400, { error: 'JSON object required.' });
-				}
-				body = parsed as Record<string, unknown>;
-			} catch {
-				return jsonResponse(400, { error: 'Invalid JSON.' });
+	let body: Record<string, unknown> =
+		method === 'DELETE' ? Object.fromEntries(new URL(event.request.url).searchParams) : {};
+	const text = await event.request.text();
+	if (text.trim()) {
+		try {
+			const parsed = JSON.parse(text);
+			if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+				return jsonResponse(400, { error: 'JSON object required.' });
 			}
+			body = { ...body, ...(parsed as Record<string, unknown>) };
+		} catch {
+			return jsonResponse(400, { error: 'Invalid JSON.' });
 		}
 	}
 	const result = await executeWrite({
@@ -411,8 +410,13 @@ function applyDelete(userId: number, resource: WriteResource, id: number, body: 
 	}
 	if (resource === 'schedule') {
 		const before = mustSnapshot('scheduled', userId, id);
-		deleteScheduled(userId, id);
-		return done('delete', 'schedule', 'deleted', before, null, id);
+		const rawScope = body.scope ?? body.delete_scope;
+		const scope = rawScope == null ? undefined : String(rawScope).trim();
+		const occurrence = body.occurrence_date == null || body.occurrence_date === '' ? null : String(body.occurrence_date);
+		if (occurrence != null && !/^\d{4}-\d{2}-\d{2}$/.test(occurrence)) throw new Error('occurrence_date must be YYYY-MM-DD.');
+		const result = deleteScheduledScoped(userId, id, scope, occurrence);
+		if (result.removed === 'series') return done('delete', 'schedule', 'deleted', before, null, id);
+		return done('update', 'schedule', 'updated', before, mustSnapshot('scheduled', userId, id));
 	}
 	if (resource === 'account') {
 		const before = mustSnapshot('accounts', userId, id);

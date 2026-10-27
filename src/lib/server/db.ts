@@ -1032,6 +1032,16 @@ CREATE INDEX IF NOT EXISTS idx_plaid_items_user ON plaid_items(user_id, connecti
 			database.exec('ALTER TABLE accounts ADD COLUMN subtype TEXT');
 		}
 	}
+},
+{
+	// ADO-63: a scheduled exception can skip its occurrence (delete "this date only").
+	sql: `-- scheduled_exceptions.skipped (ADO-63)`,
+	after(database) {
+		const cols = database.query('PRAGMA table_info(scheduled_exceptions)').all() as { name: string }[];
+		if (!cols.some((c) => c.name === 'skipped')) {
+			database.exec('ALTER TABLE scheduled_exceptions ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0 CHECK (skipped IN (0, 1))');
+		}
+	}
 }
 ];
 

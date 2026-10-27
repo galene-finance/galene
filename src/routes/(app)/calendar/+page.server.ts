@@ -1,5 +1,6 @@
+import { fail } from '@sveltejs/kit';
 import {
-	deleteScheduled,
+	deleteScheduledScoped,
 	getAccounts,
 	getCategories,
 	expandScheduled,
@@ -11,6 +12,7 @@ import {
 	saveScheduled,
 	saveTransaction,
 	setSetting,
+	scheduledDeleteFromForm,
 	scheduledInputFromForm,
 	transactionInputFromForm
 } from '$lib/server/finance';
@@ -65,9 +67,14 @@ export const actions = {
 
 	'delete-scheduled': async ({ request, locals }) => {
 		const form = await request.formData();
-		const id = parseInt(String(form.get('id') ?? ''), 10);
-		if (Number.isFinite(id)) deleteScheduled(locals.user!.id, id);
-		return { ok: true };
+		const parsed = scheduledDeleteFromForm(locals.user!.id, form);
+		if (parsed.error || parsed.id == null || !parsed.scope) return fail(400, { error: parsed.error ?? 'Choose what to delete.' });
+		try {
+			const result = deleteScheduledScoped(locals.user!.id, parsed.id, parsed.scope, parsed.occurrenceDate);
+			return { ok: true, removed: result.removed };
+		} catch (error) {
+			return fail(400, { error: error instanceof Error ? error.message : 'Could not delete.' });
+		}
 	},
 
 	'set-hide-actuals': async ({ request, locals }) => {

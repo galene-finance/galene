@@ -18,6 +18,7 @@ import {
 } from '../sync';
 import { nextSyncDelayMinutes, FAILURE_BACKOFF_MINUTES } from '../scheduler';
 import { recordItemFailure, setItemAccountExternalIds, tokenHint } from '../plaidItems';
+import { PLAID_PARTIAL_FAILURE_FALLBACK } from '../plaidItemStatus';
 
 const ENV_KEYS = ['GALENE_DEMO', 'GALENE_DB_PATH', 'GALENE_DATA_DIR', 'GALENE_ALLOW_EPHEMERAL_DATA'] as const;
 const saved: Record<string, string | undefined> = {};
@@ -293,7 +294,7 @@ describe('ADO-58 follow-ups', () => {
 					updated: 0,
 					merged: 0,
 					lastSyncedAt: '2026-10-19 12:00:00',
-					error: 'Some linked institutions could not be synced. The others were updated.',
+					error: PLAID_PARTIAL_FAILURE_FALLBACK,
 					partialFailure: true
 				},
 				interval

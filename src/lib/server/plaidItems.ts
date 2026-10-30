@@ -4,7 +4,17 @@
  * user to sign in again without showing a raw provider error code.
  */
 import { createHash } from 'node:crypto';
+import type { PlaidItemSyncState } from '../types';
 import { db } from './db';
+import { redactSecretText } from './providers/http';
+import { classifyPlaidError, formatPlaidItemFailureBanner } from './plaidItemStatus';
+
+export {
+	isReconnectCode,
+	reconnectMessage,
+	RECONNECT_ERROR_CODES,
+	type ReconnectErrorCode
+} from './plaidItemStatus';
 
 type OwnedTable = 'transactions' | 'scheduled' | 'accounts' | 'categories' | 'tags' | 'budgets' | 'plaid_items';
 
@@ -25,25 +35,21 @@ export function ownedIds(table: OwnedTable, userId: number, ids: number[]): numb
 	).map((row) => row.id);
 }
 
-/**
- * Item error codes that only the account holder can clear, by signing in
- * again through Link update mode. Anything else is a plain item failure.
- */
-export const RECONNECT_ERROR_CODES = [
-	'ITEM_LOGIN_REQUIRED',
-	'PENDING_EXPIRATION',
-	'PENDING_DISCONNECT',
-	'USER_PERMISSION_REVOKED',
-	'USER_ACCOUNT_REVOKED',
-	'ITEM_LOCKED'
-] as const;
-
-export type ReconnectErrorCode = (typeof RECONNECT_ERROR_CODES)[number];
-
-/** Persisted health for one linked item. `needsReconnect` is the structural flag. */
-export type PlaidItemState =
-	| { needsReconnect: false; errorCode: null; errorAt: null }
-	| { needsReconnect: true; errorCode: ReconnectErrorCode; errorAt: string };
+/** Persisted health for one linked item. Status text comes from the classifier. */
+export interface PlaidItemState {
+	needsReconnect: boolean;
+	errorCode: string | null;
+	errorAt: string | null;
+	state: PlaidItemSyncState;
+	label: string;
+	reason: string | null;
+	nextStep: string | null;
+	errorType: string | null;
+	errorMessage: string | null;
+	lastSyncAt: string | null;
+	showReconnect: boolean;
+	accountSelection: boolean;
+}
 
 export interface PlaidItemView {
 	id: number;
@@ -105,15 +111,6 @@ export function tokenHint(accessToken: string): string {
 	return createHash('sha256').update(accessToken).digest('hex');
 }
 
-export function isReconnectCode(code: string | null | undefined): code is ReconnectErrorCode {
-	return !!code && (RECONNECT_ERROR_CODES as readonly string[]).includes(code);
-}
-
-/** User-facing sentence. Never the raw error code. */
-export function reconnectMessage(): string {
-	return 'Your bank needs you to sign in again.';
-}
-
 interface ItemRow {
 	id: number;
 	item_id: string;
@@ -121,16 +118,57 @@ interface ItemRow {
 	institution_name: string | null;
 	institution_id: string | null;
 	error_code: string | null;
+	error_type: string | null;
+	error_message: string | null;
 	error_at: string | null;
 	needs_reconnect: number;
 	account_external_ids: string | null;
+	last_sync_status: string | null;
+	last_sync_at: string | null;
 }
 
-function stateFromRow(row: Pick<ItemRow, 'error_code' | 'error_at' | 'needs_reconnect'>): PlaidItemState {
-	if (row.needs_reconnect === 1 && isReconnectCode(row.error_code) && row.error_at) {
-		return { needsReconnect: true, errorCode: row.error_code, errorAt: row.error_at };
+const ITEM_COLUMNS = `id, item_id, token_hint, institution_name, institution_id, error_code, error_type, error_message, error_at, needs_reconnect, account_external_ids, last_sync_status, last_sync_at`;
+
+function rowHasFailure(row: Pick<ItemRow, 'error_code' | 'needs_reconnect' | 'last_sync_status'>): boolean {
+	if (row.last_sync_status === 'ok') return false;
+	if (row.last_sync_status === 'error') return true;
+	if (row.needs_reconnect === 1) return true;
+	return !!row.error_code;
+}
+
+function stateFromRow(row: Pick<ItemRow, 'error_code' | 'error_type' | 'error_message' | 'error_at' | 'needs_reconnect' | 'last_sync_status' | 'last_sync_at'>): PlaidItemState {
+	const lastSyncAt = row.last_sync_at ?? null;
+	if (!rowHasFailure(row)) {
+		return {
+			needsReconnect: false,
+			errorCode: null,
+			errorAt: null,
+			state: 'connected',
+			label: 'connected',
+			reason: null,
+			nextStep: null,
+			errorType: null,
+			errorMessage: null,
+			lastSyncAt,
+			showReconnect: true,
+			accountSelection: false
+		};
 	}
-	return { needsReconnect: false, errorCode: null, errorAt: null };
+	const classified = classifyPlaidError(row.error_code);
+	return {
+		needsReconnect: classified.kind === 'reconnect',
+		errorCode: row.error_code,
+		errorAt: row.error_at,
+		state: classified.state,
+		label: classified.label,
+		reason: classified.reason,
+		nextStep: classified.nextStep,
+		errorType: row.error_type,
+		errorMessage: row.error_message,
+		lastSyncAt,
+		showReconnect: classified.offerReconnect,
+		accountSelection: classified.accountSelection
+	};
 }
 
 export function upsertPlaidItem(
@@ -169,29 +207,30 @@ export function recordItemFailure(
 	connectionId: number,
 	accessToken: string,
 	itemId: string,
-	errorCode: string | null
+	errorCode: string | null,
+	detail?: { errorType?: string | null; errorMessage?: string | null }
 ): PlaidItemState {
 	const id = upsertPlaidItem(userId, connectionId, { accessToken, itemId });
-	const reconnect = isReconnectCode(errorCode);
-	if (reconnect) {
-		db()
-			.query(
-				`UPDATE plaid_items
-				 SET error_code = ?, error_at = datetime('now'), needs_reconnect = 1, updated_at = datetime('now')
-				 WHERE id = ? AND user_id = ?`
-			)
-			.run(errorCode, id, userId);
-	} else {
-		db()
-			.query(
-				`UPDATE plaid_items
-				 SET error_code = ?, error_at = datetime('now'), needs_reconnect = 0, updated_at = datetime('now')
-				 WHERE id = ? AND user_id = ?`
-			)
-			.run(errorCode, id, userId);
-	}
+	const classified = classifyPlaidError(errorCode);
+	const code = errorCode?.trim() || null;
+	db()
+		.query(
+			`UPDATE plaid_items
+			 SET error_code = ?, error_type = ?, error_message = ?, error_at = datetime('now'),
+			     needs_reconnect = ?, last_sync_status = 'error', last_sync_at = datetime('now'),
+			     updated_at = datetime('now')
+			 WHERE id = ? AND user_id = ?`
+		)
+		.run(
+			code,
+			redactSecretText(detail?.errorType, 64),
+			redactSecretText(detail?.errorMessage, 200),
+			classified.kind === 'reconnect' ? 1 : 0,
+			id,
+			userId
+		);
 	const row = db()
-		.query('SELECT error_code, error_at, needs_reconnect FROM plaid_items WHERE id = ? AND user_id = ?')
+		.query(`SELECT ${ITEM_COLUMNS} FROM plaid_items WHERE id = ? AND user_id = ?`)
 		.get(id, userId) as ItemRow;
 	return stateFromRow(row);
 }
@@ -201,20 +240,76 @@ export function clearItemError(userId: number, itemRowId: number): void {
 	db()
 		.query(
 			`UPDATE plaid_items
-			 SET error_code = NULL, error_at = NULL, needs_reconnect = 0, updated_at = datetime('now')
+			 SET error_code = NULL, error_type = NULL, error_message = NULL, error_at = NULL,
+			     needs_reconnect = 0, last_sync_status = NULL, last_sync_at = NULL, updated_at = datetime('now')
 			 WHERE id = ? AND user_id = ?`
 		)
 		.run(itemRowId, userId);
 }
 
+/** Successful sync: clear the error and record status ok. */
 export function clearItemErrorByToken(userId: number, accessToken: string): void {
 	db()
 		.query(
 			`UPDATE plaid_items
-			 SET error_code = NULL, error_at = NULL, needs_reconnect = 0, updated_at = datetime('now')
+			 SET error_code = NULL, error_type = NULL, error_message = NULL, error_at = NULL,
+			     needs_reconnect = 0, last_sync_status = 'ok', last_sync_at = datetime('now'),
+			     updated_at = datetime('now')
 			 WHERE user_id = ? AND token_hint = ?`
 		)
 		.run(userId, tokenHint(accessToken));
+}
+
+const FAILED_ITEM_WHERE = `(
+	last_sync_status = 'error'
+	OR needs_reconnect = 1
+	OR (error_code IS NOT NULL AND IFNULL(last_sync_status, '') != 'ok')
+)`;
+
+/** True when this user's connection still has an item that did not sync. */
+export function connectionHasPlaidItemFailure(userId: number, connectionId: number): boolean {
+	const row = db()
+		.query(
+			`SELECT COUNT(*) AS n FROM plaid_items
+			 WHERE user_id = ? AND connection_id = ? AND ${FAILED_ITEM_WHERE}`
+		)
+		.get(userId, connectionId) as { n: number };
+	return row.n > 0;
+}
+
+/** Named failure banner for this user's connection. Generic only if no item is known. */
+export function plaidFailureBanner(userId: number, connectionId: number): string {
+	const rows = db()
+		.query(
+			`SELECT institution_name, error_code FROM plaid_items
+			 WHERE user_id = ? AND connection_id = ? AND ${FAILED_ITEM_WHERE}
+			 ORDER BY id`
+		)
+		.all(userId, connectionId) as { institution_name: string | null; error_code: string | null }[];
+	return formatPlaidItemFailureBanner(
+		rows.map((row) => ({ institutionName: row.institution_name, errorCode: row.error_code }))
+	);
+}
+
+export function institutionNameForToken(userId: number, accessToken: string): string | null {
+	return storedItemLogFields(userId, accessToken).institutionName;
+}
+
+/** Stored item id and institution name for logs. Never returns the access token. */
+export function storedItemLogFields(
+	userId: number,
+	accessToken: string
+): { itemId: string | null; institutionName: string | null } {
+	const row = db()
+		.query('SELECT item_id, institution_name FROM plaid_items WHERE user_id = ? AND token_hint = ?')
+		.get(userId, tokenHint(accessToken)) as { item_id: string; institution_name: string | null } | undefined;
+	if (!row) return { itemId: null, institutionName: null };
+	const itemId = row.item_id?.trim() || null;
+	const institutionName = row.institution_name?.trim() || null;
+	return {
+		itemId: itemId && !itemId.startsWith('unknown:') ? itemId : null,
+		institutionName
+	};
 }
 
 
@@ -266,7 +361,7 @@ export function findDuplicatePlaidItem(
 	const incoming = input.accounts ?? [];
 	const items = db()
 		.query(
-			`SELECT id, item_id, institution_name, institution_id, needs_reconnect, error_code, error_at, account_external_ids
+			`SELECT ${ITEM_COLUMNS}
 			 FROM plaid_items WHERE user_id = ? AND institution_id = ?
 			 ORDER BY id`
 		)
@@ -311,7 +406,7 @@ export function findDuplicateUnresolvedPlaidItem(
 	const incoming = input.accounts ?? [];
 	const items = db()
 		.query(
-			`SELECT id, item_id, institution_name, institution_id, needs_reconnect, error_code, error_at, account_external_ids
+			`SELECT ${ITEM_COLUMNS}
 			 FROM plaid_items
 			 WHERE user_id = ? AND institution_id IS NULL
 			 ORDER BY id`
@@ -467,7 +562,7 @@ export function getItemById(userId: number, itemRowId: number): (ItemRow & { sta
 	if (ownedIds('plaid_items', userId, [itemRowId]).length !== 1) return null;
 	const row = db()
 		.query(
-			`SELECT id, item_id, token_hint, institution_name, institution_id, error_code, error_at, needs_reconnect, account_external_ids
+			`SELECT ${ITEM_COLUMNS}
 			 FROM plaid_items WHERE id = ? AND user_id = ?`
 		)
 		.get(itemRowId, userId) as ItemRow | undefined;
@@ -491,7 +586,7 @@ export function listPlaidItemViews(
 	const hints = new Set(tokens.map(tokenHint));
 	const rows = db()
 		.query(
-			`SELECT id, item_id, token_hint, institution_name, institution_id, error_code, error_at, needs_reconnect, account_external_ids
+			`SELECT ${ITEM_COLUMNS}
 			 FROM plaid_items WHERE user_id = ? AND connection_id = ? ORDER BY id`
 		)
 		.all(userId, connectionId) as ItemRow[];
@@ -517,8 +612,8 @@ export function deletePlaidItem(userId: number, itemRowId: number): ItemRow | nu
 	return row;
 }
 
-/** Plain-language line when the item needs a sign-in. Null when it is healthy. */
+/** Plain-language line when the item is not healthy. Null when it is connected. */
 export function assertReconnectHandled(state: PlaidItemState): string | null {
-	if (!state.needsReconnect) return null;
-	return isReconnectCode(state.errorCode) ? reconnectMessage() : null;
+	if (state.state === 'connected' || !state.reason) return null;
+	return state.nextStep ? `${state.reason} ${state.nextStep}` : state.reason;
 }

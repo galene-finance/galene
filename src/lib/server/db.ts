@@ -1042,6 +1042,30 @@ CREATE INDEX IF NOT EXISTS idx_plaid_items_user ON plaid_items(user_id, connecti
 			database.exec('ALTER TABLE scheduled_exceptions ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0 CHECK (skipped IN (0, 1))');
 		}
 	}
+},
+{
+	// Per-item Plaid sync result. Additive ALTER only — no parent rebuild.
+	// afterFkOff so a replay that rewinds user_version still adds the columns
+	// with foreign keys off, matching the other plaid_items column adds.
+	sql: `-- plaid_items last_sync_status error_type error_message last_sync_at`,
+	afterFkOff(database) {
+		const cols = database.query('PRAGMA table_info(plaid_items)').all() as { name: string }[];
+		const names = new Set(cols.map((c) => c.name));
+		if (!names.has('last_sync_status')) {
+			database.exec(
+				`ALTER TABLE plaid_items ADD COLUMN last_sync_status TEXT CHECK (last_sync_status IS NULL OR last_sync_status IN ('ok', 'error'))`
+			);
+		}
+		if (!names.has('error_type')) {
+			database.exec('ALTER TABLE plaid_items ADD COLUMN error_type TEXT');
+		}
+		if (!names.has('error_message')) {
+			database.exec('ALTER TABLE plaid_items ADD COLUMN error_message TEXT');
+		}
+		if (!names.has('last_sync_at')) {
+			database.exec('ALTER TABLE plaid_items ADD COLUMN last_sync_at TEXT');
+		}
+	}
 }
 ];
 

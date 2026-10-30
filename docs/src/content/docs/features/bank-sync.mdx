@@ -13,7 +13,7 @@ Syncs are incremental: each pull starts at the newest transaction date already i
 
 ## Auto-sync
 
-Each connection can auto-sync on a schedule. The server checks every minute and syncs connections whose next sync time has passed; a failed sync backs off to at least an hour. Intervals are bounded per provider:
+Each connection can auto-sync on a schedule. The server checks every minute and syncs connections whose next sync time has passed; a failed sync backs off to at least an hour. When a Plaid sync updates some institutions and not others, Galene does not use that hour-long backoff. The connection error names each institution that failed and what to do next. See [Plaid](/features/plaid/). Intervals are bounded per provider:
 
 | Provider | Minimum interval | Why |
 | --- | --- | --- |

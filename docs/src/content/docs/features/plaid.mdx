@@ -57,13 +57,27 @@ Plaid settings are per user. Disconnecting a Plaid connection keeps the accounts
 
 A linked institution can stop syncing until you sign in again — for example after a password change, or when the institution is about to expire the connection. Galene syncs each linked institution on its own, so the others keep updating.
 
-On **Settings → Bank sync**, that institution shows **Your bank needs you to sign in again** and a **Reconnect** button. Reconnect opens Plaid Link for that same connection. Your existing account mappings and transaction history stay; Galene does not add a second copy of the institution. After you finish signing in, Galene syncs that institution automatically so the card returns to healthy without pressing **Sync now**.
+On **Settings → Bank sync**, that institution shows **needs re-login** and a **Reconnect** button. Reconnect opens Plaid Link for that same connection. Your existing account mappings and transaction history stay; Galene does not add a second copy of the institution. After you finish signing in, Galene syncs that institution automatically so the card returns to **connected** without pressing **Sync now**.
 
 **Reconnect** is also available on a healthy institution, when you want to refresh the login without adding a second copy.
 
+## Per-institution sync status
+
+**Settings → Bank sync** lists each linked institution under **Already linked**, and again on the institution card, with one of these states:
+
+- **connected** — the last sync of that institution succeeded.
+- **needs re-login** — Plaid needs you to sign in again (a password change, an expiring connection, or a revoked permission). Press **Reconnect**.
+- **choose accounts again** — Plaid found no accounts to sync (`NO_ACCOUNTS`). Press **Reconnect** and choose the accounts to share. Galene asks Plaid to show account selection for that existing connection.
+- **temporarily unavailable** — the institution or Plaid could not answer right now (the institution is down, or Plaid asked Galene to retry). Wait, then sync again. **Reconnect** is not shown for this state.
+- **error** — Plaid returned another error. The list shows a short reason, including the error code when Plaid sent one that Galene does not recognize. You can press **Reconnect**, or try again later.
+
+When some institutions fail and others succeed, the connection error names each failed institution, the plain-language reason, and the next step. Example: "Example Bank: Plaid found no accounts to sync. Reconnect it and choose the accounts to share." Institutions that succeeded are still updated. If Galene cannot tell which institution failed, the message stays generic.
+
+A later successful sync of that institution clears the error. The list returns to **connected**.
+
 ## Linking the same institution again
 
-Before **Connect with Plaid** or **Link another account**, Galene lists the institutions already on this connection. If one of them needs you to sign in, the list points you at **Reconnect** for that institution.
+Before **Connect with Plaid** or **Link another account**, Galene lists the institutions already on this connection and the state of each one. If one needs you to sign in, or to choose accounts again, the list says so and points you at **Reconnect**. A temporary failure says to wait.
 
 If you finish Link for an institution that is already linked (same institution, and a matching account name and mask when those are known), Galene does not exchange the public token and does not import a second set of accounts. The page says **This bank is already linked**, with **Reconnect** for that institution.
 

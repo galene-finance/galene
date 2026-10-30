@@ -12,9 +12,12 @@ import {
 	assertReconnectHandled,
 	clearItemError,
 	closeOpenReviewsForAccounts,
+	connectionHasPlaidItemFailure,
 	deletePlaidItem,
+	getItemById,
 	listPlaidItemViews,
-	parseAccountExternalIds
+	parseAccountExternalIds,
+	plaidFailureBanner
 } from './plaidItems';
 import {
 	accessTokensFromCredentials,
@@ -414,8 +417,9 @@ export async function syncNow(
 
 		const lastSyncedAt = dbTime(new Date());
 		const partial = providerId === 'plaid' && (await plaidSyncHadPartialFailure(ctx));
-		if (partial) {
-			const message = 'Some linked institutions could not be synced. The others were updated.';
+		const lingeringFailure = providerId === 'plaid' && connectionHasPlaidItemFailure(userId, conn.id);
+		if (partial || lingeringFailure) {
+			const message = plaidFailureBanner(userId, conn.id);
 			db()
 				.query(
 					"UPDATE connections SET status = 'error', last_synced_at = ?, last_error = ? WHERE id = ? AND user_id = ?"
@@ -428,35 +432,8 @@ export async function syncNow(
 				updated,
 				merged,
 				lastSyncedAt,
-			error: message,
-			partialFailure: true
-			};
-		}
-		const stillNeedsReconnect =
-			providerId === 'plaid' &&
-			(
-				db()
-					.query(
-						`SELECT COUNT(*) AS n FROM plaid_items
-						 WHERE user_id = ? AND connection_id = ? AND needs_reconnect = 1`
-					)
-					.get(userId, conn.id) as { n: number }
-			).n > 0;
-		if (stillNeedsReconnect) {
-			const message = 'Some linked institutions could not be synced. The others were updated.';
-			db()
-				.query(
-					"UPDATE connections SET status = 'error', last_synced_at = ?, last_error = ? WHERE id = ? AND user_id = ?"
-				)
-				.run(lastSyncedAt, message, conn.id, userId);
-			return {
-				accounts: accountMap.size,
-				created,
-				updated,
-				merged,
-				lastSyncedAt,
-			error: message,
-			partialFailure: true
+				error: message,
+				partialFailure: true
 			};
 		}
 		db()
@@ -1019,7 +996,14 @@ export function listPlaidItemsForSettings(userId: number): PlaidItemInfo[] {
 		id: item.id,
 		label: item.institutionName?.trim() || 'A linked institution',
 		needsReconnect: item.state.needsReconnect,
-		message: assertReconnectHandled(item.state)
+		message: assertReconnectHandled(item.state),
+		state: item.state.state,
+		statusLabel: item.state.label,
+		reason: item.state.reason,
+		nextStep: item.state.nextStep,
+		errorCode: item.state.errorCode,
+		lastSyncAt: item.state.lastSyncAt,
+		showReconnect: item.state.showReconnect
 	}));
 }
 
@@ -1029,7 +1013,8 @@ export function listPlaidItemsForSettings(userId: number): PlaidItemInfo[] {
 export async function reconnectLinkToken(userId: number, itemRowId: number): Promise<string> {
 	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
 	const access = ownedItemAccessToken(userId, itemRowId);
-	return createLinkToken(userId, access);
+	const item = getItemById(userId, itemRowId);
+	return createLinkToken(userId, access, { accountSelection: item?.state.accountSelection === true });
 }
 
 /**

@@ -289,4 +289,62 @@ CREATE TABLE plaid_items (
 		db.close();
 	});
 
+	test('adds plaid item sync status columns and can run twice', () => {
+		const db = new Database(':memory:');
+		db.exec('PRAGMA foreign_keys = ON');
+		migrate(db);
+		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
+		db.query(
+			`INSERT INTO connections (id, user_id, provider, credentials) VALUES (7, 1, 'plaid', '{"access_tokens":"[]"}')`
+		).run();
+		db.query(
+			`INSERT INTO plaid_items (id, user_id, connection_id, item_id, token_hint, institution_name, error_code, needs_reconnect)
+			 VALUES (4, 1, 7, 'item-1', 'hint', 'Example Bank', 'NO_ACCOUNTS', 0)`
+		).run();
+
+		const index = migrationIndexContaining('last_sync_status');
+		db.exec('PRAGMA foreign_keys = OFF');
+		try {
+			db.exec('ALTER TABLE plaid_items DROP COLUMN last_sync_status');
+			db.exec('ALTER TABLE plaid_items DROP COLUMN error_type');
+			db.exec('ALTER TABLE plaid_items DROP COLUMN error_message');
+			db.exec('ALTER TABLE plaid_items DROP COLUMN last_sync_at');
+		} finally {
+			db.exec('PRAGMA foreign_keys = ON');
+		}
+		db.run(`PRAGMA user_version = ${index}`);
+		migrate(db);
+
+		const names = new Set(
+			(db.query('PRAGMA table_info(plaid_items)').all() as { name: string }[]).map((c) => c.name)
+		);
+		expect(names.has('last_sync_status')).toBe(true);
+		expect(names.has('error_type')).toBe(true);
+		expect(names.has('error_message')).toBe(true);
+		expect(names.has('last_sync_at')).toBe(true);
+		expect(db.query('SELECT id, institution_name, error_code FROM plaid_items').get()).toEqual({
+			id: 4,
+			institution_name: 'Example Bank',
+			error_code: 'NO_ACCOUNTS'
+		});
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
+
+		// Already migrated: a second pass is a no-op and does not drop the row.
+		expect(() => migrate(db)).not.toThrow();
+		expect(db.query('SELECT id FROM plaid_items').get()).toEqual({ id: 4 });
+
+		// Replay of this step on a database that already has the columns.
+		db.run(`PRAGMA user_version = ${index}`);
+		expect(() => migrate(db)).not.toThrow();
+		const replayed = new Set(
+			(db.query('PRAGMA table_info(plaid_items)').all() as { name: string }[]).map((c) => c.name)
+		);
+		expect(replayed.has('last_sync_status')).toBe(true);
+		expect(replayed.has('error_type')).toBe(true);
+		expect(replayed.has('error_message')).toBe(true);
+		expect(replayed.has('last_sync_at')).toBe(true);
+		expect(db.query('SELECT id, error_code FROM plaid_items').get()).toEqual({ id: 4, error_code: 'NO_ACCOUNTS' });
+		db.close();
+	});
+
 });

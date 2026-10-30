@@ -555,14 +555,30 @@ export interface LinkedAccount {
 }
 
 /**
+ * Settings list state for one linked Plaid item. Derived from the server
+ * classifier — the page does not keep its own error-code list.
+ */
+export type PlaidItemSyncState = 'connected' | 'needs_relogin' | 'reselect_accounts' | 'temporary' | 'error';
+
+/**
  * One linked Plaid item as the settings page may show it.
- * `message` is plain language; the error code stays on the server.
+ * `label` is the institution name. `statusLabel` is the classifier label
+ * ("connected", "needs re-login", …). `message` is plain language.
  */
 export interface PlaidItemInfo {
 	id: number;
 	label: string;
 	needsReconnect: boolean;
 	message: string | null;
+	state: PlaidItemSyncState;
+	/** Classifier label shown in the Already linked list. */
+	statusLabel: string;
+	reason: string | null;
+	nextStep: string | null;
+	errorCode: string | null;
+	lastSyncAt: string | null;
+	/** Reconnect (Link update mode). Hidden for temporary failures. */
+	showReconnect: boolean;
 }
 
 /** Connect refused because this login is already linked. */

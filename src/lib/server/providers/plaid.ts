@@ -11,8 +11,10 @@ import {
 	clearItemErrorByToken,
 	findDuplicatePlaidItem,
 	findDuplicateUnresolvedPlaidItem,
+	storedItemLogFields,
 	isReconnectCode,
 	listPlaidItemsMissingInstitution,
+	plaidFailureBanner,
 	recordItemFailure,
 	setItemAccountExternalIds,
 	setPlaidItemInstitution,
@@ -22,6 +24,7 @@ import {
 	type PlaidDuplicateMatch,
 	type ReconnectErrorCode
 } from '../plaidItems';
+import { itemFailureSentence, logPlaidItemSyncFailure, PLAID_PARTIAL_FAILURE_FALLBACK } from '../plaidItemStatus';
 import { isDemoMode } from '../demoMode';
 import { db } from '../db';
 import { fetchJson, ProviderHttpError } from './http';
@@ -189,19 +192,27 @@ export function plaidErrorCode(error: unknown): string | null {
 	return null;
 }
 
-/** User-facing sync line for one item. Reconnect codes never leak the raw code. */
+/** User-facing sync line for one item. Wording comes from the classifier. */
 export function itemFailureMessage(code: string | null): string {
-	if (isReconnectCode(code)) return 'A linked institution needs you to sign in again.';
-	return 'One linked institution could not be synced. The others were updated.';
+	return itemFailureSentence(code);
 }
 
 export class PlaidItemError extends Error {
 	readonly code: string | null;
 	readonly itemId: string;
-	constructor(message: string, code: string | null, itemId: string) {
+	readonly errorType: string | null;
+	readonly errorMessage: string | null;
+	constructor(
+		message: string,
+		code: string | null,
+		itemId: string,
+		detail?: { errorType?: string | null; errorMessage?: string | null }
+	) {
 		super(message);
 		this.code = code;
 		this.itemId = itemId;
+		this.errorType = detail?.errorType ?? null;
+		this.errorMessage = detail?.errorMessage ?? null;
 	}
 }
 
@@ -215,7 +226,11 @@ export class PlaidItemError extends Error {
  * `accessToken` set means update mode: Plaid re-authenticates that existing
  * item and does not create a new one. Omit it to link a new institution.
  */
-export async function createLinkToken(userId: number, accessToken?: string): Promise<string> {
+export async function createLinkToken(
+	userId: number,
+	accessToken?: string,
+	options?: { accountSelection?: boolean }
+): Promise<string> {
 	const cfg = getPlaidConfig(userId);
 	if (!cfg.clientId || !cfg.clientSecret) {
 		throw new ProviderHttpError(
@@ -236,6 +251,11 @@ export async function createLinkToken(userId: number, accessToken?: string): Pro
 		language: 'en',
 		...(updateMode ? { access_token: accessToken!.trim() } : { products: ['transactions'] })
 	};
+	// NO_ACCOUNTS: update mode with account selection so the user can choose
+	// which accounts to share. Other update-mode sessions omit this.
+	if (updateMode && options?.accountSelection) {
+		body.update = { account_selection_enabled: true };
+	}
 	if (cfg.env !== 'production') {
 		if (!cfg.sandboxInstance) {
 			throw new ProviderHttpError(
@@ -359,7 +379,16 @@ async function exchangePublicToken(userId: number, publicToken: string): Promise
 }
 
 interface PlaidItemMeta {
-	item?: { item_id?: string; institution_id?: string | null; error?: { error_code?: string } | null };
+	item?: {
+		item_id?: string;
+		institution_id?: string | null;
+		error?: {
+			error_code?: string;
+			error_type?: string;
+			error_message?: string;
+			display_message?: string;
+		} | null;
+	};
 	institution?: { name?: string } | null;
 }
 
@@ -372,6 +401,8 @@ export async function fetchItemIdentity(
 	institutionId: string | null;
 	institutionName: string | null;
 	errorCode: string | null;
+	errorType: string | null;
+	errorMessage: string | null;
 }> {
 	const res = await plaidPost<PlaidItemMeta>(cfg, accessToken, '/item/get');
 	const itemId = String(res.item?.item_id ?? '').trim() || `unknown:${tokenHint(accessToken).slice(0, 12)}`;
@@ -398,7 +429,15 @@ export async function fetchItemIdentity(
 			institutionName = null;
 		}
 	}
-	return { itemId, institutionId, institutionName, errorCode: res.item?.error?.error_code ?? null };
+	const itemError = res.item?.error;
+	return {
+		itemId,
+		institutionId,
+		institutionName,
+		errorCode: itemError?.error_code ?? null,
+		errorType: itemError?.error_type ?? null,
+		errorMessage: itemError?.error_message ?? itemError?.display_message ?? null
+	};
 }
 
 /** Ask Plaid to drop one item. A missing item is success — the local token is going either way. */
@@ -671,6 +710,13 @@ export function backfillPlaidInstitutionIds(): void {
 	});
 }
 
+function errorDetail(error: unknown): { errorType: string | null; errorMessage: string | null } {
+	if (error instanceof ProviderHttpError || error instanceof PlaidItemError) {
+		return { errorType: error.errorType ?? null, errorMessage: error.errorMessage ?? null };
+	}
+	return { errorType: null, errorMessage: null };
+}
+
 export function noteItemOutcome(
 	userId: number,
 	connectionId: number,
@@ -679,12 +725,12 @@ export function noteItemOutcome(
 	error: unknown | null
 ): ReconnectErrorCode | null {
 	if (!error) {
-		clearItemErrorByToken(userId, accessToken);
 		upsertPlaidItem(userId, connectionId, { accessToken, itemId });
+		clearItemErrorByToken(userId, accessToken);
 		return null;
 	}
 	const code = error instanceof PlaidItemError ? error.code : plaidErrorCode(error);
-	recordItemFailure(userId, connectionId, accessToken, itemId, code);
+	recordItemFailure(userId, connectionId, accessToken, itemId, code, errorDetail(error));
 	return isReconnectCode(code) ? code : null;
 }
 
@@ -790,11 +836,23 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 
 	for (const token of tokens) {
 		let itemId = `unknown:${tokenHint(token).slice(0, 12)}`;
+		let institutionName: string | null = null;
+		const logFailure = (code: string | null, errorType: string | null) => {
+			const stored = storedItemLogFields(ctx.userId, token);
+			const loggedItemId = itemId.startsWith('unknown:') ? stored.itemId ?? itemId : itemId;
+			logPlaidItemSyncFailure({
+				itemId: loggedItemId,
+				institutionName: institutionName ?? stored.institutionName,
+				code,
+				errorType
+			});
+		};
 		try {
 			if (connectionId != null) {
 				try {
 					const identity = await fetchItemIdentity(cfg, token);
 					itemId = identity.itemId;
+					institutionName = identity.institutionName;
 					upsertPlaidItem(ctx.userId, connectionId, {
 						accessToken: token,
 						itemId,
@@ -802,7 +860,17 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 						institutionId: identity.institutionId
 					});
 					if (isReconnectCode(identity.errorCode)) {
-						recordItemFailure(ctx.userId, connectionId, token, itemId, identity.errorCode);
+						logFailure(identity.errorCode, identity.errorType);
+						noteItemOutcome(
+							ctx.userId,
+							connectionId,
+							token,
+							itemId,
+							new PlaidItemError(itemFailureMessage(identity.errorCode), identity.errorCode, itemId, {
+								errorType: identity.errorType,
+								errorMessage: identity.errorMessage
+							})
+						);
 						partialFailure = true;
 						reconnectNeeded = true;
 						continue;
@@ -810,7 +878,15 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 				} catch (error) {
 					const code = plaidErrorCode(error);
 					if (isReconnectCode(code)) {
-						recordItemFailure(ctx.userId, connectionId, token, itemId, code);
+						const detail = errorDetail(error);
+						logFailure(code, detail.errorType);
+						noteItemOutcome(
+							ctx.userId,
+							connectionId,
+							token,
+							itemId,
+							new PlaidItemError(itemFailureMessage(code), code, itemId, detail)
+						);
 						partialFailure = true;
 						reconnectNeeded = true;
 						continue;
@@ -847,9 +923,17 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 		} catch (error) {
 			partialFailure = true;
 			const code = plaidErrorCode(error);
+			const detail = errorDetail(error);
+			logFailure(code, detail.errorType);
 			if (isReconnectCode(code)) reconnectNeeded = true;
 			if (connectionId != null) {
-				noteItemOutcome(ctx.userId, connectionId, token, itemId, new PlaidItemError(itemFailureMessage(code), code, itemId));
+				noteItemOutcome(
+					ctx.userId,
+					connectionId,
+					token,
+					itemId,
+					new PlaidItemError(itemFailureMessage(code), code, itemId, detail)
+				);
 			} else if (tokens.length === 1) {
 				throw error;
 			}
@@ -857,13 +941,11 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 	}
 
 	if (partialFailure && accounts.length === 0 && transactions.length === 0 && tokens.length > 0) {
-		// Every item failed. Still throw so the connection is marked in error,
-		// but the per-item rows already say which ones need a sign-in.
-		throw new ProviderHttpError(
-			reconnectNeeded
-				? 'A linked institution needs you to sign in again.'
-				: 'Plaid could not sync any linked institution. Try again in a moment.'
-		);
+		// Every item failed. Still throw so the connection is marked in error.
+		// The message names each item when the rows were recorded.
+		const message =
+			connectionId != null ? plaidFailureBanner(ctx.userId, connectionId) : PLAID_PARTIAL_FAILURE_FALLBACK;
+		throw new ProviderHttpError(message);
 	}
 	return { accounts, transactions, partialFailure, reconnectNeeded, syncedAccountExternalIds };
 }

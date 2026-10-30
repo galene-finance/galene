@@ -9,6 +9,10 @@ const TIMEOUT_MS = 20000;
 export class ProviderHttpError extends Error {
 	/** Provider error code when the body included one (e.g. Plaid ITEM_LOGIN_REQUIRED). */
 	code?: string;
+	/** Plaid error_type, when the error body included one. Never a token. */
+	errorType?: string;
+	/** Plaid error_message or display_message, trimmed and redacted. */
+	errorMessage?: string;
 }
 
 /**
@@ -105,12 +109,11 @@ export async function fetchJson<T>(url: string, provider: string, opts: Options 
 	}
 
 	if (status < 200 || status >= 300) {
-		const detail = extractDetail(data);
+		const detail = redactSecretText(extractDetail(data), 200);
 		const err = new ProviderHttpError(
 			detail ? `${provider} error: ${detail}` : `${provider} error (HTTP ${status}).`
 		);
-		const code = errorCode(data);
-		if (code) err.code = code;
+		applyProviderErrorFields(err, data);
 		throw err;
 	}
 
@@ -131,9 +134,43 @@ export async function fetchText(url: string, provider: string, opts: Options = {
 }
 
 function errorCode(data: unknown): string | null {
+	return stringField(data, 'error_code');
+}
+
+function stringField(data: unknown, key: string): string | null {
 	if (!data || typeof data !== 'object') return null;
-	const code = (data as Record<string, unknown>).error_code;
-	return typeof code === 'string' && code.trim() ? code.trim() : null;
+	const value = (data as Record<string, unknown>)[key];
+	return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Copy Plaid error_code / error_type / error_message (or display_message)
+ * onto the thrown error. Request bodies, access tokens, and secrets are not
+ * copied. The message is trimmed and length-capped.
+ */
+function applyProviderErrorFields(err: ProviderHttpError, data: unknown): void {
+	const code = redactSecretText(errorCode(data), 64);
+	if (code) err.code = code;
+	const errorType = redactSecretText(stringField(data, 'error_type'), 64);
+	if (errorType) err.errorType = errorType;
+	const errorMessage = redactSecretText(
+		stringField(data, 'error_message') ?? stringField(data, 'display_message'),
+		200
+	);
+	if (errorMessage) err.errorMessage = errorMessage;
+}
+
+/** Trim, cap, and strip token-like substrings from provider error text. */
+export function redactSecretText(value: string | null | undefined, maxLen = 200): string | null {
+	if (value == null) return null;
+	let text = value.replace(/(\w+:\/\/)[^/\s@]+@/g, '$1');
+	text = text.replace(/access-(?:sandbox|production|development)-[A-Za-z0-9_-]+/gi, '[redacted]');
+	text = text.replace(/public-(?:sandbox|production|development)-[A-Za-z0-9_-]+/gi, '[redacted]');
+	text = text.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]');
+	text = text.replace(/\b[a-f0-9]{64}\b/gi, '[redacted]');
+	text = text.replace(/\s+/g, ' ').trim();
+	if (!text) return null;
+	return text.slice(0, maxLen);
 }
 
 /** Pull a human-readable message out of a JSON error body, if present. */

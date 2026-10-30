@@ -205,6 +205,11 @@
 		return new Date(s.replace(' ', 'T') + 'Z').toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 	}
 
+	function itemGuide(item: PlaidItemInfo): string | null {
+		if (item.state === 'connected' || !item.reason) return null;
+		return item.nextStep ? `${item.label}: ${item.reason} ${item.nextStep}` : `${item.label}: ${item.reason}`;
+	}
+
 	let freqForms = $state<Record<string, HTMLFormElement | null>>({});
 
 	// Plaid is configured per user: the form pre-fills from the saved values
@@ -253,6 +258,24 @@
 </script>
 
 <Title title="Bank sync" />
+
+{#snippet alreadyLinkedList()}
+	{#if data.plaidItems.length}
+		<div class="w-full min-w-0 max-w-full text-sm text-muted-foreground">
+			<p>Already linked:</p>
+			<ul class="mt-1 list-disc space-y-1 pl-5">
+				{#each data.plaidItems as item (item.id)}
+					<li class="break-words">{item.label} — {item.statusLabel}</li>
+				{/each}
+			</ul>
+			{#each data.plaidItems as item (item.id)}
+				{#if itemGuide(item)}
+					<p class="mt-2 break-words text-foreground">{itemGuide(item)}</p>
+				{/if}
+			{/each}
+		</div>
+	{/if}
+{/snippet}
 
 <div class="settings-stack mx-auto max-w-3xl 2xl:max-w-5xl">
 	<a href="/settings" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -350,24 +373,7 @@
 							{#if plaidError}
 								<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{plaidError}</p>
 							{/if}
-							{#if data.plaidItems.length}
-								<div class="text-sm text-muted-foreground">
-									<p>Already linked:</p>
-									<ul class="mt-1 list-disc pl-5">
-										{#each data.plaidItems as item (item.id)}
-											<li>
-												{item.label + ' — ' + (item.needsReconnect ? 'needs sign-in' : 'connected')}
-											</li>
-										{/each}
-									</ul>
-									{#each data.plaidItems.filter((item) => item.needsReconnect) as item (item.id)}
-										<p class="mt-2 text-foreground">
-											{item.label} needs you to sign in again — use Reconnect instead of linking it
-											again.
-										</p>
-									{/each}
-								</div>
-							{/if}
+							{@render alreadyLinkedList()}
 							{#if alreadyLinked}
 								<div class="rounded-md border border-border bg-muted/40 px-3 py-3 text-sm">
 									<p>
@@ -404,7 +410,7 @@
 								<span class="text-muted-foreground">Last synced {formatTime(conn.last_synced_at)}</span>
 							</div>
 							{#if conn.last_error}
-								<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{conn.last_error}</p>
+								<p class="max-w-full break-words rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{conn.last_error}</p>
 							{/if}
 							{#if plaidError}
 								<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{plaidError}</p>
@@ -462,24 +468,7 @@
 									<input type="hidden" name="cred_public_token" value={plaidPublicToken} />
 									<input type="hidden" name="plaid_metadata" value={plaidMetadata} />
 									<input type="hidden" name="plaid_allow_duplicate" value={plaidAllowDuplicate} />
-									{#if data.plaidItems.length}
-										<div class="w-full text-sm text-muted-foreground">
-											<p>Already linked:</p>
-											<ul class="mt-1 list-disc pl-5">
-												{#each data.plaidItems as item (item.id)}
-													<li>
-														{item.label + ' — ' + (item.needsReconnect ? 'needs sign-in' : 'connected')}
-													</li>
-												{/each}
-											</ul>
-											{#each data.plaidItems.filter((item) => item.needsReconnect) as item (item.id)}
-												<p class="mt-2 text-foreground">
-													{item.label} needs you to sign in again — use Reconnect instead of linking it
-													again.
-												</p>
-											{/each}
-										</div>
-									{/if}
+									{@render alreadyLinkedList()}
 									{#if alreadyLinked}
 										<div class="w-full rounded-md border border-border bg-muted/40 px-3 py-3 text-sm text-foreground">
 											<p>
@@ -513,24 +502,32 @@
 							</div>
 
 							{#if p.id === 'plaid' && data.plaidItems.length}
-								<ul class="divide-y divide-border rounded-md border border-border">
+								<ul class="max-w-full divide-y divide-border overflow-hidden rounded-md border border-border">
 									{#each data.plaidItems as item (item.id)}
-										<li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-											<div class="min-w-0">
-												<p class="text-sm font-medium">{item.label}</p>
-												{#if item.needsReconnect && item.message}
-													<p class="text-sm text-destructive">{item.message}</p>
+										<li class="flex flex-wrap items-start justify-between gap-2 px-3 py-2">
+											<div class="min-w-0 flex-1 basis-full sm:basis-0">
+												<p class="break-words text-sm font-medium">{item.label}</p>
+												<p class="break-words text-sm {item.state === 'connected' ? 'text-muted-foreground' : 'text-destructive'}">
+													{item.statusLabel}
+												</p>
+												{#if item.reason}
+													<p class="break-words text-sm text-muted-foreground">{item.reason} {item.nextStep}</p>
+												{/if}
+												{#if item.lastSyncAt}
+													<p class="break-words text-xs text-muted-foreground">Last sync {formatTime(item.lastSyncAt)}</p>
 												{/if}
 											</div>
-											<div class="flex gap-2">
-												<Button
-													type="button"
-													variant={item.needsReconnect ? 'primary' : 'secondary'}
-													disabled={plaidOpening || reconnectSyncing || data.demo}
-													onclick={() => reconnectItem(item)}
-												>
-													{reconnectSyncing && reconnectItemId === String(item.id) ? 'Syncing…' : 'Reconnect'}
-												</Button>
+											<div class="flex flex-wrap gap-2">
+												{#if item.showReconnect}
+													<Button
+														type="button"
+														variant={item.state === 'connected' ? 'secondary' : 'primary'}
+														disabled={plaidOpening || reconnectSyncing || data.demo}
+														onclick={() => reconnectItem(item)}
+													>
+														{reconnectSyncing && reconnectItemId === String(item.id) ? 'Syncing…' : 'Reconnect'}
+													</Button>
+												{/if}
 												<Button type="button" variant="secondary" disabled={data.demo} onclick={() => askRemove(item)}>
 													Remove
 												</Button>
@@ -610,7 +607,7 @@
 							<span class="text-muted-foreground">Last synced {formatTime(conn.last_synced_at)}</span>
 						</div>
 						{#if conn.last_error}
-							<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{conn.last_error}</p>
+							<p class="max-w-full break-words rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{conn.last_error}</p>
 						{/if}
 
 						{#if p.minSyncIntervalMinutes != null}

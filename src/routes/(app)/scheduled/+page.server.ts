@@ -1,4 +1,5 @@
 import { deleteScheduledAction } from '$lib/server/scheduledDeleteAction';
+import { paidAtByScheduled } from '$lib/server/scheduledPaid';
 import {
 	getAccounts,
 	getCategories,
@@ -9,25 +10,28 @@ import {
 	scheduledInputFromForm
 } from '$lib/server/finance';
 import { addDaysIso } from '$lib/calendarMobile';
+import { OVERDUE_LOOKBACK_DAYS, attachPaidState, selectScheduleFocus } from '$lib/scheduledPaid';
 import { todayISO } from '$lib/utils';
-import type { Scheduled } from '$lib/types';
-
-/** Far enough to catch a yearly series and a start date well in the future. */
-function nextOccurrence(s: Scheduled, today: string): { date: string; scheduled: Scheduled } | null {
-	let to = addDaysIso(today, 366 * 15);
-	if (s.start_date > to) to = s.start_date;
-	return expandScheduled(s, today, to)[0] ?? null;
-}
 
 export function load({ locals }) {
 	const userId = locals.user!.id;
 	const today = todayISO();
-	const rows = getScheduled(userId)
+	const seriesRows = getScheduled(userId);
+	const paidAt = paidAtByScheduled(
+		userId,
+		seriesRows.map((series) => series.id)
+	);
+	const windowStart = addDaysIso(today, -OVERDUE_LOOKBACK_DAYS);
+	const rows = seriesRows
 		.map((series) => {
-			const next = nextOccurrence(series, today);
+			let to = addDaysIso(today, 366 * 15);
+			if (series.start_date > to) to = series.start_date;
+			const expanded = attachPaidState(expandScheduled(series, windowStart, to), paidAt, today);
+			const next = expanded.find((row) => row.date >= today) ?? null;
 			return {
 				scheduled: next?.scheduled ?? series,
-				nextDate: next?.date ?? null
+				nextDate: next?.date ?? null,
+				focus: selectScheduleFocus(expanded, today)
 			};
 		})
 		.sort((a, b) => {

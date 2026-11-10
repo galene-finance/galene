@@ -1,4 +1,6 @@
+import { attachPaidState, countOverdueInMonth } from '$lib/scheduledPaid';
 import { deleteScheduledAction } from '$lib/server/scheduledDeleteAction';
+import { paidAtByScheduled, setPaidAction } from '$lib/server/scheduledPaid';
 import {
 	getAccounts,
 	getCategories,
@@ -14,6 +16,7 @@ import {
 	scheduledInputFromForm,
 	transactionInputFromForm
 } from '$lib/server/finance';
+import { todayISO } from '$lib/utils';
 
 export function load({ locals, url }) {
 	const userId = locals.user!.id;
@@ -26,7 +29,17 @@ export function load({ locals, url }) {
 
 	const transactions = getTransactionsInPeriod(userId, from, to);
 	const scheduled = getScheduled(userId);
-	const occurrences = scheduled.flatMap((s) => expandScheduled(s, from, to));
+	const today = todayISO();
+	const paidAt = paidAtByScheduled(
+		userId,
+		scheduled.map((series) => series.id)
+	);
+	const occurrences = attachPaidState(
+		scheduled.flatMap((series) => expandScheduled(series, from, to)),
+		paidAt,
+		today
+	);
+	const overdueCount = countOverdueInMonth(occurrences, today, month);
 	const hideActuals = getSetting(userId, 'hide_actuals') === '1';
 	const weekStartsOn = getSetting(userId, 'week_starts_on') === 'monday' ? 'monday' : 'sunday';
 
@@ -34,6 +47,7 @@ export function load({ locals, url }) {
 		month,
 		transactions,
 		occurrences,
+		overdueCount,
 		hideActuals,
 		weekStartsOn,
 		accounts: getAccounts(userId),
@@ -64,6 +78,8 @@ export const actions = {
 	},
 
 	'delete-scheduled': deleteScheduledAction,
+
+	'set-paid': setPaidAction,
 
 	'set-hide-actuals': async ({ request, locals }) => {
 		const form = await request.formData();

@@ -1098,6 +1098,66 @@ CREATE TABLE scheduled_paid (
 CREATE INDEX IF NOT EXISTS idx_scheduled_paid_sched ON scheduled_paid(scheduled_id);
 `);
 	}
+},
+{
+	// ADO-68: link one occurrence to one transaction, and remember Not this.
+	// Additive; no parent rebuild. afterFkOff so a replay that rewinds
+	// user_version and drops the tables still creates them with foreign keys
+	// off (SQLite ignores that pragma inside the migration transaction).
+	sql: `-- scheduled_match scheduled_match_dismissed (ADO-68)
+CREATE TABLE IF NOT EXISTS scheduled_match (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	scheduled_id INTEGER NOT NULL REFERENCES scheduled(id) ON DELETE CASCADE,
+	occurrence_date TEXT NOT NULL,
+	transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+	matched_at TEXT NOT NULL,
+	UNIQUE (scheduled_id, occurrence_date),
+	UNIQUE (transaction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_match_sched ON scheduled_match(scheduled_id);
+CREATE TABLE IF NOT EXISTS scheduled_match_dismissed (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	scheduled_id INTEGER NOT NULL REFERENCES scheduled(id) ON DELETE CASCADE,
+	occurrence_date TEXT NOT NULL,
+	transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+	dismissed_at TEXT NOT NULL,
+	UNIQUE (scheduled_id, occurrence_date, transaction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_match_dismissed_sched ON scheduled_match_dismissed(scheduled_id);
+`,
+	afterFkOff(database) {
+		const has = (name: string) =>
+			database
+				.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = ?`)
+				.get(name) as { o: number } | null;
+		if (!has('scheduled_match')) {
+			database.exec(`
+CREATE TABLE scheduled_match (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	scheduled_id INTEGER NOT NULL REFERENCES scheduled(id) ON DELETE CASCADE,
+	occurrence_date TEXT NOT NULL,
+	transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+	matched_at TEXT NOT NULL,
+	UNIQUE (scheduled_id, occurrence_date),
+	UNIQUE (transaction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_match_sched ON scheduled_match(scheduled_id);
+`);
+		}
+		if (!has('scheduled_match_dismissed')) {
+			database.exec(`
+CREATE TABLE scheduled_match_dismissed (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	scheduled_id INTEGER NOT NULL REFERENCES scheduled(id) ON DELETE CASCADE,
+	occurrence_date TEXT NOT NULL,
+	transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+	dismissed_at TEXT NOT NULL,
+	UNIQUE (scheduled_id, occurrence_date, transaction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_match_dismissed_sched ON scheduled_match_dismissed(scheduled_id);
+`);
+		}
+	}
 }
 ];
 

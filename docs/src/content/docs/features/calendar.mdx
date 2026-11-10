@@ -15,9 +15,9 @@ Click a pill to open its details: name, date, amount, account, and category. On 
 
 ### Overdue
 
-An occurrence is overdue when it is not marked paid, its displayed date is before today, and that date is within the last 30 days. Today is not overdue. Older unpaid dates stay on the calendar without the overdue tint.
+An occurrence is overdue when it is not marked paid, its displayed date is before today, and that date is within the last 30 days. Today is not overdue. Older unpaid dates stay on the calendar and do not show the overdue alert.
 
-Overdue pills use a dashed red border, a light red fill, and an alert icon. The text stays the normal foreground color, so the state is the icon and the label, not color alone. A paid pill is a solid quiet border with muted text and a check. Due today keeps the normal dashed look.
+Paid and overdue pills keep the same dashed border, soft fill, and item color as any other scheduled pill. Overdue adds an alert icon. Paid adds a check. The name and amount stay in the item color. The button’s accessible name still says paid or overdue. Due today keeps that same dashed look.
 
 When the month you are viewing has overdue items, the header shows how many.
 
@@ -25,7 +25,7 @@ Hover or keyboard focus on a desktop pill still shows the read-only summary. Tha
 
 ## Scheduled list
 
-**Scheduled** lists each series, not every future date. The card is read-only for paid state: there is no checkbox on the list.
+**Scheduled** lists each series, not every future date. The card is read-only for paid state: there is no checkbox on the list. The card keeps its usual color. Overdue and paid show as an icon and text, without a filled status band.
 
 - If the series has an unpaid occurrence in the last 30 days, the card shows the oldest of those: **Overdue**, the date, and how many days late.
 - Otherwise the card shows the next occurrence: **Paid** (with the date and “marked manually”) if that date is marked paid, **Due today** if it falls on today, or the usual upcoming card.

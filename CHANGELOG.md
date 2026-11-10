@@ -7,7 +7,8 @@ Release), which commits it and tags `vX.Y`.
 
 ## [Unreleased]
 
-- **Calendar (ADO-67):** click a scheduled pill to mark that occurrence paid. Paid is stored per series and occurrence date, does not create a transaction, and does not change other dates. Unpaid items in the last 30 days show an overdue tint; the Scheduled list shows that state read-only. Schema migration adds `scheduled_paid` — take a backup before upgrading.
+- **Calendar (ADO-69):** paid and overdue pills keep each item’s color and the usual dashed style. A check marks paid and an alert marks overdue. The month header count is unchanged. Scheduled list cards keep their color; paid and overdue are an icon and text without a filled band.
+- **Calendar (ADO-67):** click a scheduled pill to mark that occurrence paid. Paid is stored per series and occurrence date, does not create a transaction, and does not change other dates. Unpaid items in the last 30 days are marked overdue; the Scheduled list shows that state read-only. Schema migration adds `scheduled_paid` — take a backup before upgrading.
 - **SSO hardening (ADO-55):** the first SSO sign-in pins the Galene user to the provider issuer + subject; later sign-ins match on that, and a different subject for a linked email is rejected. Linking by email now requires `email_verified: true` — a provider that omits the claim is rejected (check your IdP sends it). Clearer callback errors, a per-email limit on rejected SSO sign-ins, and **Unlink SSO** in Settings → Users. Schema migration adds `oidc_identities`; take a backup before upgrading.
 - MCP HTTP is served on the **app port** at `/mcp` when enabled in Settings → API (**default off**); no separate MCP port.
 - **MCP image removed:** no `:mcp-*` tags are published. Use the app image (`:latest` / `:test`), enable MCP in Settings (same port). Stdio: `docker run --entrypoint bun <app-image> mcp-bundle.js`.

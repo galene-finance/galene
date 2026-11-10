@@ -46,6 +46,7 @@ export default defineConfig({
             { label: 'Plaid', slug: 'features/plaid' },
             { label: 'Budgets & rules', slug: 'features/budgets-rules' },
             { label: 'Categories & cashflow', slug: 'features/categories-cashflow' },
+            { label: 'Calendar & scheduled', slug: 'features/calendar' },
             { label: 'Accounts & tags', slug: 'features/accounts-tags' },
             { label: 'Import and export', slug: 'features/import-transactions' },
             { label: 'Appearance', slug: 'features/appearance' },

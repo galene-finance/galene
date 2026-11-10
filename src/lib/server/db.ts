@@ -1066,6 +1066,38 @@ CREATE INDEX IF NOT EXISTS idx_plaid_items_user ON plaid_items(user_id, connecti
 			database.exec('ALTER TABLE plaid_items ADD COLUMN last_sync_at TEXT');
 		}
 	}
+},
+{
+	// ADO-67: manual paid flag per occurrence. Additive; no parent rebuild.
+	// afterFkOff so a replay that rewinds user_version and drops the table
+	// still creates it with foreign keys off (SQLite ignores that pragma
+	// inside the migration transaction).
+	sql: `-- scheduled_paid (ADO-67)
+CREATE TABLE IF NOT EXISTS scheduled_paid (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	scheduled_id INTEGER NOT NULL REFERENCES scheduled(id) ON DELETE CASCADE,
+	occurrence_date TEXT NOT NULL,
+	paid_at TEXT NOT NULL,
+	UNIQUE (scheduled_id, occurrence_date)
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_paid_sched ON scheduled_paid(scheduled_id);
+`,
+	afterFkOff(database) {
+		const exists = database
+			.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_paid'`)
+			.get() as { o: number } | null;
+		if (exists) return;
+		database.exec(`
+CREATE TABLE scheduled_paid (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	scheduled_id INTEGER NOT NULL REFERENCES scheduled(id) ON DELETE CASCADE,
+	occurrence_date TEXT NOT NULL,
+	paid_at TEXT NOT NULL,
+	UNIQUE (scheduled_id, occurrence_date)
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_paid_sched ON scheduled_paid(scheduled_id);
+`);
+	}
 }
 ];
 

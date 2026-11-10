@@ -34,7 +34,6 @@
 	const amount = $derived(formatMoney(occurrence.scheduled.amount_cents));
 	const label = $derived(scheduledPillLabel(occurrence.scheduled.name, amount, state, occurrence.daysLate));
 	const color = $derived(occurrence.scheduled.color);
-	const quiet = $derived(state === 'paid' || state === 'overdue');
 
 	function itemBorder(): string {
 		return color ?? 'color-mix(in oklab, var(--color-primary) 60%, transparent)';
@@ -101,19 +100,10 @@
 {#if variant === 'grid'}
 	<button
 		type="button"
-		class="pointer-events-auto flex cursor-pointer select-none items-center gap-1 rounded border px-1.5 py-0.5 text-left text-xs [-webkit-touch-callout:none] {state ===
-		'paid'
-			? 'border-solid border-border bg-transparent text-muted-foreground'
-			: state === 'overdue'
-				? 'border-dashed border-destructive/60 bg-destructive/12 text-foreground'
-				: color
-					? 'border-dashed'
-					: 'border-dashed border-primary/60 bg-primary/10'}"
-		style={quiet
-			? undefined
-			: color
-				? `border-color: ${color}; background: ${color}1a`
-				: undefined}
+		class="pointer-events-auto flex cursor-pointer select-none items-center gap-1 rounded border px-1.5 py-0.5 text-left text-xs [-webkit-touch-callout:none] {color
+			? 'border-dashed'
+			: 'border-dashed border-primary/60 bg-primary/10'}"
+		style={color ? `border-color: ${color}; background: ${color}1a` : undefined}
 		aria-label={label}
 		aria-haspopup="dialog"
 		aria-expanded={active}
@@ -131,29 +121,15 @@
 			{@render repeat()}
 		{/if}
 		<span class="truncate">{occurrence.scheduled.name}</span>
-		<span
-			class="ml-auto shrink-0 font-medium {state === 'paid'
-				? 'text-muted-foreground'
-				: state === 'overdue'
-					? 'text-foreground'
-					: ''}"
-			style={quiet ? undefined : `color: ${color ?? 'var(--color-primary)'}`}
-		>
+		<span class="ml-auto shrink-0 font-medium" style="color: {color ?? 'var(--color-primary)'}">
 			{amount}
 		</span>
 	</button>
 {:else}
 	<button
 		type="button"
-		class="pointer-events-auto relative my-1.5 flex min-h-11 select-none items-center justify-between gap-2 rounded-lg border px-3 py-2.5 pl-3.5 text-left [-webkit-touch-callout:none] {state ===
-		'paid'
-			? 'border-solid border-border bg-transparent'
-			: state === 'overdue'
-				? 'border-dashed border-destructive/60 bg-destructive/12'
-				: 'border-dashed'}"
-		style={state === 'overdue' || state === 'paid'
-			? undefined
-			: `border-color: ${itemBorder()}; background: ${itemFill()}`}
+		class="pointer-events-auto relative my-1.5 flex min-h-11 select-none items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2.5 pl-3.5 text-left [-webkit-touch-callout:none]"
+		style="border-color: {itemBorder()}; background: {itemFill()}"
 		aria-label={label}
 		aria-haspopup="dialog"
 		aria-expanded={active}
@@ -165,15 +141,11 @@
 	>
 		<span
 			class="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-r"
-			style="background: {state === 'paid'
-				? 'var(--color-success)'
-				: state === 'overdue'
-					? 'var(--color-destructive)'
-					: (color ?? 'var(--color-primary)')}"
+			style="background: {color ?? 'var(--color-primary)'}"
 			aria-hidden="true"
 		></span>
 		<div class="min-w-0 flex-1">
-			<div class="truncate text-sm font-medium {state === 'paid' ? 'text-muted-foreground' : 'text-foreground'}">
+			<div class="truncate text-sm font-medium text-foreground">
 				{occurrence.scheduled.name}
 			</div>
 			<div class="mt-1 flex flex-wrap gap-1">
@@ -184,16 +156,12 @@
 					>
 				{/if}
 				{#if state === 'paid'}
-					<span
-						class="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[0.62rem] font-semibold text-foreground"
-					>
+					<span class="inline-flex items-center gap-1 text-[0.62rem] font-semibold text-foreground">
 						{@render check()}
 						Paid
 					</span>
 				{:else if state === 'overdue'}
-					<span
-						class="inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/12 px-2 py-0.5 text-[0.62rem] font-semibold text-foreground"
-					>
+					<span class="inline-flex items-center gap-1 text-[0.62rem] font-semibold text-foreground">
 						{@render alert()}
 						Overdue · {occurrence.daysLate}d
 					</span>
@@ -224,14 +192,7 @@
 				{/if}
 			</div>
 		</div>
-		<div
-			class="shrink-0 text-sm font-medium tabular-nums {state === 'paid'
-				? 'text-muted-foreground'
-				: state === 'overdue'
-					? 'text-foreground'
-					: ''}"
-			style={quiet ? undefined : `color: ${color ?? 'var(--color-primary)'}`}
-		>
+		<div class="shrink-0 text-sm font-medium tabular-nums" style="color: {color ?? 'var(--color-primary)'}">
 			{amount}
 		</div>
 	</button>

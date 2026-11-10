@@ -158,22 +158,14 @@
 				<li>
 					<button
 						type="button"
-						class="w-full rounded-xl border p-4 text-left transition-colors {row.focus.kind === 'overdue'
-							? 'border-[color-mix(in_oklab,var(--destructive)_55%,transparent)] bg-[color-mix(in_oklab,var(--destructive)_6%,var(--surface))]'
-							: row.focus.kind === 'paid'
-								? 'border-border bg-surface'
-								: row.scheduled.color
-									? ''
-									: 'border-border bg-surface hover:bg-muted/40'}"
-						style={row.focus.kind === 'overdue' || row.focus.kind === 'paid'
-							? undefined
-							: cardStyle(row.scheduled.color)}
+						class="w-full rounded-xl border p-4 text-left transition-colors {row.scheduled.color
+							? ''
+							: 'border-border bg-surface hover:bg-muted/40'}"
+						style={cardStyle(row.scheduled.color)}
 						onclick={() => openScheduledEdit(row)}
 					>
 						{#if row.focus.kind === 'overdue'}
-							<div
-								class="mb-3 flex items-center gap-2 rounded-lg bg-destructive/14 px-2.5 py-1.5 text-[0.8125rem] font-semibold text-foreground"
-							>
+							<div class="mb-3 flex items-center gap-2 text-[0.8125rem] font-semibold text-foreground">
 								<svg
 									class="size-4 shrink-0 text-destructive"
 									viewBox="0 0 24 24"
@@ -189,7 +181,7 @@
 								<span>Overdue · {formatMonthDay(row.focus.date)} · {daysLateLabel(row.focus.daysLate)}</span>
 							</div>
 						{:else if row.focus.kind === 'paid'}
-							<div class="mb-3 flex items-center gap-2 rounded-lg bg-muted px-2.5 py-1.5 text-[0.8125rem] font-semibold">
+							<div class="mb-3 flex items-center gap-2 text-[0.8125rem] font-semibold">
 								<svg
 									class="size-4 shrink-0 text-success"
 									viewBox="0 0 24 24"
@@ -225,17 +217,10 @@
 							</div>
 						{/if}
 						<div class="flex items-start justify-between gap-3">
-							<span
-								class="min-w-0 truncate text-[0.95rem] font-semibold tracking-tight {row.focus.kind === 'paid'
-									? 'text-muted-foreground'
-									: ''}"
-							>
+							<span class="min-w-0 truncate text-[0.95rem] font-semibold tracking-tight">
 								{row.scheduled.name}
 							</span>
-							<span
-								class="shrink-0 text-sm font-medium {row.focus.kind === 'paid' ? 'text-muted-foreground' : ''}"
-								>{formatMoney(row.scheduled.amount_cents)}</span
-							>
+							<span class="shrink-0 text-sm font-medium">{formatMoney(row.scheduled.amount_cents)}</span>
 						</div>
 						<dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 							<div class="min-w-0">

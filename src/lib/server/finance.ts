@@ -2070,28 +2070,48 @@ function splitSeries(userId: number, id: number, anchor: string, input: Schedule
 	const identities = new Set(
 		freshPaid ? expandScheduled(freshPaid, freshPaid.start_date, '9999-12-31').map((o) => o.occurrenceDate) : []
 	);
-	reassignPaidOnSplit(id, created, anchor, identities);
+	reassignOccurrenceLinksOnSplit(id, created, anchor, identities);
 	endSeriesBefore(userId, id, anchor);
 	return created;
 }
 
-function dropPaidOccurrence(scheduledId: number, occurrenceDate: string) {
-	db().query('DELETE FROM scheduled_paid WHERE scheduled_id = ? AND occurrence_date = ?').run(scheduledId, occurrenceDate);
+/** Paid, match, and Not-this rows. Keyed the same way, so split and delete treat them together. */
+const OCCURRENCE_LINK_TABLES = ['scheduled_paid', 'scheduled_match', 'scheduled_match_dismissed'] as const;
+
+function dropOccurrenceLinks(scheduledId: number, occurrenceDate: string) {
+	const database = db();
+	for (const table of OCCURRENCE_LINK_TABLES) {
+		database
+			.query(`DELETE FROM ${table} WHERE scheduled_id = ? AND occurrence_date = ?`)
+			.run(scheduledId, occurrenceDate);
+	}
 }
 
-function dropPaidOnOrAfter(scheduledId: number, occurrenceDate: string) {
-	db().query('DELETE FROM scheduled_paid WHERE scheduled_id = ? AND occurrence_date >= ?').run(scheduledId, occurrenceDate);
+function dropLinksOnOrAfter(scheduledId: number, occurrenceDate: string) {
+	const database = db();
+	for (const table of OCCURRENCE_LINK_TABLES) {
+		database
+			.query(`DELETE FROM ${table} WHERE scheduled_id = ? AND occurrence_date >= ?`)
+			.run(scheduledId, occurrenceDate);
+	}
 }
 
-function reassignPaidOnSplit(oldId: number, newId: number, anchor: string, identities: Set<string>) {
-	const rows = db()
-		.query('SELECT occurrence_date FROM scheduled_paid WHERE scheduled_id = ? AND occurrence_date >= ?')
-		.all(oldId, anchor) as { occurrence_date: string }[];
-	const move = db().query('UPDATE scheduled_paid SET scheduled_id = ? WHERE scheduled_id = ? AND occurrence_date = ?');
-	const drop = db().query('DELETE FROM scheduled_paid WHERE scheduled_id = ? AND occurrence_date = ?');
-	for (const row of rows) {
-		if (identities.has(row.occurrence_date)) move.run(newId, oldId, row.occurrence_date);
-		else drop.run(oldId, row.occurrence_date);
+function reassignOccurrenceLinksOnSplit(oldId: number, newId: number, anchor: string, identities: Set<string>) {
+	const database = db();
+	for (const table of OCCURRENCE_LINK_TABLES) {
+		const rows = database
+			.query(
+				`SELECT DISTINCT occurrence_date FROM ${table} WHERE scheduled_id = ? AND occurrence_date >= ?`
+			)
+			.all(oldId, anchor) as { occurrence_date: string }[];
+		const move = database.query(
+			`UPDATE ${table} SET scheduled_id = ? WHERE scheduled_id = ? AND occurrence_date = ?`
+		);
+		const drop = database.query(`DELETE FROM ${table} WHERE scheduled_id = ? AND occurrence_date = ?`);
+		for (const row of rows) {
+			if (identities.has(row.occurrence_date)) move.run(newId, oldId, row.occurrence_date);
+			else drop.run(oldId, row.occurrence_date);
+		}
 	}
 }
 
@@ -2252,12 +2272,12 @@ export function deleteScheduledScoped(
 	try {
 		if (scope === 'following') {
 			endSeriesBefore(userId, id, anchor);
-			dropPaidOnOrAfter(id, anchor);
+			dropLinksOnOrAfter(id, anchor);
 		} else {
 			// A moved occurrence is keyed by its original date.
 			const moved = (existing.exceptions ?? []).find((ex) => ex.display_date === anchor && !ex.skipped);
 			const key = moved ? moved.occurrence_date : anchor;
-			dropPaidOccurrence(id, key);
+			dropOccurrenceLinks(id, key);
 			const view = expandScheduled(existing, anchor, anchor)[0]?.scheduled ?? existing;
 			d.query('DELETE FROM scheduled_exceptions WHERE scheduled_id = ? AND occurrence_date = ?').run(id, key);
 			d

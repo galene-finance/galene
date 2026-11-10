@@ -195,7 +195,9 @@
 									<path d="M5 13l4 4L19 7" />
 								</svg>
 								<span>Paid · {formatMonthDay(row.focus.date)}</span>
-								<span class="ml-auto text-xs font-medium text-muted-foreground">marked manually</span>
+								<span class="ml-auto text-xs font-medium text-muted-foreground"
+									>{row.focus.matched ? 'matched' : 'marked manually'}</span
+								>
 							</div>
 						{:else if row.focus.kind === 'due'}
 							<div

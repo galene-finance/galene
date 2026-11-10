@@ -10,11 +10,24 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
 export type PillVisualState = 'paid' | 'overdue' | 'due' | 'scheduled';
 
+/** A confirmed link. Matched wins over a manual paid row for display. */
+export type OccurrenceMatch = {
+	transactionId: number;
+	matchedAt: string;
+	date: string;
+	amountCents: number;
+	merchant: string | null;
+	accountId: number;
+	accountName: string | null;
+};
+
 export type PaidFields = {
 	paid: boolean;
 	paidAt: string | null;
 	overdue: boolean;
 	daysLate: number;
+	matched: boolean;
+	match: OccurrenceMatch | null;
 };
 
 /** One expanded occurrence plus manual paid state. `date` is the display date. */
@@ -26,7 +39,7 @@ export type CalendarOccurrence = {
 
 export type ScheduleFocus =
 	| { kind: 'overdue'; date: string; occurrenceDate: string; daysLate: number }
-	| { kind: 'paid'; date: string; occurrenceDate: string; paidAt: string }
+	| { kind: 'paid'; date: string; occurrenceDate: string; paidAt: string; matched: boolean }
 	| { kind: 'due'; date: string; occurrenceDate: string }
 	| { kind: 'upcoming'; date: string; occurrenceDate: string }
 	| { kind: 'none' };
@@ -65,18 +78,23 @@ export function daysLate(displayDate: string, today: string): number {
 export function attachPaidState<T extends { date: string; occurrenceDate: string; scheduled: { id: number } }>(
 	rows: T[],
 	paidAtByKey: ReadonlyMap<string, string>,
-	today: string
+	today: string,
+	matchByKey: ReadonlyMap<string, OccurrenceMatch> = new Map()
 ): (T & PaidFields)[] {
 	return rows.map((row) => {
-		const paidAt = paidAtByKey.get(paidKey(row.scheduled.id, row.occurrenceDate)) ?? null;
-		const paid = paidAt != null;
+		const key = paidKey(row.scheduled.id, row.occurrenceDate);
+		const paidAt = paidAtByKey.get(key) ?? null;
+		const match = matchByKey.get(key) ?? null;
+		const paid = paidAt != null || match != null;
 		const overdue = isOverdue(row.date, paid, today);
 		return {
 			...row,
 			paid,
 			paidAt,
 			overdue,
-			daysLate: overdue ? daysLate(row.date, today) : 0
+			daysLate: overdue ? daysLate(row.date, today) : 0,
+			matched: match != null,
+			match
 		};
 	});
 }
@@ -96,9 +114,18 @@ export function countOverdueInMonth(
 /**
  * Oldest unpaid past occurrence inside the lookback, otherwise the next
  * occurrence on or after today. Paid / due / upcoming describe that next date.
+ * When nothing is overdue and nothing is upcoming, a paid latest past
+ * occurrence (manual or matched) is the focus so an ended series can still
+ * show Paid. An unpaid past date outside the lookback stays none.
  */
 export function selectScheduleFocus(
-	occurrences: { date: string; occurrenceDate: string; paid: boolean; paidAt: string | null }[],
+	occurrences: {
+		date: string;
+		occurrenceDate: string;
+		paid: boolean;
+		paidAt: string | null;
+		matched?: boolean;
+	}[],
 	today: string
 ): ScheduleFocus {
 	const windowStart = addDaysIso(today, -OVERDUE_LOOKBACK_DAYS);
@@ -116,17 +143,56 @@ export function selectScheduleFocus(
 		};
 	}
 	const next = sorted.find((row) => row.date >= today);
-	if (!next) return { kind: 'none' };
-	if (next.paid) {
+	if (next) {
+		if (next.paid) {
+			return {
+				kind: 'paid',
+				date: next.date,
+				occurrenceDate: next.occurrenceDate,
+				paidAt: next.paidAt ?? '',
+				matched: next.matched === true
+			};
+		}
+		if (next.date === today) return { kind: 'due', date: next.date, occurrenceDate: next.occurrenceDate };
+		return { kind: 'upcoming', date: next.date, occurrenceDate: next.occurrenceDate };
+	}
+	const latest = sorted.filter((row) => row.date < today).at(-1);
+	if (latest?.paid) {
 		return {
 			kind: 'paid',
-			date: next.date,
-			occurrenceDate: next.occurrenceDate,
-			paidAt: next.paidAt ?? ''
+			date: latest.date,
+			occurrenceDate: latest.occurrenceDate,
+			paidAt: latest.paidAt ?? '',
+			matched: latest.matched === true
 		};
 	}
-	if (next.date === today) return { kind: 'due', date: next.date, occurrenceDate: next.occurrenceDate };
-	return { kind: 'upcoming', date: next.date, occurrenceDate: next.occurrenceDate };
+	return { kind: 'none' };
+}
+
+/**
+ * Overdue cards first, oldest overdue date first. Everything else keeps the
+ * previous order: next occurrence, then name. A paid ended series has no next
+ * date, so it sorts after series that still have one.
+ */
+export function compareScheduleCards(
+	a: { nextDate: string | null; focus: ScheduleFocus; scheduled: { name: string } },
+	b: { nextDate: string | null; focus: ScheduleFocus; scheduled: { name: string } }
+): number {
+	const aOver = a.focus.kind === 'overdue';
+	const bOver = b.focus.kind === 'overdue';
+	if (aOver && bOver && a.focus.kind === 'overdue' && b.focus.kind === 'overdue') {
+		const byDate = a.focus.date.localeCompare(b.focus.date);
+		if (byDate !== 0) return byDate;
+		return a.scheduled.name.localeCompare(b.scheduled.name);
+	}
+	if (aOver) return -1;
+	if (bOver) return 1;
+	if (a.nextDate && b.nextDate) {
+		const byNext = a.nextDate.localeCompare(b.nextDate);
+		if (byNext !== 0) return byNext;
+	} else if (a.nextDate) return -1;
+	else if (b.nextDate) return 1;
+	return a.scheduled.name.localeCompare(b.scheduled.name);
 }
 
 /** Overdue wins, then paid, then due today. */
@@ -164,7 +230,14 @@ export function daysLatePhrase(n: number): string {
 	return n === 1 ? '1 day late' : `${n} days late`;
 }
 
-export function scheduledPillLabel(name: string, amount: string, state: PillVisualState, late = 0): string {
+export function scheduledPillLabel(
+	name: string,
+	amount: string,
+	state: PillVisualState,
+	late = 0,
+	matched = false
+): string {
+	if (state === 'paid' && matched) return `${name}, ${amount}, paid, matched to a transaction`;
 	if (state === 'paid') return `${name}, ${amount}, paid`;
 	if (state === 'overdue') return `${name}, ${amount}, overdue ${daysLatePhrase(late)}`;
 	if (state === 'due') return `${name}, ${amount}, due today`;
@@ -179,7 +252,21 @@ export function occurrenceSubtitle(
 	return `${formatWeekdayMonthDay(date)} · ${formatRepeat(repeatInterval, repeatUnit) ?? 'One time'}`;
 }
 
-export function paidHint(paid: boolean, paidAt: string | null): string {
+/**
+ * Range for the Scheduled list. Starts at the series start when that is older
+ * than the overdue lookback, so a paid one-time still has an occurrence to focus.
+ * The far end covers the next fifteen years, or the start date if that is later.
+ */
+export function scheduleListBounds(startDate: string, today: string): { from: string; to: string } {
+	const windowStart = addDaysIso(today, -OVERDUE_LOOKBACK_DAYS);
+	let to = addDaysIso(today, 366 * 15);
+	if (startDate > to) to = startDate;
+	const from = startDate < windowStart ? startDate : windowStart;
+	return { from, to };
+}
+
+export function paidHint(paid: boolean, paidAt: string | null, matched = false): string {
+	if (matched) return 'Matched to a transaction. Unmatch first.';
 	if (!paid) return 'This occurrence only';
 	if (paidAt) return `Marked paid ${formatPaidStamp(paidAt)} · this occurrence only`;
 	return 'Marked paid · this occurrence only';

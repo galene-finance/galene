@@ -1,6 +1,6 @@
 ---
 title: Calendar & scheduled
-description: Scheduled expectations on the calendar, marking one occurrence paid, and the read-only Scheduled list.
+description: Scheduled expectations on the calendar, marking one occurrence paid or matching it to a transaction, and the read-only Scheduled list.
 ---
 
 Scheduled items are expectations, not transactions. A rent series shows on each date it repeats. Editing or deleting one date does not post a transaction.
@@ -13,9 +13,21 @@ Click a pill to open its details: name, date, amount, account, and category. On 
 
 **Mark paid** records that one occurrence only. It does not create a transaction, and it does not change any other date in the series. Marking it again keeps the original time. Clearing the checkbox removes the paid mark. The checked row shows when it was marked, and that it applies to this occurrence only.
 
+### Match a transaction
+
+The same popover or sheet can link that occurrence to a transaction you already have. The link is stored by the series and the original occurrence date, the same key as Mark paid. One transaction can match at most one occurrence, and one occurrence has at most one match.
+
+A **suggested match** can appear when the occurrence is unpaid and either overdue or due within 7 days, and a transaction is close: the amount is within 2% or $1 (whichever is larger, and the same sign), the date is within 4 days, and either the payee is similar to the series name or the series account and the amount are exact. **Confirm** saves the link. **Not this** hides that transaction for this occurrence only; it can still be chosen from the list. Nothing is matched until you confirm.
+
+**Match transaction…** lists other transactions within 14 days. When the series has an account, the list stays on that account. Transactions already matched to another occurrence are hidden.
+
+While an occurrence is matched, the popover shows that transaction and **Unmatch**. **Mark paid** is disabled until you unmatch. A match counts as paid: the pill shows the paid check, and the occurrence is not overdue. Unmatch removes only the link. A manual paid mark you set before matching is left in place.
+
+Deleting the transaction removes the match. Splitting or deleting the series moves or drops match links the same way it does for paid marks.
+
 ### Overdue
 
-An occurrence is overdue when it is not marked paid, its displayed date is before today, and that date is within the last 30 days. Today is not overdue. Older unpaid dates stay on the calendar and do not show the overdue alert.
+An occurrence is overdue when it is not paid, its displayed date is before today, and that date is within the last 30 days. Paid means marked paid or matched to a transaction. Today is not overdue. Older unpaid dates stay on the calendar and do not show the overdue alert.
 
 Paid and overdue pills keep the same dashed border, soft fill, and item color as any other scheduled pill. Overdue adds an alert icon. Paid adds a check. The name and amount stay in the item color. The button’s accessible name still says paid or overdue. Due today keeps that same dashed look.
 
@@ -25,13 +37,14 @@ Hover or keyboard focus on a desktop pill still shows the read-only summary. Tha
 
 ## Scheduled list
 
-**Scheduled** lists each series, not every future date. The card is read-only for paid state: there is no checkbox on the list. The card keeps its usual color. Overdue and paid show as an icon and text, without a filled status band.
+**Scheduled** lists each series, not every future date. The card is read-only for paid state: there is no checkbox on the list. The card keeps its usual color. Overdue and paid show as an icon and text, without a filled status band. Cards with an overdue occurrence sort first, oldest overdue date first.
 
-- If the series has an unpaid occurrence in the last 30 days, the card shows the oldest of those: **Overdue**, the date, and how many days late.
-- Otherwise the card shows the next occurrence: **Paid** (with the date and “marked manually”) if that date is marked paid, **Due today** if it falls on today, or the usual upcoming card.
+- If the series has an unpaid occurrence in the last 30 days, the card shows the oldest of those: **Overdue**, the date, and how many days late. A matched occurrence counts as paid, so it is not the overdue one.
+- Otherwise the card shows the next occurrence: **Paid** (with the date, and “marked manually” or “matched”) if that date is marked paid or matched, **Due today** if it falls on today, or the usual upcoming card.
+- A paid one-time item in the past has no next date. On **All**, the card still shows **Paid** for that date. **Upcoming** only lists series that still have a date on or after today.
 
-**Next occurrence** on the card is still the next date on or after today.
+**Next occurrence** on the card is still the next date on or after today. When there is none, it says no upcoming date.
 
 ## Demo
 
-On the public demo, marking an occurrence paid is allowed. The demo data is restored on a schedule, so those marks do not last.
+On the public demo, marking an occurrence paid and matching it to a transaction are allowed. The demo data is restored on a schedule, so those changes do not last.

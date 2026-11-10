@@ -32,7 +32,9 @@
 
 	const state = $derived(pillState(occurrence, today));
 	const amount = $derived(formatMoney(occurrence.scheduled.amount_cents));
-	const label = $derived(scheduledPillLabel(occurrence.scheduled.name, amount, state, occurrence.daysLate));
+	const label = $derived(
+		scheduledPillLabel(occurrence.scheduled.name, amount, state, occurrence.daysLate, occurrence.matched)
+	);
 	const color = $derived(occurrence.scheduled.color);
 
 	function itemBorder(): string {

@@ -1321,7 +1321,13 @@ function addInterval(iso: string, interval: number, unit: RepeatUnit): string {
 }
 
 export interface ScheduledOccurrence {
+	/** Date the occurrence is shown on. An exception may move this off the series date. */
 	date: string;
+	/**
+	 * Identity key for this occurrence (series date). Equals `date` unless an
+	 * exception moved it. Paid rows and skipped exceptions use this key.
+	 */
+	occurrenceDate: string;
 	/** Series id is preserved. Fields are the ones in effect on `date`. */
 	scheduled: Scheduled;
 }
@@ -1481,22 +1487,28 @@ function viewFromException(base: Scheduled, ex: ScheduledException, seg: SeriesS
 export function expandScheduled(s: Scheduled, from: string, to: string): ScheduledOccurrence[] {
 	if (s.start_date > to && !(s.revisions ?? []).some((r) => r.effective_date <= to)) return [];
 	const exceptions = new Map((s.exceptions ?? []).map((ex) => [ex.occurrence_date, ex]));
-	const byDate = new Map<string, Scheduled>();
+	const byDate = new Map<string, { scheduled: Scheduled; occurrenceDate: string }>();
 	for (const seg of seriesSegments(s)) {
 		for (const date of datesInSegment(seg, to)) {
 			const ex = exceptions.get(date);
 			if (ex) {
 				// A skipped exception means this occurrence was deleted ('once'): emit nothing.
-				if (!ex.skipped && ex.display_date <= to) byDate.set(ex.display_date, viewFromException(s, ex, seg));
+				// Identity stays the original series date; the pill is shown on display_date.
+				if (!ex.skipped && ex.display_date <= to) {
+					byDate.set(ex.display_date, {
+						scheduled: viewFromException(s, ex, seg),
+						occurrenceDate: ex.occurrence_date
+					});
+				}
 			} else {
-				byDate.set(date, viewFromSegment(s, seg));
+				byDate.set(date, { scheduled: viewFromSegment(s, seg), occurrenceDate: date });
 			}
 		}
 	}
 	return [...byDate.entries()]
 		.filter(([date]) => date >= from && date <= to)
 		.sort((a, b) => a[0].localeCompare(b[0]))
-		.map(([date, scheduled]) => ({ date, scheduled }));
+		.map(([date, hit]) => ({ date, occurrenceDate: hit.occurrenceDate, scheduled: hit.scheduled }));
 }
 
 /** All occurrence dates of a scheduled expectation within [from, to] (inclusive). */
@@ -2052,8 +2064,35 @@ function splitSeries(userId: number, id: number, anchor: string, input: Schedule
 		const move = d.query('UPDATE scheduled_exceptions SET scheduled_id = ? WHERE id = ?');
 		for (const ex of carried) if (dates.has(ex.occurrence_date)) move.run(created, ex.id);
 	}
+	// Paid rows are keyed by occurrence identity. Dates before the split stay on
+	// the old series; later dates move with the new series when they still occur.
+	const freshPaid = getScheduled(userId).find((s) => s.id === created);
+	const identities = new Set(
+		freshPaid ? expandScheduled(freshPaid, freshPaid.start_date, '9999-12-31').map((o) => o.occurrenceDate) : []
+	);
+	reassignPaidOnSplit(id, created, anchor, identities);
 	endSeriesBefore(userId, id, anchor);
 	return created;
+}
+
+function dropPaidOccurrence(scheduledId: number, occurrenceDate: string) {
+	db().query('DELETE FROM scheduled_paid WHERE scheduled_id = ? AND occurrence_date = ?').run(scheduledId, occurrenceDate);
+}
+
+function dropPaidOnOrAfter(scheduledId: number, occurrenceDate: string) {
+	db().query('DELETE FROM scheduled_paid WHERE scheduled_id = ? AND occurrence_date >= ?').run(scheduledId, occurrenceDate);
+}
+
+function reassignPaidOnSplit(oldId: number, newId: number, anchor: string, identities: Set<string>) {
+	const rows = db()
+		.query('SELECT occurrence_date FROM scheduled_paid WHERE scheduled_id = ? AND occurrence_date >= ?')
+		.all(oldId, anchor) as { occurrence_date: string }[];
+	const move = db().query('UPDATE scheduled_paid SET scheduled_id = ? WHERE scheduled_id = ? AND occurrence_date = ?');
+	const drop = db().query('DELETE FROM scheduled_paid WHERE scheduled_id = ? AND occurrence_date = ?');
+	for (const row of rows) {
+		if (identities.has(row.occurrence_date)) move.run(newId, oldId, row.occurrence_date);
+		else drop.run(oldId, row.occurrence_date);
+	}
 }
 
 function applyScheduledEdit(userId: number, id: number, input: ScheduledInput): number {
@@ -2213,10 +2252,12 @@ export function deleteScheduledScoped(
 	try {
 		if (scope === 'following') {
 			endSeriesBefore(userId, id, anchor);
+			dropPaidOnOrAfter(id, anchor);
 		} else {
 			// A moved occurrence is keyed by its original date.
 			const moved = (existing.exceptions ?? []).find((ex) => ex.display_date === anchor && !ex.skipped);
 			const key = moved ? moved.occurrence_date : anchor;
+			dropPaidOccurrence(id, key);
 			const view = expandScheduled(existing, anchor, anchor)[0]?.scheduled ?? existing;
 			d.query('DELETE FROM scheduled_exceptions WHERE scheduled_id = ? AND occurrence_date = ?').run(id, key);
 			d

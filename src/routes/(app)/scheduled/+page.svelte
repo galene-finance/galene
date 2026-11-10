@@ -12,13 +12,14 @@
 		parseScheduleListFilter,
 		type ScheduleListFilter
 	} from '$lib/scheduleFilter';
+	import { formatMonthDay, type ScheduleFocus } from '$lib/scheduledPaid';
 	import { formatDate, formatMoney, todayISO } from '$lib/utils';
 	import type { Account, Category, Scheduled, Tag } from '$lib/types';
 
 	let { form, data }: {
 		form: { error?: string | null } | undefined;
 		data: {
-			rows: { scheduled: Scheduled; nextDate: string | null }[];
+			rows: { scheduled: Scheduled; nextDate: string | null; focus: ScheduleFocus }[];
 			accounts: Account[];
 			categories: Category[];
 			tags: Tag[];
@@ -89,6 +90,10 @@
 		return fill ? `border-color: ${color}; background: ${fill}` : `border-color: ${color}`;
 	}
 
+	function daysLateLabel(n: number): string {
+		return n === 1 ? '1 day late' : `${n} days late`;
+	}
+
 	watchFormToast(() => form);
 </script>
 
@@ -153,17 +158,84 @@
 				<li>
 					<button
 						type="button"
-						class="w-full rounded-xl border p-4 text-left transition-colors {row.scheduled.color
-							? ''
-							: 'border-border bg-surface hover:bg-muted/40'}"
-						style={cardStyle(row.scheduled.color)}
+						class="w-full rounded-xl border p-4 text-left transition-colors {row.focus.kind === 'overdue'
+							? 'border-[color-mix(in_oklab,var(--destructive)_55%,transparent)] bg-[color-mix(in_oklab,var(--destructive)_6%,var(--surface))]'
+							: row.focus.kind === 'paid'
+								? 'border-border bg-surface'
+								: row.scheduled.color
+									? ''
+									: 'border-border bg-surface hover:bg-muted/40'}"
+						style={row.focus.kind === 'overdue' || row.focus.kind === 'paid'
+							? undefined
+							: cardStyle(row.scheduled.color)}
 						onclick={() => openScheduledEdit(row)}
 					>
+						{#if row.focus.kind === 'overdue'}
+							<div
+								class="mb-3 flex items-center gap-2 rounded-lg bg-destructive/14 px-2.5 py-1.5 text-[0.8125rem] font-semibold text-foreground"
+							>
+								<svg
+									class="size-4 shrink-0 text-destructive"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.4"
+									stroke-linecap="round"
+									aria-hidden="true"
+								>
+									<circle cx="12" cy="12" r="9" />
+									<path d="M12 7.5v5.5M12 16.5v.01" />
+								</svg>
+								<span>Overdue · {formatMonthDay(row.focus.date)} · {daysLateLabel(row.focus.daysLate)}</span>
+							</div>
+						{:else if row.focus.kind === 'paid'}
+							<div class="mb-3 flex items-center gap-2 rounded-lg bg-muted px-2.5 py-1.5 text-[0.8125rem] font-semibold">
+								<svg
+									class="size-4 shrink-0 text-success"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="3"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									aria-hidden="true"
+								>
+									<path d="M5 13l4 4L19 7" />
+								</svg>
+								<span>Paid · {formatMonthDay(row.focus.date)}</span>
+								<span class="ml-auto text-xs font-medium text-muted-foreground">marked manually</span>
+							</div>
+						{:else if row.focus.kind === 'due'}
+							<div
+								class="mb-3 flex items-center gap-2 rounded-lg bg-primary/15 px-2.5 py-1.5 text-[0.8125rem] font-semibold text-foreground"
+							>
+								<svg
+									class="size-4 shrink-0 text-primary"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.2"
+									stroke-linecap="round"
+									aria-hidden="true"
+								>
+									<circle cx="12" cy="12" r="9" />
+									<path d="M12 7v5l3 2" />
+								</svg>
+								<span>Due today</span>
+							</div>
+						{/if}
 						<div class="flex items-start justify-between gap-3">
-							<span class="min-w-0 truncate text-[0.95rem] font-semibold tracking-tight">
+							<span
+								class="min-w-0 truncate text-[0.95rem] font-semibold tracking-tight {row.focus.kind === 'paid'
+									? 'text-muted-foreground'
+									: ''}"
+							>
 								{row.scheduled.name}
 							</span>
-							<span class="shrink-0 text-sm font-medium">{formatMoney(row.scheduled.amount_cents)}</span>
+							<span
+								class="shrink-0 text-sm font-medium {row.focus.kind === 'paid' ? 'text-muted-foreground' : ''}"
+								>{formatMoney(row.scheduled.amount_cents)}</span
+							>
 						</div>
 						<dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 							<div class="min-w-0">

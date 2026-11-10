@@ -4,9 +4,12 @@
 	import { untrack } from 'svelte';
 	import AddScheduledDialog from '$lib/components/AddScheduledDialog.svelte';
 	import AddTransactionDialog from '$lib/components/AddTransactionDialog.svelte';
+	import OccurrenceDetail from '$lib/components/OccurrenceDetail.svelte';
+	import ScheduledPill from '$lib/components/ScheduledPill.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
+	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import {
 		scheduledPillRows,
 		transactionPillRows,
@@ -28,7 +31,6 @@
 		firstScheduleColor,
 		otherWeekDaysWithActivity,
 		parseMobileView,
-		softFill,
 		weekContaining,
 		type MobileCalendarView
 	} from '$lib/calendarMobile';
@@ -38,6 +40,13 @@
 		overflowPanelPosition
 	} from '$lib/calendarDayOverflow';
 	import { watchFormToast } from '$lib/formToast.svelte';
+	import {
+		daysLate,
+		detailPopoverPosition,
+		isOverdue,
+		paidKey,
+		type CalendarOccurrence
+	} from '$lib/scheduledPaid';
 	import { formatDate, formatMoney, monthLabel, todayISO } from '$lib/utils';
 	import type { Account, Category, Scheduled, Tag, Transaction } from '$lib/types';
 
@@ -46,7 +55,8 @@
 		data: {
 			month: string;
 			transactions: Transaction[];
-			occurrences: { scheduled: Scheduled; date: string }[];
+			occurrences: CalendarOccurrence[];
+			overdueCount: number;
 			hideActuals: boolean;
 			weekStartsOn: 'sunday' | 'monday';
 			accounts: Account[];
@@ -81,12 +91,35 @@
 	const thisMonth = $derived(todayISO().slice(0, 7));
 	const today = $derived(todayISO());
 
+	let paidOverrides = $state<Record<string, { paid: boolean; paidAt: string | null }>>({});
+
+	function displayOcc(row: CalendarOccurrence): CalendarOccurrence {
+		const over = paidOverrides[paidKey(row.scheduled.id, row.occurrenceDate)];
+		if (!over) return row;
+		const overdue = isOverdue(row.date, over.paid, today);
+		return {
+			...row,
+			paid: over.paid,
+			paidAt: over.paidAt,
+			overdue,
+			daysLate: overdue ? daysLate(row.date, today) : 0
+		};
+	}
+
+	function shownOccurrences(): CalendarOccurrence[] {
+		return data.occurrences.map(displayOcc);
+	}
+
+	const overdueCount = $derived(
+		shownOccurrences().filter((row) => row.date.startsWith(`${data.month}-`) && row.overdue).length
+	);
+
 	type Cell = {
 		iso: string;
 		day: number;
 		inMonth: boolean;
 		transactions: Transaction[];
-		occurrences: { scheduled: Scheduled; date: string }[];
+		occurrences: CalendarOccurrence[];
 	};
 
 	function buildCells(): Cell[] {
@@ -96,10 +129,10 @@
 			list.push(t);
 			txMap.set(t.date, list);
 		}
-		const occMap = new Map<string, { scheduled: Scheduled; date: string }[]>();
+		const occMap = new Map<string, CalendarOccurrence[]>();
 		for (const o of data.occurrences) {
 			const list = occMap.get(o.date) ?? [];
-			list.push({ scheduled: o.scheduled, date: o.date });
+			list.push(displayOcc(o));
 			occMap.set(o.date, list);
 		}
 		const total = Math.ceil((startOffset + daysInMonth) / 7) * 7;
@@ -210,9 +243,7 @@
 	}
 
 	const DAY_OVERFLOW_ID = 'calendar-day-overflow';
-	type DayOverflowItem =
-		| { kind: 'tx'; t: Transaction }
-		| { kind: 'occ'; o: { scheduled: Scheduled; date: string } };
+	type DayOverflowItem = { kind: 'tx'; t: Transaction } | { kind: 'occ'; o: CalendarOccurrence };
 	let dayOverflow = $state<{
 		iso: string;
 		items: DayOverflowItem[];
@@ -346,14 +377,97 @@
 		hidePillPopup();
 	}
 
+	const DETAIL_ID = 'occurrence-detail';
+	let detailKey = $state<string | null>(null);
+	let detailSource = $state<HTMLElement | null>(null);
+	let detailPos = $state<{ top: number; left: number } | null>(null);
+	let sheetOpen = $state(false);
+	let desktopDetail = $state(true);
+
+	function isDesktopViewport(): boolean {
+		return window.matchMedia('(min-width: 768px)').matches;
+	}
+
+	function occurrenceByKey(key: string | null): CalendarOccurrence | null {
+		if (!key) return null;
+		return shownOccurrences().find((row) => paidKey(row.scheduled.id, row.occurrenceDate) === key) ?? null;
+	}
+
+	const detailOcc = $derived(occurrenceByKey(detailKey));
+
+	function positionDetail() {
+		if (!detailSource || !detailSource.isConnected) {
+			closeDetail(false);
+			return;
+		}
+		detailPos = detailPopoverPosition(detailSource.getBoundingClientRect(), {
+			width: window.innerWidth,
+			height: window.innerHeight
+		});
+	}
+
+	function focusDetail() {
+		const root = document.getElementById(DETAIL_ID);
+		const box = root?.querySelector<HTMLElement>('[role="checkbox"]');
+		(box ?? root?.querySelector('button'))?.focus();
+	}
+
+	function openOccurrence(e: MouseEvent, occurrence: CalendarOccurrence) {
+		e.preventDefault();
+		e.stopPropagation();
+		hidePillPopup();
+		const el = e.currentTarget;
+		if (!(el instanceof HTMLElement)) return;
+		detailSource = el;
+		detailKey = paidKey(occurrence.scheduled.id, occurrence.occurrenceDate);
+		desktopDetail = isDesktopViewport();
+		if (desktopDetail) {
+			sheetOpen = false;
+			positionDetail();
+			queueMicrotask(focusDetail);
+		} else {
+			detailPos = null;
+			sheetOpen = true;
+		}
+	}
+
+	function closeDetail(restoreFocus = true) {
+		const src = detailSource;
+		sheetOpen = false;
+		detailKey = null;
+		detailPos = null;
+		detailSource = null;
+		if (restoreFocus) queueMicrotask(() => src?.focus());
+	}
+
+	function editFromDetail() {
+		const occ = detailOcc;
+		if (!occ) return;
+		closeDetail(false);
+		openScheduledEdit(occ.scheduled, occ.date);
+	}
+
+	function onPaidOptimistic(occurrence: CalendarOccurrence, paid: boolean, paidAt: string | null) {
+		const key = paidKey(occurrence.scheduled.id, occurrence.occurrenceDate);
+		paidOverrides = { ...paidOverrides, [key]: { paid, paidAt } };
+	}
+
+	function clearPaidOverride(occurrence: CalendarOccurrence) {
+		const key = paidKey(occurrence.scheduled.id, occurrence.occurrenceDate);
+		if (!(key in paidOverrides)) return;
+		const next = { ...paidOverrides };
+		delete next[key];
+		paidOverrides = next;
+	}
+
 	function onPillPointerEnter(el: EventTarget | null, rows: PillPopupRow[]) {
-		if (tapToggle) return;
+		if (tapToggle || detailKey) return;
 		showPillPopup(el, rows);
 	}
 
 	function onPillFocus(el: EventTarget | null, rows: PillPopupRow[]) {
 		// Touch tap focuses then blurs — that flash is why sticky tap-toggle exists.
-		if (tapToggle) return;
+		if (tapToggle || detailKey) return;
 		showPillPopup(el, rows);
 	}
 
@@ -382,9 +496,32 @@
 	}
 
 	$effect(() => {
+		if (!browser) return;
+		const mql = window.matchMedia('(min-width: 768px)');
+		const sync = () => {
+			const next = mql.matches;
+			if (detailKey && next !== desktopDetail) closeDetail(false);
+			desktopDetail = next;
+		};
+		sync();
+		mql.addEventListener('change', sync);
+		return () => mql.removeEventListener('change', sync);
+	});
+
+	$effect(() => {
+		data.occurrences;
+		paidOverrides = {};
+	});
+
+	$effect(() => {
+		if (!sheetOpen && detailKey && !desktopDetail) closeDetail(true);
+	});
+
+	$effect(() => {
 		const hide = () => {
 			hidePillPopup();
 			hideDayOverflow();
+			if (detailKey && desktopDetail) positionDetail();
 		};
 		window.addEventListener('scroll', hide, true);
 		window.addEventListener('resize', hide);
@@ -415,6 +552,51 @@
 	});
 
 
+	// Outside click / Escape closes the desktop occurrence popover.
+	$effect(() => {
+		if (!browser || !detailKey || !desktopDetail) return;
+		const onPointerDown = (e: PointerEvent) => {
+			const t = e.target;
+			if (!(t instanceof Node)) return;
+			if (detailSource?.contains(t)) return;
+			const panel = document.getElementById(DETAIL_ID);
+			if (panel?.contains(t)) return;
+			closeDetail(true);
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				closeDetail(true);
+				return;
+			}
+			if (e.key !== 'Tab') return;
+			const root = document.getElementById(DETAIL_ID);
+			if (!root) return;
+			const focusable = [...root.querySelectorAll<HTMLElement>('button, [href], input, [tabindex]:not([tabindex="-1"])')].filter(
+				(el) => !el.hasAttribute('disabled')
+			);
+			if (focusable.length === 0) return;
+			const first = focusable[0];
+			const last = focusable[focusable.length - 1];
+			if (e.shiftKey && document.activeElement === first) {
+				e.preventDefault();
+				last.focus();
+			} else if (!e.shiftKey && document.activeElement === last) {
+				e.preventDefault();
+				first.focus();
+			}
+		};
+		const id = window.setTimeout(() => {
+			window.addEventListener('pointerdown', onPointerDown, true);
+			window.addEventListener('keydown', onKey, true);
+		}, 0);
+		return () => {
+			window.clearTimeout(id);
+			window.removeEventListener('pointerdown', onPointerDown, true);
+			window.removeEventListener('keydown', onKey, true);
+		};
+	});
+
 	// Outside click / Escape closes day overflow.
 	$effect(() => {
 		if (!browser || !dayOverflow) return;
@@ -424,6 +606,8 @@
 			if (dayOverflowSource?.contains(t)) return;
 			const panel = document.getElementById(DAY_OVERFLOW_ID);
 			if (panel?.contains(t)) return;
+			const detail = document.getElementById(DETAIL_ID);
+			if (detail?.contains(t)) return;
 			hideDayOverflow();
 		};
 		const onKey = (e: KeyboardEvent) => {
@@ -463,6 +647,26 @@
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<div class="flex items-center gap-2">
 			<h1 class="text-2xl font-semibold tracking-tight">{monthLabel(`${data.month}-01`)}</h1>
+			{#if overdueCount > 0}
+				<span
+					class="inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/12 px-2 py-0.5 text-xs font-semibold text-foreground"
+					role="status"
+				>
+					<svg
+						class="size-3.5 text-destructive"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.4"
+						stroke-linecap="round"
+						aria-hidden="true"
+					>
+						<circle cx="12" cy="12" r="9" />
+						<path d="M12 7.5v5.5M12 16.5v.01" />
+					</svg>
+					{overdueCount} overdue
+				</span>
+			{/if}
 			<div class="ml-1 flex items-center gap-1">
 				<a
 					href="/calendar?month={prevMonth}"
@@ -696,51 +900,17 @@
 									</div>
 								</button>
 							{:else}
-								{@const sc = item.o.scheduled.color}
-								<button
-									type="button"
-									class="pointer-events-auto relative my-1.5 flex select-none items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2.5 pl-3.5 text-left [-webkit-touch-callout:none]"
-									style="border-color: {sc ?? 'color-mix(in oklab, var(--color-primary) 60%, transparent)'}; background: {softFill(
-										sc
-									) ??
-										'color-mix(in oklab, var(--color-primary) 10%, transparent)'}"
-									onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled, item.o.date))}
+								<ScheduledPill
+									occurrence={item.o}
+									{today}
+									variant="agenda"
+									active={detailKey === paidKey(item.o.scheduled.id, item.o.occurrenceDate)}
+									onclick={(e) => openOccurrence(e, item.o)}
 									onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 									onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
 									onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 									onblur={onPillBlur}
-								>
-									<span
-										class="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-r"
-										style="background: {sc ?? 'var(--color-primary)'}"
-										aria-hidden="true"
-									></span>
-									<div class="min-w-0 flex-1">
-										<div class="truncate text-sm font-medium">{item.o.scheduled.name}</div>
-										<div class="mt-1 flex flex-wrap gap-1">
-											{#if item.o.scheduled.category_name}
-												<span
-													class="inline-flex rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-wide text-muted-foreground"
-													>{item.o.scheduled.category_name}</span
-												>
-											{/if}
-											<span
-												class="inline-flex rounded-full border border-dashed px-2 py-0.5 text-[0.62rem] font-semibold"
-												style="border-color: {sc ??
-													'color-mix(in oklab, var(--color-primary) 42%, transparent)'}; color: {sc ??
-													'var(--color-primary)'}; background: {softFill(sc) ??
-													'color-mix(in oklab, var(--color-primary) 12%, transparent)'}"
-												>Scheduled</span
-											>
-										</div>
-									</div>
-									<div
-										class="shrink-0 text-sm font-medium tabular-nums"
-										style="color: {sc ?? 'var(--color-primary)'}"
-									>
-										{formatMoney(item.o.scheduled.amount_cents)}
-									</div>
-								</button>
+								/>
 							{/if}
 						{/each}
 					</div>
@@ -804,51 +974,17 @@
 											</div>
 										</button>
 									{:else}
-										{@const sc = item.o.scheduled.color}
-										<button
-											type="button"
-											class="pointer-events-auto relative my-1.5 flex select-none items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2.5 pl-3.5 text-left [-webkit-touch-callout:none]"
-											style="border-color: {sc ?? 'color-mix(in oklab, var(--color-primary) 60%, transparent)'}; background: {softFill(
-												sc
-											) ??
-												'color-mix(in oklab, var(--color-primary) 10%, transparent)'}"
-											onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled, item.o.date))}
+										<ScheduledPill
+											occurrence={item.o}
+											{today}
+											variant="agenda"
+											active={detailKey === paidKey(item.o.scheduled.id, item.o.occurrenceDate)}
+											onclick={(e) => openOccurrence(e, item.o)}
 											onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 											onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
 											onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 											onblur={onPillBlur}
-										>
-											<span
-												class="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-r"
-												style="background: {sc ?? 'var(--color-primary)'}"
-												aria-hidden="true"
-											></span>
-											<div class="min-w-0 flex-1">
-												<div class="truncate text-sm font-medium">{item.o.scheduled.name}</div>
-												<div class="mt-1 flex flex-wrap gap-1">
-													{#if item.o.scheduled.category_name}
-														<span
-															class="inline-flex rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-wide text-muted-foreground"
-															>{item.o.scheduled.category_name}</span
-														>
-													{/if}
-													<span
-														class="inline-flex rounded-full border border-dashed px-2 py-0.5 text-[0.62rem] font-semibold"
-														style="border-color: {sc ??
-															'color-mix(in oklab, var(--color-primary) 42%, transparent)'}; color: {sc ??
-															'var(--color-primary)'}; background: {softFill(sc) ??
-															'color-mix(in oklab, var(--color-primary) 12%, transparent)'}"
-														>Scheduled</span
-													>
-												</div>
-											</div>
-											<div
-												class="shrink-0 text-sm font-medium tabular-nums"
-												style="color: {sc ?? 'var(--color-primary)'}"
-											>
-												{formatMoney(item.o.scheduled.amount_cents)}
-											</div>
-										</button>
+										/>
 									{/if}
 								{/each}
 							</div>
@@ -858,8 +994,8 @@
 			{/if}
 
 			<p class="text-xs text-muted-foreground">
-				Dashed rows are scheduled expectations — tap a day card to add one. Scheduled chrome uses each
-				item’s color.
+				Dashed rows are scheduled expectations — tap one to mark that date paid, or tap a day card to add
+				one. Scheduled chrome uses each item’s color.
 			</p>
 		</div>
 	{/if}
@@ -912,43 +1048,17 @@
 										</span>
 									</button>
 								{:else}
-									<button
-										type="button"
-										class="pointer-events-auto flex cursor-pointer select-none items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-left text-xs [-webkit-touch-callout:none] {item
-											.o.scheduled.color
-											? ''
-											: 'border-primary/60 bg-primary/10'}"
-										style={item.o.scheduled.color
-											? `border-color: ${item.o.scheduled.color}; background: ${item.o.scheduled.color}1a`
-											: undefined}
-										onclick={(e) => onPillClick(e, scheduledPillRows(item.o.scheduled), () => openScheduledEdit(item.o.scheduled, item.o.date))}
+									<ScheduledPill
+										occurrence={item.o}
+										{today}
+										variant="grid"
+										active={detailKey === paidKey(item.o.scheduled.id, item.o.occurrenceDate)}
+										onclick={(e) => openOccurrence(e, item.o)}
 										onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 										onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
 										onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 										onblur={onPillBlur}
-									>
-										{#if item.o.scheduled.repeat_interval}
-											<svg
-												class="size-3 shrink-0"
-												style="color: {item.o.scheduled.color ?? 'var(--color-primary)'}"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2"
-												stroke-linecap="round"
-											>
-												<path d="M21 12a9 9 0 1 1-2.64-6.36" />
-												<path d="M21 3v6h-6" />
-											</svg>
-										{/if}
-										<span class="truncate">{item.o.scheduled.name}</span>
-										<span
-											class="ml-auto shrink-0 font-medium"
-											style="color: {item.o.scheduled.color ?? 'var(--color-primary)'}"
-										>
-											{formatMoney(item.o.scheduled.amount_cents)}
-										</span>
-									</button>
+									/>
 								{/if}
 							{/each}
 							{#if hidden > 0}
@@ -969,7 +1079,7 @@
 		</div>
 
 		<p class="mt-4 text-xs text-muted-foreground">
-			Dashed pills are scheduled expectations — click a day to add one.
+			Dashed pills are scheduled expectations — click a pill to mark that date paid, or click a day to add one.
 		</p>
 	</div>
 </div>
@@ -1021,52 +1131,68 @@
 							</span>
 						</button>
 					{:else}
-						<button
-							type="button"
-							class="flex cursor-pointer select-none items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-left text-xs [-webkit-touch-callout:none] {item
-								.o.scheduled.color
-									? ''
-									: 'border-primary/60 bg-primary/10'}"
-							style={item.o.scheduled.color
-								? `border-color: ${item.o.scheduled.color}; background: ${item.o.scheduled.color}1a`
-								: undefined}
-							onclick={(e) =>
-								onPillClick(e, scheduledPillRows(item.o.scheduled), () =>
-									openScheduledEdit(item.o.scheduled, item.o.date)
-								)}
+						<ScheduledPill
+							occurrence={item.o}
+							{today}
+							variant="grid"
+							active={detailKey === paidKey(item.o.scheduled.id, item.o.occurrenceDate)}
+							onclick={(e) => openOccurrence(e, item.o)}
 							onpointerenter={(e) => onPillPointerEnter(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 							onpointerleave={(e) => hidePillPopupOnLeave(e.currentTarget)}
 							onfocus={(e) => onPillFocus(e.currentTarget, scheduledPillRows(item.o.scheduled))}
 							onblur={onPillBlur}
-						>
-							{#if item.o.scheduled.repeat_interval}
-								<svg
-									class="size-3 shrink-0"
-									style="color: {item.o.scheduled.color ?? 'var(--color-primary)'}"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-								>
-									<path d="M21 12a9 9 0 1 1-2.64-6.36" />
-									<path d="M21 3v6h-6" />
-								</svg>
-							{/if}
-							<span class="truncate">{item.o.scheduled.name}</span>
-							<span
-								class="ml-auto shrink-0 font-medium"
-								style="color: {item.o.scheduled.color ?? 'var(--color-primary)'}"
-							>
-								{formatMoney(item.o.scheduled.amount_cents)}
-							</span>
-						</button>
+						/>
 					{/if}
 				{/each}
 			</div>
 		</div>
 	</div>
 {/if}
+
+{#if detailOcc && desktopDetail && detailPos}
+	<div
+		id={DETAIL_ID}
+		role="dialog"
+		aria-modal="false"
+		aria-label="{detailOcc.scheduled.name} occurrence"
+		class="fixed z-[70] w-80 overflow-hidden rounded-lg border border-border bg-surface text-sm shadow-lg"
+		style="top: {detailPos.top}px; left: {detailPos.left}px"
+	>
+		<OccurrenceDetail
+			occurrence={detailOcc}
+			showClose
+			onedit={editFromDetail}
+			onclose={() => closeDetail(true)}
+			onoptimistic={(paid, paidAt) => onPaidOptimistic(detailOcc, paid, paidAt)}
+			onrevert={() => clearPaidOverride(detailOcc)}
+		/>
+	</div>
+{/if}
+
+<Dialog
+	bind:open={sheetOpen}
+	class="max-md:!inset-x-0 max-md:!bottom-0 max-md:!left-0 max-md:!top-auto max-md:!w-full max-md:!max-w-none max-md:!translate-x-0 max-md:!translate-y-0 max-md:!rounded-b-none max-md:rounded-t-2xl"
+	onOpenAutoFocus={(e) => {
+		e.preventDefault();
+		const root = e.currentTarget instanceof HTMLElement ? e.currentTarget : null;
+		root?.querySelector<HTMLElement>('[role="checkbox"]')?.focus();
+	}}
+	onCloseAutoFocus={(e) => {
+		e.preventDefault();
+		detailSource?.focus();
+	}}
+>
+	{#if detailOcc}
+		<div class="mx-auto mb-3 h-1 w-10 rounded-full bg-input" aria-hidden="true"></div>
+		<OccurrenceDetail
+			occurrence={detailOcc}
+			bleed
+			onedit={editFromDetail}
+			onoptimistic={(paid, paidAt) => onPaidOptimistic(detailOcc, paid, paidAt)}
+			onrevert={() => clearPaidOverride(detailOcc)}
+		/>
+	{/if}
+</Dialog>
 
 <AddTransactionDialog
 	bind:open={txOpen}

@@ -1,0 +1,37 @@
+---
+title: Calendar & scheduled
+description: Scheduled expectations on the calendar, marking one occurrence paid, and the read-only Scheduled list.
+---
+
+Scheduled items are expectations, not transactions. A rent series shows on each date it repeats. Editing or deleting one date does not post a transaction.
+
+## Calendar
+
+Open **Calendar** to see the month. Dashed pills are scheduled expectations. Click an empty part of a day to add a scheduled item or, from the header, add a transaction.
+
+Click a pill to open its details: name, date, amount, account, and category. On a wide screen that opens a popover next to the pill. On a narrow screen it opens a bottom sheet. **Edit series** opens the same edit dialog as before, including the choice of this date, this and following, or the whole series.
+
+**Mark paid** records that one occurrence only. It does not create a transaction, and it does not change any other date in the series. Marking it again keeps the original time. Clearing the checkbox removes the paid mark. The checked row shows when it was marked, and that it applies to this occurrence only.
+
+### Overdue
+
+An occurrence is overdue when it is not marked paid, its displayed date is before today, and that date is within the last 30 days. Today is not overdue. Older unpaid dates stay on the calendar without the overdue tint.
+
+Overdue pills use a dashed red border, a light red fill, and an alert icon. The text stays the normal foreground color, so the state is the icon and the label, not color alone. A paid pill is a solid quiet border with muted text and a check. Due today keeps the normal dashed look.
+
+When the month you are viewing has overdue items, the header shows how many.
+
+Hover or keyboard focus on a desktop pill still shows the read-only summary. That summary closes when the click popover opens.
+
+## Scheduled list
+
+**Scheduled** lists each series, not every future date. The card is read-only for paid state: there is no checkbox on the list.
+
+- If the series has an unpaid occurrence in the last 30 days, the card shows the oldest of those: **Overdue**, the date, and how many days late.
+- Otherwise the card shows the next occurrence: **Paid** (with the date and “marked manually”) if that date is marked paid, **Due today** if it falls on today, or the usual upcoming card.
+
+**Next occurrence** on the card is still the next date on or after today.
+
+## Demo
+
+On the public demo, marking an occurrence paid is allowed. The demo data is restored on a schedule, so those marks do not last.

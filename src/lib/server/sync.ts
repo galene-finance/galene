@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite';
 import { db } from './db';
 import { getProvider } from './providers';
 import { applyCategorizationRules } from './finance';
+import { carryMatchLinks } from './scheduledMatch';
 import { notifySyncFailed, notifySyncRecovered } from './notifications';
 import type { Connection, LinkedAccount, PlaidAlreadyLinked, PlaidItemInfo, SyncSummary } from '../types';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
@@ -560,6 +561,9 @@ export function foldPendingIntoPosted(
 		if (pending.split_count > 0 && posted.split_count === 0) {
 			database.query('UPDATE transaction_splits SET transaction_id = ? WHERE transaction_id = ?').run(posted.id, pending.id);
 		}
+		// A pending clear deletes this id. Carry a scheduled match onto the posted row.
+		// If that row is already matched, the pending link is dropped (one transaction, one occurrence).
+		carryMatchLinks(database, pending.id, posted.id);
 		database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(pending.id, userId);
 		database.run('COMMIT');
 	} catch (error) {
@@ -758,6 +762,7 @@ export function foldOrphanIntoTarget(
 				.query('UPDATE transaction_splits SET transaction_id = ? WHERE transaction_id = ?')
 				.run(target.id, orphan.id);
 		}
+		carryMatchLinks(database, orphan.id, target.id);
 		database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(orphan.id, userId);
 		database.run('COMMIT');
 		return true;

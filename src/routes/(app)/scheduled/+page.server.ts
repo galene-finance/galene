@@ -1,4 +1,5 @@
 import { deleteScheduledAction } from '$lib/server/scheduledDeleteAction';
+import { matchesByScheduled } from '$lib/server/scheduledMatch';
 import { paidAtByScheduled } from '$lib/server/scheduledPaid';
 import {
 	getAccounts,
@@ -10,23 +11,26 @@ import {
 	scheduledInputFromForm
 } from '$lib/server/finance';
 import { addDaysIso } from '$lib/calendarMobile';
-import { OVERDUE_LOOKBACK_DAYS, attachPaidState, selectScheduleFocus } from '$lib/scheduledPaid';
+import { OVERDUE_LOOKBACK_DAYS, attachPaidState, compareScheduleCards, selectScheduleFocus } from '$lib/scheduledPaid';
 import { todayISO } from '$lib/utils';
 
 export function load({ locals }) {
 	const userId = locals.user!.id;
 	const today = todayISO();
 	const seriesRows = getScheduled(userId);
-	const paidAt = paidAtByScheduled(
-		userId,
-		seriesRows.map((series) => series.id)
-	);
+	const seriesIds = seriesRows.map((series) => series.id);
+	const paidAt = paidAtByScheduled(userId, seriesIds);
+	const matches = matchesByScheduled(userId, seriesIds);
 	const windowStart = addDaysIso(today, -OVERDUE_LOOKBACK_DAYS);
+	// Expand from the series start so a paid one-time older than the overdue
+	// window still has an occurrence to focus. Upcoming stays "next date on or
+	// after today"; that ended series shows its Paid band on All.
 	const rows = seriesRows
 		.map((series) => {
 			let to = addDaysIso(today, 366 * 15);
 			if (series.start_date > to) to = series.start_date;
-			const expanded = attachPaidState(expandScheduled(series, windowStart, to), paidAt, today);
+			const from = series.start_date < windowStart ? series.start_date : windowStart;
+			const expanded = attachPaidState(expandScheduled(series, from, to), paidAt, today, matches);
 			const next = expanded.find((row) => row.date >= today) ?? null;
 			return {
 				scheduled: next?.scheduled ?? series,
@@ -34,14 +38,7 @@ export function load({ locals }) {
 				focus: selectScheduleFocus(expanded, today)
 			};
 		})
-		.sort((a, b) => {
-			if (a.nextDate && b.nextDate) {
-				return a.nextDate.localeCompare(b.nextDate) || a.scheduled.name.localeCompare(b.scheduled.name);
-			}
-			if (a.nextDate) return -1;
-			if (b.nextDate) return 1;
-			return a.scheduled.name.localeCompare(b.scheduled.name);
-		});
+		.sort(compareScheduleCards);
 
 	return {
 		rows,

@@ -1,5 +1,13 @@
 import { attachPaidState, countOverdueInMonth } from '$lib/scheduledPaid';
 import { deleteScheduledAction } from '$lib/server/scheduledDeleteAction';
+import {
+	matchCandidatesAction,
+	matchConfirmAction,
+	matchDismissAction,
+	matchesByScheduled,
+	matchUnmatchAction,
+	suggestionsByOccurrence
+} from '$lib/server/scheduledMatch';
 import { paidAtByScheduled, setPaidAction } from '$lib/server/scheduledPaid';
 import {
 	getAccounts,
@@ -30,15 +38,16 @@ export function load({ locals, url }) {
 	const transactions = getTransactionsInPeriod(userId, from, to);
 	const scheduled = getScheduled(userId);
 	const today = todayISO();
-	const paidAt = paidAtByScheduled(
-		userId,
-		scheduled.map((series) => series.id)
-	);
+	const seriesIds = scheduled.map((series) => series.id);
+	const paidAt = paidAtByScheduled(userId, seriesIds);
+	const matches = matchesByScheduled(userId, seriesIds);
 	const occurrences = attachPaidState(
 		scheduled.flatMap((series) => expandScheduled(series, from, to)),
 		paidAt,
-		today
+		today,
+		matches
 	);
+	const suggestions = suggestionsByOccurrence(userId, occurrences, today);
 	const overdueCount = countOverdueInMonth(occurrences, today, month);
 	const hideActuals = getSetting(userId, 'hide_actuals') === '1';
 	const weekStartsOn = getSetting(userId, 'week_starts_on') === 'monday' ? 'monday' : 'sunday';
@@ -47,6 +56,7 @@ export function load({ locals, url }) {
 		month,
 		transactions,
 		occurrences,
+		suggestions,
 		overdueCount,
 		hideActuals,
 		weekStartsOn,
@@ -80,6 +90,10 @@ export const actions = {
 	'delete-scheduled': deleteScheduledAction,
 
 	'set-paid': setPaidAction,
+	'match-confirm': matchConfirmAction,
+	'match-unmatch': matchUnmatchAction,
+	'match-dismiss': matchDismissAction,
+	'match-candidates': matchCandidatesAction,
 
 	'set-hide-actuals': async ({ request, locals }) => {
 		const form = await request.formData();

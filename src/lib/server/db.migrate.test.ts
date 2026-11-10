@@ -351,7 +351,7 @@ CREATE TABLE plaid_items (
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		expect(migrationCount()).toBe(33);
+		expect(migrationCount()).toBe(34);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -395,7 +395,7 @@ CREATE TABLE plaid_items (
 			db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_paid'`).get()
 		).toEqual({ o: 1 });
 		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
-		expect(migrationCount()).toBe(33);
+		expect(migrationCount()).toBe(34);
 		expect(counts()).toEqual(before);
 		expect(db.query('SELECT id, name FROM scheduled').get()).toEqual({ id: 7, name: 'Rent' });
 		expect(db.query('SELECT occurrence_date, display_date FROM scheduled_exceptions').get()).toEqual({
@@ -407,6 +407,89 @@ CREATE TABLE plaid_items (
 		expect(() => migrate(db)).not.toThrow();
 		expect(counts()).toEqual(before);
 		expect(db.query('SELECT id FROM scheduled').get()).toEqual({ id: 7 });
+		db.close();
+	});
+
+	test('adds scheduled_match and dismissals, then replays without wiping other rows', () => {
+		const db = new Database(':memory:');
+		db.exec('PRAGMA foreign_keys = ON');
+		migrate(db);
+		expect(migrationCount()).toBe(34);
+
+		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
+		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
+		db.query(
+			`INSERT INTO categories (id, user_id, name, type, is_transfer) VALUES (10, 1, 'Housing', 'expense', 0)`
+		).run();
+		db.query(
+			`INSERT INTO transactions (id, user_id, account_id, category_id, date, amount_cents, merchant)
+			 VALUES (100, 1, 1, 10, '2026-01-02', -500, 'Rent')`
+		).run();
+		db.query(`INSERT INTO transaction_splits (transaction_id, category_id, amount_cents) VALUES (100, 10, 500)`).run();
+		db.query(
+			`INSERT INTO categorization_rules (user_id, name, conditions, category_id, priority, enabled)
+			 VALUES (1, 'Rent rule', '[]', 10, 0, 1)`
+		).run();
+		db.query(
+			`INSERT INTO scheduled (id, user_id, name, account_id, category_id, amount_cents, start_date, forecast_behavior)
+			 VALUES (7, 1, 'Rent', 1, 10, -500, '2026-01-01', 'bill')`
+		).run();
+
+		const counts = () => ({
+			tx: (db.query('SELECT COUNT(*) AS n FROM transactions WHERE category_id IS NOT NULL').get() as { n: number }).n,
+			splits: (db.query('SELECT COUNT(*) AS n FROM transaction_splits').get() as { n: number }).n,
+			rules: (db.query('SELECT COUNT(*) AS n FROM categorization_rules').get() as { n: number }).n,
+			scheduled: (db.query('SELECT COUNT(*) AS n FROM scheduled').get() as { n: number }).n
+		});
+		const before = counts();
+
+		const index = migrationIndexContaining('scheduled_match scheduled_match_dismissed');
+		db.exec('DROP TABLE scheduled_match_dismissed');
+		db.exec('DROP TABLE scheduled_match');
+		db.run(`PRAGMA user_version = ${index}`);
+		migrate(db);
+
+		expect(db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_match'`).get()).toEqual({
+			o: 1
+		});
+		expect(
+			db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_match_dismissed'`).get()
+		).toEqual({ o: 1 });
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(34);
+		expect(counts()).toEqual(before);
+
+		db.query(
+			`INSERT INTO scheduled_match (scheduled_id, occurrence_date, transaction_id, matched_at)
+			 VALUES (7, '2026-01-01', 100, '2026-01-02T00:00:00.000Z')`
+		).run();
+		expect(() =>
+			db
+				.query(
+					`INSERT INTO scheduled_match (scheduled_id, occurrence_date, transaction_id, matched_at)
+					 VALUES (7, '2026-02-01', 100, '2026-02-02T00:00:00.000Z')`
+				)
+				.run()
+		).toThrow();
+		db.query(
+			`INSERT INTO transactions (id, user_id, account_id, date, amount_cents, merchant)
+			 VALUES (101, 1, 1, '2026-02-01', -500, 'Other')`
+		).run();
+		expect(() =>
+			db
+				.query(
+					`INSERT INTO scheduled_match (scheduled_id, occurrence_date, transaction_id, matched_at)
+					 VALUES (7, '2026-01-01', 101, '2026-02-02T00:00:00.000Z')`
+				)
+				.run()
+		).toThrow();
+		db.query('DELETE FROM transactions WHERE id = 100').run();
+		expect((db.query('SELECT COUNT(*) AS n FROM scheduled_match').get() as { n: number }).n).toBe(0);
+		const left = counts();
+
+		db.run(`PRAGMA user_version = ${index}`);
+		expect(() => migrate(db)).not.toThrow();
+		expect(counts()).toEqual(left);
+		expect(db.query('SELECT id, name FROM scheduled').get()).toEqual({ id: 7, name: 'Rent' });
 		db.close();
 	});
 

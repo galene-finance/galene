@@ -40,12 +40,14 @@
 		overflowPanelPosition
 	} from '$lib/calendarDayOverflow';
 	import { watchFormToast } from '$lib/formToast.svelte';
+	import type { MatchSuggestionView } from '$lib/scheduledMatch';
 	import {
 		daysLate,
 		detailPopoverPosition,
 		isOverdue,
 		paidKey,
-		type CalendarOccurrence
+		type CalendarOccurrence,
+		type OccurrenceMatch
 	} from '$lib/scheduledPaid';
 	import { formatDate, formatMoney, monthLabel, todayISO } from '$lib/utils';
 	import type { Account, Category, Scheduled, Tag, Transaction } from '$lib/types';
@@ -56,6 +58,7 @@
 			month: string;
 			transactions: Transaction[];
 			occurrences: CalendarOccurrence[];
+			suggestions: Record<string, MatchSuggestionView>;
 			overdueCount: number;
 			hideActuals: boolean;
 			weekStartsOn: 'sunday' | 'monday';
@@ -91,19 +94,37 @@
 	const thisMonth = $derived(todayISO().slice(0, 7));
 	const today = $derived(todayISO());
 
-	let paidOverrides = $state<Record<string, { paid: boolean; paidAt: string | null }>>({});
+	let paidOverrides = $state<
+		Record<
+			string,
+			{ paid: boolean; paidAt: string | null; matched?: boolean; match?: OccurrenceMatch | null }
+		>
+	>({});
+	/** Suggestion ids hidden after Not this, until the load refreshes. */
+	let hiddenSuggestions = $state<Record<string, true>>({});
 
 	function displayOcc(row: CalendarOccurrence): CalendarOccurrence {
 		const over = paidOverrides[paidKey(row.scheduled.id, row.occurrenceDate)];
 		if (!over) return row;
 		const overdue = isOverdue(row.date, over.paid, today);
+		const matched = over.matched !== undefined ? over.matched : row.matched;
+		const match = over.match !== undefined ? over.match : row.match;
 		return {
 			...row,
 			paid: over.paid,
 			paidAt: over.paidAt,
 			overdue,
-			daysLate: overdue ? daysLate(row.date, today) : 0
+			daysLate: overdue ? daysLate(row.date, today) : 0,
+			matched,
+			match
 		};
+	}
+
+	function suggestionFor(occurrence: CalendarOccurrence): MatchSuggestionView | null {
+		if (occurrence.matched) return null;
+		const key = paidKey(occurrence.scheduled.id, occurrence.occurrenceDate);
+		if (hiddenSuggestions[key]) return null;
+		return data.suggestions[key] ?? null;
 	}
 
 	function shownOccurrences(): CalendarOccurrence[] {
@@ -400,10 +421,14 @@
 			closeDetail(false);
 			return;
 		}
-		detailPos = detailPopoverPosition(detailSource.getBoundingClientRect(), {
-			width: window.innerWidth,
-			height: window.innerHeight
-		});
+		detailPos = detailPopoverPosition(
+			detailSource.getBoundingClientRect(),
+			{
+				width: window.innerWidth,
+				height: window.innerHeight
+			},
+			{ width: 360, height: 440 }
+		);
 	}
 
 	function focusDetail() {
@@ -450,6 +475,19 @@
 	function onPaidOptimistic(occurrence: CalendarOccurrence, paid: boolean, paidAt: string | null) {
 		const key = paidKey(occurrence.scheduled.id, occurrence.occurrenceDate);
 		paidOverrides = { ...paidOverrides, [key]: { paid, paidAt } };
+	}
+
+	function onMatchOptimistic(
+		occurrence: CalendarOccurrence,
+		next: { paid: boolean; paidAt: string | null; matched: boolean; match: OccurrenceMatch | null }
+	) {
+		const key = paidKey(occurrence.scheduled.id, occurrence.occurrenceDate);
+		paidOverrides = { ...paidOverrides, [key]: next };
+	}
+
+	function hideSuggestion(occurrence: CalendarOccurrence) {
+		const key = paidKey(occurrence.scheduled.id, occurrence.occurrenceDate);
+		hiddenSuggestions = { ...hiddenSuggestions, [key]: true };
 	}
 
 	function clearPaidOverride(occurrence: CalendarOccurrence) {
@@ -511,6 +549,7 @@
 	$effect(() => {
 		data.occurrences;
 		paidOverrides = {};
+		hiddenSuggestions = {};
 	});
 
 	$effect(() => {
@@ -1079,7 +1118,7 @@
 		</div>
 
 		<p class="mt-4 text-xs text-muted-foreground">
-			Dashed pills are scheduled expectations — click a pill to mark that date paid, or click a day to add one.
+			Dashed pills are scheduled expectations — click a pill to mark that date paid or match a transaction, or click a day to add one.
 		</p>
 	</div>
 </div>
@@ -1155,16 +1194,19 @@
 		role="dialog"
 		aria-modal="false"
 		aria-label="{detailOcc.scheduled.name} occurrence"
-		class="fixed z-[70] w-80 overflow-hidden rounded-lg border border-border bg-surface text-sm shadow-lg"
+		class="fixed z-[70] max-h-[min(36rem,calc(100dvh-1rem))] w-[22.5rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-border bg-surface text-sm shadow-lg"
 		style="top: {detailPos.top}px; left: {detailPos.left}px"
 	>
 		<OccurrenceDetail
 			occurrence={detailOcc}
+			suggestion={suggestionFor(detailOcc)}
 			showClose
 			onedit={editFromDetail}
 			onclose={() => closeDetail(true)}
 			onoptimistic={(paid, paidAt) => onPaidOptimistic(detailOcc, paid, paidAt)}
 			onrevert={() => clearPaidOverride(detailOcc)}
+			onmatchchange={(next) => onMatchOptimistic(detailOcc, next)}
+			ondismiss={() => hideSuggestion(detailOcc)}
 		/>
 	</div>
 {/if}
@@ -1186,10 +1228,13 @@
 		<div class="mx-auto mb-3 h-1 w-10 rounded-full bg-input" aria-hidden="true"></div>
 		<OccurrenceDetail
 			occurrence={detailOcc}
+			suggestion={suggestionFor(detailOcc)}
 			bleed
 			onedit={editFromDetail}
 			onoptimistic={(paid, paidAt) => onPaidOptimistic(detailOcc, paid, paidAt)}
 			onrevert={() => clearPaidOverride(detailOcc)}
+			onmatchchange={(next) => onMatchOptimistic(detailOcc, next)}
+			ondismiss={() => hideSuggestion(detailOcc)}
 		/>
 	{/if}
 </Dialog>

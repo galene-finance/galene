@@ -10,7 +10,7 @@ import { closeDbForTests, db } from './db';
 import { createApiToken } from './apiTokens';
 import { cashflowForMonths, deleteAccount, deleteTransaction, getHomeSummary, saveTransaction } from './finance';
 import { accountsNeedingReconcile, finishReconcile, loadReconcile, setCleared, unlockTransaction } from './reconcile';
-import { foldOrphanIntoTarget, foldPendingIntoPosted, upsertProviderTransaction } from './sync';
+import { foldPendingIntoPosted, mergeRepostedTransactions, upsertProviderTransaction } from './sync';
 import { isHeldProviderLine } from './syncHeld';
 import { createUser } from './users';
 import { executeWrite, saveWriteApiSettings } from './writeApi';
@@ -357,15 +357,19 @@ describe('reconciled lock gaps', () => {
 		expect(accountsNeedingReconcile(userId)[String(accountId)]).toBe(true);
 	});
 
-	test('folding a pending row carries state and never deletes a reconciled pending row', () => {
+	test('a reconciled pending row folds into its posted row once', () => {
 		const userId = user('fold@example.com');
 		const accountId = account(userId, 'demo');
+		const category = db()
+			.query(`INSERT INTO categories (user_id, name, type) VALUES (?, 'Dining', 'expense')`)
+			.run(userId);
+		const categoryId = Number(category.lastInsertRowid);
 		db()
 			.query(
-				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider, external_id, pending, cleared, reconciled_at)
-				 VALUES (?, ?, '2026-11-10', -400, 'Auth', 'demo', 'pend-lock', 1, 1, '2026-11-14 00:00:00')`
+				`INSERT INTO transactions (user_id, account_id, category_id, date, amount_cents, merchant, notes, provider, external_id, pending, cleared, reconciled_at)
+				 VALUES (?, ?, ?, '2026-11-10', -400, 'Auth', 'lunch', 'demo', 'pend-lock', 1, 1, '2026-11-14 00:00:00')`
 			)
-			.run(userId, accountId);
+			.run(userId, accountId, categoryId);
 		db()
 			.query(
 				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider, external_id, pending, cleared)
@@ -373,37 +377,72 @@ describe('reconciled lock gaps', () => {
 			)
 			.run(userId, accountId);
 		foldPendingIntoPosted(userId, 'demo', accountId, 'pend-lock', 'posted-lock');
-		const pending = db().query(`SELECT id FROM transactions WHERE external_id = 'pend-lock'`).get() as { id: number } | null;
-		expect(pending).not.toBeNull();
-		const posted = db().query(`SELECT cleared, reconciled_at, amount_cents FROM transactions WHERE external_id = 'posted-lock'`).get() as {
-			cleared: number;
-			reconciled_at: string | null;
+		const rows = db()
+			.query('SELECT external_id, amount_cents, cleared, reconciled_at, category_id, notes FROM transactions')
+			.all() as {
+			external_id: string;
 			amount_cents: number;
-		};
-		expect(posted.amount_cents).toBe(-450);
-		expect(posted.cleared).toBe(1);
-		expect(posted.reconciled_at).toBeNull();
-
-		db().query(`UPDATE transactions SET amount_cents = -450, date = '2026-11-12', reconciled_at = '2026-11-14 00:00:00' WHERE external_id = 'pend-lock'`).run();
-		db().query(`UPDATE transactions SET amount_cents = -450, date = '2026-11-12', reconciled_at = NULL, cleared = 0 WHERE external_id = 'posted-lock'`).run();
-		foldPendingIntoPosted(userId, 'demo', accountId, 'pend-lock', 'posted-lock');
-		expect(db().query(`SELECT id FROM transactions WHERE external_id = 'pend-lock'`).get()).not.toBeNull();
-		const same = db().query(`SELECT cleared, reconciled_at FROM transactions WHERE external_id = 'posted-lock'`).get() as {
 			cleared: number;
 			reconciled_at: string | null;
-		};
-		expect(same.cleared).toBe(1);
-		expect(same.reconciled_at).toBe('2026-11-14 00:00:00');
+			category_id: number | null;
+			notes: string | null;
+		}[];
+		expect(rows).toHaveLength(1);
+		expect(rows[0]?.external_id).toBe('posted-lock');
+		expect(rows[0]?.amount_cents).toBe(-450);
+		expect(rows.reduce((sum, row) => sum + row.amount_cents, 0)).toBe(-450);
+		expect(rows[0]?.cleared).toBe(1);
+		expect(rows[0]?.reconciled_at).toBeNull();
+		expect(rows[0]?.category_id).toBe(categoryId);
+		expect(rows[0]?.notes).toBe('lunch');
 
-		const orphanId = (db().query(`SELECT id FROM transactions WHERE external_id = 'pend-lock'`).get() as { id: number }).id;
-		const targetId = (db().query(`SELECT id FROM transactions WHERE external_id = 'posted-lock'`).get() as { id: number }).id;
-		expect(
-			foldOrphanIntoTarget(
-				userId,
-				{ id: orphanId, category_id: null, color: null, notes: null },
-				{ id: targetId, category_id: null, split_count: 0 }
+		db()
+			.query(
+				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider, external_id, pending, cleared, reconciled_at)
+				 VALUES (?, ?, '2026-11-12', -450, 'Auth', 'demo', 'pend-same', 1, 1, '2026-11-14 00:00:00')`
 			)
-		).toBe(false);
-		expect(db().query('SELECT id FROM transactions WHERE id = ?').get(orphanId)).not.toBeNull();
+			.run(userId, accountId);
+		db().query(`UPDATE transactions SET reconciled_at = NULL, cleared = 0 WHERE external_id = 'posted-lock'`).run();
+		foldPendingIntoPosted(userId, 'demo', accountId, 'pend-same', 'posted-lock');
+		const kept = db()
+			.query(`SELECT external_id, cleared, reconciled_at FROM transactions ORDER BY external_id`)
+			.all() as { external_id: string; cleared: number; reconciled_at: string | null }[];
+		expect(kept.map((row) => row.external_id)).toEqual(['posted-lock']);
+		expect(kept[0]?.cleared).toBe(1);
+		expect(kept[0]?.reconciled_at).toBe('2026-11-14 00:00:00');
+		expect(
+			(db().query('SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions').get() as { s: number }).s
+		).toBe(-450);
+	});
+
+	test('a reconciled pending row the bank drops without posting is kept and demoted', () => {
+		const userId = user('dropped@example.com');
+		const accountId = account(userId, 'demo');
+		db()
+			.query(
+				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider, external_id, pending, cleared, reconciled_at)
+				 VALUES (?, ?, '2026-11-10', -400, 'Auth', 'demo', 'pend-gone', 1, 1, '2026-11-14 00:00:00')`
+			)
+			.run(userId, accountId);
+		db()
+			.query(
+				`INSERT INTO reconcile_sessions (user_id, account_id, statement_date, bank_balance_cents, finished_at)
+				 VALUES (?, ?, '2026-11-14', -400, '2026-11-14 00:00:00')`
+			)
+			.run(userId, accountId);
+		expect(mergeRepostedTransactions(userId, 'demo', '2026-11-01', new Set(), db())).toBe(0);
+		const row = db().query('SELECT external_id, amount_cents, cleared, reconciled_at, pending FROM transactions').get() as {
+			external_id: string;
+			amount_cents: number;
+			cleared: number;
+			reconciled_at: string | null;
+			pending: number;
+		};
+		expect(row.external_id).toBe('pend-gone');
+		expect(row.amount_cents).toBe(-400);
+		expect(row.pending).toBe(1);
+		expect(row.cleared).toBe(1);
+		expect(row.reconciled_at).toBeNull();
+		expect(accountsNeedingReconcile(userId)[String(accountId)]).toBe(true);
 	});
 });

@@ -29,6 +29,6 @@ Finish stays off until left to explain is **$0.00**. The way to close a remainin
 
 Cleared rows through the statement date lock when you finish. A later sync still writes the bank’s amount and date. If either of those changed on a reconciled row, that row goes back to cleared and the account chip says it needs reconciling again. Merchant and note updates leave the lock in place. Moving an account’s transactions to another account is refused while any of them are reconciled. Deleting the account and its transactions still asks you to confirm, and the confirm names how many reconciled rows will be deleted.
 
-A pending row that folds into its posted row carries cleared and reconciled state onto the posted row. If the amount or date differs, the posted row is cleared rather than left reconciled. A reconciled row is not deleted by that cleanup.
+A pending row that folds into its posted row is a replacement. Cleared and reconciled state, splits, tags, and other edits move onto the posted row, and the pending row is removed so the amount is counted once. If the amount or date differs, the posted row is cleared rather than left reconciled. A reconciled pending row the bank drops without posting stays in the ledger, marked cleared, and the account chip says it needs reconciling.
 
 Take a **Settings → Backups** copy before upgrading to a release that includes this migration.

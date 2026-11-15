@@ -20,10 +20,10 @@ The bank balance starts from the last provider balance when the account is linke
 Galene suggests causes. Nothing is written until you confirm, and **Finish** applies the whole review in one step:
 
 - **Missing from Galene** — a bank line sync saw and did not import. Synced, posted lines are imported. If you delete one, Galene keeps the provider’s copy and does not import it again on the next sync. Add it from the reconcile screen (or leave it). Pending lines that the same response already posts are not kept; the posted line is the ledger row.
-- **Possible duplicate** — same merchant, amount, and day, one manual and one synced. Delete the hand-added copy, or keep both (the hint stays dismissed).
+- **Possible duplicate** — same merchant, amount, and day, one manual and one synced. Delete the hand-added copy, or keep both. Keep both is listed in the finish review and recorded only when you confirm. Leaving the page or cancelling the review writes nothing, and the hint comes back next time.
 - **Not at the bank yet** — an uncleared manual or pending line. Leaving it open is normal.
 - **Opening balance** — when an opening date is set. If the remaining gap is not explained by missing bank lines, edit the opening balance on the account. Galene does not change it for you.
-- **Balance adjustment** — an explicit transaction that makes cleared match the bank. It uses the system category **Balance adjustment**, which is left out of budgets, cashflow, trends, and other category spend totals. The amount still counts in the account ledger.
+- **Balance adjustment** — an explicit transaction that makes cleared match the bank. It uses the system category **Balance adjustment**, which is left out of budgets, cashflow, trends, Home recent transactions, the summary recent list, and other category spend totals. The amount still counts in the account ledger, and the transaction still appears on the Transactions page and on this screen.
 
 Finish stays off until left to explain is **$0.00**. The way to close a remaining gap is to add the missing line or to add a balance adjustment in the review. Finish never records a statement that still has a gap.
 

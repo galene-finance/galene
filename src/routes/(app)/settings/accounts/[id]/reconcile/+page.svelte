@@ -23,15 +23,13 @@
 	let readyFor = $state<number | null>(null);
 	let stagedAddIds = $state<number[]>([]);
 	let stagedDeleteIds = $state<number[]>([]);
+	let stagedDismissPairs = $state<{ manualId: number; syncedId: number }[]>([]);
 	let adjustment = $state<{ cents: number; date: string; note: string } | null>(null);
 
 	let tickId = $state('');
 	let tickCleared = $state('1');
 	let tickForm = $state<HTMLFormElement | null>(null);
 	let tickAllForm = $state<HTMLFormElement | null>(null);
-	let keepManual = $state('');
-	let keepSynced = $state('');
-	let keepForm = $state<HTMLFormElement | null>(null);
 	let unlockId = $state('');
 	let unlockForm = $state<HTMLFormElement | null>(null);
 	let finishForm = $state<HTMLFormElement | null>(null);
@@ -55,6 +53,7 @@
 			data.account.provider_balance_cents != null ? centsToDollars(data.account.provider_balance_cents) : '';
 		stagedAddIds = [];
 		stagedDeleteIds = [];
+		stagedDismissPairs = [];
 		adjustment = null;
 		showAll = false;
 		showEarlier = false;
@@ -136,14 +135,22 @@
 		duplicateSynced = null;
 	}
 
+	function isStagedKeep(manualId: number, syncedId: number): boolean {
+		return stagedDismissPairs.some((pair) => pair.manualId === manualId && pair.syncedId === syncedId);
+	}
+
 	function keepBoth(manualId: number, syncedId: number) {
-		flushSync(() => {
-			keepManual = String(manualId);
-			keepSynced = String(syncedId);
-		});
-		keepForm?.requestSubmit();
+		if (!isStagedKeep(manualId, syncedId)) {
+			stagedDismissPairs = [...stagedDismissPairs, { manualId, syncedId }];
+		}
 		duplicate = null;
 		duplicateSynced = null;
+	}
+
+	function unstageKeep(manualId: number, syncedId: number) {
+		stagedDismissPairs = stagedDismissPairs.filter(
+			(pair) => pair.manualId !== manualId || pair.syncedId !== syncedId
+		);
 	}
 
 	function submitUnlock() {
@@ -178,6 +185,14 @@
 				detail: 'The entry added by hand. The cleared one stays.'
 			});
 		}
+		for (const pair of stagedDismissPairs) {
+			const row = data.rows.find((item: ReconcileRow) => item.id === pair.manualId);
+			const who = row?.merchant ?? 'both copies';
+			items.push({
+				title: `Keep both ${who}${row ? ` ${formatMoney(row.amountCents)}` : ''}`,
+				detail: 'Nothing is deleted. The duplicate hint is dismissed when you finish.'
+			});
+		}
 		if (view.markCount > 0) {
 			items.push({
 				title: `Mark ${view.markCount} transaction${view.markCount === 1 ? '' : 's'} reconciled`,
@@ -207,7 +222,11 @@
 					? { amountCents: adjustment.cents, date: adjustment.date, note: adjustment.note }
 					: null,
 				addUnimportedIds: stagedAddIds,
-				deleteIds: stagedDeleteIds
+				deleteIds: stagedDeleteIds,
+				dismissPairs: stagedDismissPairs.map((pair) => ({
+					manualId: pair.manualId,
+					syncedId: pair.syncedId
+				}))
 			});
 		});
 		finishOpen = true;
@@ -230,7 +249,7 @@
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">Reconcile {data.account.name}</h1>
 			<p class="mt-1 text-sm text-muted-foreground">
-				Tick what the bank shows. Your ledger doesn’t change until you confirm.
+				Tick what the bank shows. Nothing is written until you confirm.
 			</p>
 		</div>
 		{#if data.lastStatementDate}
@@ -546,6 +565,11 @@
 									{#if !readonly}
 										<button type="button" class="mt-1 text-xs text-muted-foreground underline" onclick={() => (stagedDeleteIds = stagedDeleteIds.filter((id) => id !== pair.manual.id))}>Undo</button>
 									{/if}
+								{:else if isStagedKeep(pair.manual.id, pair.synced.id)}
+									<p class="mt-2 text-xs text-primary">Will keep both when you finish.</p>
+									{#if !readonly}
+										<button type="button" class="mt-1 text-xs text-muted-foreground underline" onclick={() => unstageKeep(pair.manual.id, pair.synced.id)}>Undo</button>
+									{/if}
 								{:else if !readonly}
 									<div class="mt-2 flex flex-wrap gap-2">
 										<Button type="button" size="sm" variant="secondary" onclick={() => { duplicate = pair.manual; duplicateSynced = pair.synced; }}>
@@ -643,14 +667,24 @@
 <form bind:this={tickAllForm} method="POST" action="?/tick-all" use:enhance class="hidden">
 	<input name="through" value={through} />
 </form>
-<form bind:this={keepForm} method="POST" action="?/keep-both" use:enhance class="hidden">
-	<input name="manual_id" value={keepManual} />
-	<input name="synced_id" value={keepSynced} />
-</form>
 <form bind:this={unlockForm} method="POST" action="?/unlock" use:enhance class="hidden">
 	<input name="id" value={unlockId} />
 </form>
-<form bind:this={finishForm} id="finish-form" method="POST" action="?/finish" use:enhance={() => async ({ update }) => { finishOpen = false; update(); }} class="hidden">
+<form
+	bind:this={finishForm}
+	id="finish-form"
+	method="POST"
+	action="?/finish"
+	use:enhance={() =>
+		async ({ result, update }) => {
+			finishOpen = false;
+			if (result.type === 'success' && result.data && typeof result.data === 'object' && 'ok' in result.data && result.data.ok) {
+				stagedDismissPairs = [];
+			}
+			await update();
+		}}
+	class="hidden"
+>
 	<input name="plan" value={planJson} />
 </form>
 

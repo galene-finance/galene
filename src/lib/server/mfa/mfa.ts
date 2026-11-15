@@ -5,6 +5,7 @@ import { db } from '../db';
 import { hashToken, tokenHint, verifyToken } from '../tokenHash';
 import { generateTotpSecret, otpauthUri, verifyTotp } from './totp';
 import { demoBlockedMessage, isDemoMode } from '../demoMode';
+import { openSecret, sealSecret } from '../secrets';
 
 /**
  * TOTP two-factor (issue #30). Method-agnostic on purpose: the `type`
@@ -46,7 +47,7 @@ function getEnabledTotpSecret(userId: number): string | null {
 	const row = db()
 		.query("SELECT secret FROM user_mfa_methods WHERE user_id = ? AND type = 'totp' AND enabled = 1")
 		.get(userId) as { secret: string } | undefined;
-	return row?.secret ?? null;
+	return row ? openSecret(row.secret) : null;
 }
 
 /** True if the user has an enabled TOTP method (gates the login second step). */
@@ -114,7 +115,7 @@ export function confirmTotpEnroll(
 		d.query('DELETE FROM user_mfa_backup_codes WHERE user_id = ?').run(userId);
 		d.query(
 			"INSERT INTO user_mfa_methods (user_id, type, label, secret, enabled, confirmed_at) VALUES (?, 'totp', ?, ?, 1, datetime('now'))"
-		).run(userId, user.email, normalized);
+		).run(userId, user.email, sealSecret(normalized));
 		const codes = Array.from({ length: BACKUP_CODE_COUNT }, () => generateBackupCode());
 		const insert = d.query('INSERT INTO user_mfa_backup_codes (user_id, code_hash) VALUES (?, ?)');
 		for (const c of codes) insert.run(userId, hashPassword(c));

@@ -22,6 +22,9 @@ services:
       # plain-HTTP self-hosting sets this to "0".
       # If you put a TLS-terminating reverse proxy in front, set it to "1".
       GALENE_COOKIE_SECURE: "0"
+      # Optional until provider credentials are saved. 32 bytes, base64.
+      # Generate with: openssl rand -base64 32
+      # See docs: reference/environment-variables (GALENE_SECRET_KEY).
     volumes:
       # The database lives here, not in the container's writable layer.
       # The app refuses to start if /app/data is not a mounted volume.

@@ -3,7 +3,7 @@ title: Public demo mode
 description: GALENE_DEMO locks outbound features and bootstraps a shared demo login.
 ---
 
-Set **`GALENE_DEMO=1`** on a dedicated instance (separate data volume from production) to run a public demo.
+Set **`GALENE_DEMO=1`** on a dedicated instance (separate data volume from production) to run a public demo. Demo mode starts without `GALENE_SECRET_KEY`; the demo database has no provider connections.
 
 ## What it does
 

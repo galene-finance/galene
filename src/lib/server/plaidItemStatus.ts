@@ -154,7 +154,8 @@ function looksLikeSecret(value: string): boolean {
 	return /access-(?:sandbox|production|development)-/i.test(value) ||
 		/public-(?:sandbox|production|development)-/i.test(value) ||
 		/\b[a-f0-9]{64}\b/i.test(value) ||
-		/bearer\s+\S+/i.test(value);
+		/bearer\s+\S+/i.test(value) ||
+		/enc:v1:/i.test(value);
 }
 
 /** One log field. Never a token, token hint, or unknown:<hint> id. */

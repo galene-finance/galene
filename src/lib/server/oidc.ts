@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { db } from './db';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
+import { openSecret, sealSecret } from './secrets';
 import { assertAllowed, clearOnSuccess, recordFailure } from './loginThrottle';
 
 /**
@@ -114,7 +115,7 @@ export function loadOidcConfig(): OidcConfig {
 		mode,
 		issuer: (issuerEnv || row.issuer).replace(/\/+$/, ''),
 		clientId: clientIdEnv || row.client_id,
-		clientSecret: secretEnv || row.client_secret,
+		clientSecret: secretEnv || (row.client_secret ? openSecret(row.client_secret) : ''),
 		scopes: scopesEnv || row.scopes || DEFAULT_OIDC_SCOPES,
 		secretFromEnv: secretEnv.length > 0,
 		enabledFromEnv: enabledEnv !== null,
@@ -195,9 +196,12 @@ export function saveOidcSettings(input: OidcSettingsInput): { ok: true } | { ok:
 	if (!/^[\w.\- ]+$/.test(scopes)) {
 		return { ok: false, error: 'Scopes may only contain letters, numbers, dots, hyphens, and spaces.' };
 	}
+	const storedRaw = ensureOidcRow().client_secret;
 	const secret = current.secretFromEnv
-		? ensureOidcRow().client_secret
-		: input.clientSecret.trim() || ensureOidcRow().client_secret;
+		? storedRaw
+		: input.clientSecret.trim()
+			? sealSecret(input.clientSecret.trim())
+			: storedRaw;
 	db()
 		.query(
 			`UPDATE oidc_config
@@ -211,14 +215,13 @@ export function saveOidcSettings(input: OidcSettingsInput): { ok: true } | { ok:
 /** Settings form values. Secret is masked; the raw value is never returned. */
 export function oidcSettingsView(origin: string) {
 	const config = loadOidcConfig();
-	const stored = ensureOidcRow();
 	return {
 		enabled: config.enabled,
 		mode: config.mode,
 		issuer: config.issuer,
 		clientId: config.clientId,
 		secretConfigured: config.clientSecret.length > 0,
-		secretMasked: config.secretFromEnv ? 'Set in environment' : maskSecret(stored.client_secret),
+		secretMasked: config.secretFromEnv ? 'Set in environment' : maskSecret(config.clientSecret),
 		secretFromEnv: config.secretFromEnv,
 		enabledFromEnv: config.enabledFromEnv,
 		modeFromEnv: config.modeFromEnv,

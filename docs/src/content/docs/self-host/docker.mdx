@@ -46,7 +46,7 @@ The compose file sets `GALENE_COOKIE_SECURE: "0"` for plain-HTTP self-hosting (L
 
 ## Healthcheck
 
-`GET /api/v1` answering `401` marks the container healthy; `docker ps` / `docker compose ps` shows the state. The app logs to stdout (`docker logs galene`). The compose file sets `stop_grace_period: 40s` so the shutdown handler (up to 30 s for in-flight work, e.g. a WAL checkpoint) finishes before SIGKILL.
+`GET /health` answering `200` marks the container healthy. That request reads the database, so a process that cannot open it is not healthy. A missing or wrong secret key exits before the process listens; `docker logs` has the message. `docker ps` / `docker compose ps` shows the state. The app logs to stdout (`docker logs galene`). The compose file sets `stop_grace_period: 40s` so the shutdown handler (up to 30 s for in-flight work, e.g. a WAL checkpoint) finishes before SIGKILL.
 
 ## Checking the running version
 
@@ -89,5 +89,5 @@ docker pull ghcr.io/galene-finance/galene:latest
 | Container exits: "the data directory … is on the container's ephemeral filesystem" | No volume mounted at `/app/data`. Add `-v galene_data:/app/data` or the compose `volumes:` entry. `GALENE_ALLOW_EPHEMERAL_DATA=1` is for throwaway containers only. |
 | Login "succeeds" but you are bounced back to the login page | The session cookie is `Secure` but you are on plain HTTP. Set `GALENE_COOKIE_SECURE=0` (the compose file ships with this). Behind a TLS proxy, set it to `1`. |
 | Sign in does nothing / console `file:///` / view-source has `http://…` under HTTPS | Behind TLS set `PROTOCOL_HEADER=x-forwarded-proto` and `HOST_HEADER=host` (see [Reverse proxy](/self-host/reverse-proxy/)). |
-| `docker ps` shows `unhealthy` | The app is not answering `GET /api/v1`. Check `docker logs` — usually a crash at startup (volume or permission issue) or a port conflict. |
+| `docker ps` shows `unhealthy` | The app is not answering `GET /health` with 200. Check `docker logs` — usually a crash at startup (volume, permission, or secret key) or a port conflict. |
 | Permission errors on a bind-mounted data dir | The directory is not writable by uid 10001. `chown 10001:10001 /path/on/host`, or use a named volume. On SELinux hosts add `:z`. |

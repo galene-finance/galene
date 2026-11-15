@@ -90,6 +90,21 @@ export function db(): Database {
 }
 
 /**
+ * Open the database when the server loads hooks. The Bun adapter does that
+ * before it listens, so a failed secret-key check exits before the process
+ * accepts connections. The logged message does not include stored values.
+ */
+export function openDatabaseOrExit(exit: (code: number) => void = (code) => process.exit(code)): void {
+	try {
+		db();
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Galene will not start.';
+		console.error(message);
+		exit(1);
+	}
+}
+
+/**
  * A migration is either a plain SQL string, or an object with the SQL plus an
  * optional `after` hook for steps that need JavaScript (e.g. hashing rows).
  * Hooks run inside the same transaction as the SQL. `vacuum` rewrites the

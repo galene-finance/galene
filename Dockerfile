@@ -92,8 +92,9 @@ COPY --from=build --chown=galene:galene /app/rotate-secrets.js ./rotate-secrets.
 # app user (a fresh named volume would otherwise be root-owned and unwritable).
 RUN mkdir -p /app/data /app/backups && chown galene:galene /app/data /app/backups
 
-# /api/v1 answers 401 without a token — a reachable, answering server
+# /health reads the database. A missing or wrong secret key exits before listen,
+# so this probe fails closed (connection error, or 503 if the process is up).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD bun -e 'fetch("http://localhost:3000/api/v1").then(r => process.exit(r.status === 401 ? 0 : 1)).catch(() => process.exit(1))'
+    CMD bun -e 'fetch("http://localhost:3000/health").then(r => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))'
 
 CMD ["bun", "build/index.js"]

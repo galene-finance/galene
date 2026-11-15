@@ -46,7 +46,7 @@ USER galene            # non-root, uid 10001
 WORKDIR /app
 ENV GALENE_DATA_DIR=/app/data  PORT=3000  NODE_ENV=production
 EXPOSE 3000
-HEALTHCHECK  GET /api/v1 → 401 means healthy
+HEALTHCHECK  GET /health → 200 means the database opened
 CMD ["bun", "build/index.js"]
 # also ships ./mcp-bundle.js (stdio); HTTP MCP is /mcp on PORT when enabled
 ```
@@ -54,7 +54,7 @@ CMD ["bun", "build/index.js"]
 Notes:
 
 - **No `VOLUME` instruction, on purpose.** The app has a startup check that **refuses to run if its data directory is not a mounted volume** (see [Data, volumes, backups](#data-volumes-and-backups)). A bare `docker run` without `-v` will not start — that is the point.
-- **Healthcheck:** `GET /api/v1` answers `401` (JSON) when the server is up and reachable; the container reports `healthy` on that. `docker ps` / `docker compose ps` shows the state.
+- **Healthcheck:** `GET /health` answers `200` after the database opens. The container reports `healthy` on that. A missing or wrong secret key exits before the process listens. `docker ps` / `docker compose ps` shows the state.
 - **Shutdown:** the app's shutdown handler waits up to 30 s to finish in-flight work (WAL checkpoint, etc.); the compose file sets `stop_grace_period: 40s` to give it headroom before SIGKILL.
 - **MCP:** Settings → API → **Enable MCP HTTP** is **off by default** (`/mcp` not live). When on, MCP is served on the **same port as the app** at `/mcp` (no second publish). `mcp-bundle.js` remains for stdio clients.
 
@@ -199,7 +199,7 @@ Additional accounts (and more admins) are created by an admin under Settings →
 ## Healthcheck and monitoring
 
 - `docker ps` / `podman ps` shows `healthy` / `unhealthy`.
-- The healthcheck is `GET /api/v1` → **401** (a reachable, answering server). Any other status, or a connection failure, marks the container unhealthy.
+- The healthcheck is `GET /health` → **200** (the database opened). Any other status, or a connection failure, marks the container unhealthy.
 - The app logs to stdout/stderr — `docker logs galene` / `podman logs galene`.
 
 ---
@@ -326,7 +326,7 @@ Then in the compose file, comment out the `build:` block and set `image: ghcr.io
 | Container exits immediately: "Galene will not start: the data directory … is on the container's ephemeral filesystem" | You ran it without mounting a volume at `/app/data`. Add `-v galene_data:/app/data` (or the compose `volumes:` entry). `GALENE_ALLOW_EPHEMERAL_DATA=1` only for throwaway containers. |
 | Login "succeeds" but you're bounced back to the login page on the next click | The session cookie is `Secure` but you're on plain HTTP. Set `GALENE_COOKIE_SECURE=0` (compose ships with this). Conversely, behind a TLS proxy set it to `1`. |
 | Sign in does nothing / browser `file:///` security error / view-source still has `http://your.domain` under HTTPS | Missing adapter proxy env: set `PROTOCOL_HEADER=x-forwarded-proto` (and usually `HOST_HEADER=host`). Caddy may already send the headers — the app must opt in. Also ensure the proxy upstream is `http://…` to the app, not `https://`. |
-| `docker ps` shows `unhealthy` | The app process isn't answering `GET /api/v1`. Check `docker logs` — usually a crash at startup (volume/permission issue) or a port conflict. |
+| `docker ps` shows `unhealthy` | The app process isn't answering `GET /health` with 200. Check `docker logs` — usually a crash at startup (volume, permission, or secret key) or a port conflict. |
 | Permission errors on a **bind-mounted** data dir | The directory is owned by your host user, not uid 10001. `chown 10001:10001 /path/on/host`, or use a named volume instead. On SELinux hosts add `:z` to the mount. |
 | Podman can't bind a port < 1024 as a normal user | `sysctl net.ipv4.ip_unprivileged_port_start=0`, or use a port ≥ 1024. |
 | `podman pull ghcr.io/…` asks for credentials / fails with a fine-grained token | Use a **classic** PAT with `read:packages`; fine-grained tokens cannot access GHCR. |

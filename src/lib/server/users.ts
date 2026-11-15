@@ -2,7 +2,7 @@ import { hashPassword } from './auth';
 import { db } from './db';
 import { seedDemoData } from './demoData';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
-import { ensureDefaultTransferCategories } from './finance';
+import { ensureBalanceAdjustmentCategory, ensureDefaultTransferCategories } from './finance';
 
 export interface UserRow {
 	id: number;
@@ -87,6 +87,7 @@ export function createUser(input: {
 		const userId = Number(result.lastInsertRowid);
 		if (input.demoData) seedDemoData(userId, { inTransaction: true });
 		else ensureDefaultTransferCategories(userId);
+		ensureBalanceAdjustmentCategory(userId);
 		d.run('COMMIT');
 		return { ok: true, userId };
 	} catch (error) {

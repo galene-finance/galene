@@ -57,8 +57,12 @@ export function load({ locals, url }) {
 	const accountSet = filters.accountIds.length > 0 ? new Set(filters.accountIds) : null;
 	const categorySet = filters.categoryIds.length > 0 ? new Set(filters.categoryIds) : null;
 	const transferIds = new Set(categories.filter((c) => c.type === 'transfer').map((c) => c.id));
+	const adjustmentIds = new Set(
+		categories.filter((c) => c.system_kind === 'balance_adjustment').map((c) => c.id)
+	);
 
 	function categoryAllowed(categoryId: number | null): boolean {
+		if (categoryId != null && adjustmentIds.has(categoryId)) return false;
 		if (categorySet) {
 			// Explicit list: only selected ids (transfers only if listed).
 			return categoryId != null && categorySet.has(categoryId);
@@ -106,7 +110,7 @@ export function load({ locals, url }) {
 		transactions,
 		occurrences,
 		accounts,
-		categories,
+		categories: categories.filter((c) => c.system_kind !== 'balance_adjustment'),
 		filters,
 		filtersActive: cashflowFiltersActive(filters)
 	};

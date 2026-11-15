@@ -39,7 +39,7 @@
 
 	const categoryItems = $derived(
 		data.categories
-			.filter((c) => c.type === type) // transfer categories are excluded from budgets by default
+			.filter((c) => c.type === type && c.system_kind !== 'balance_adjustment') // transfers and balance adjustments are excluded from budgets
 			.map((c) => ({ value: String(c.id), label: c.name }))
 	);
 

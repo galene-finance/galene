@@ -51,6 +51,8 @@ export interface Category {
 	type: CategoryType;
 	parent_id: number | null;
 	color: string | null;
+	/** Set for system categories such as Balance adjustment. Hidden from pickers and spend rollups. */
+	system_kind?: string | null;
 }
 
 export interface Tag {
@@ -82,6 +84,10 @@ export interface Transaction {
 	pending_transaction_id?: string | null;
 	/** Last sync time we saw this row still marked pending. */
 	pending_last_seen_at?: string | null;
+	/** Reversible cleared tick. Synced posted rows start cleared; manual and pending do not. */
+	cleared?: boolean;
+	/** Set when Finish reconcile locks the row. Editing requires an unlock. */
+	reconciled_at?: string | null;
 	account_name?: string;
 	category_name?: string | null;
 	category_color?: string | null;

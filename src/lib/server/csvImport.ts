@@ -635,7 +635,10 @@ export function commitImportPreview(
 			saveTransaction(userId, input);
 			if (row.parsed.externalId && input.id) {
 				db()
-					.query('UPDATE transactions SET provider = ?, external_id = ? WHERE id = ? AND user_id = ?')
+					.query(
+						`UPDATE transactions SET provider = ?, external_id = ?, cleared = 1
+						 WHERE id = ? AND user_id = ? AND reconciled_at IS NULL`
+					)
 					.run(OFX_IMPORT_PROVIDER, row.parsed.externalId, input.id, userId);
 			}
 			created++;

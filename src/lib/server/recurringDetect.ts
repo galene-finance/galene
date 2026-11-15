@@ -142,7 +142,7 @@ export function detectRecurringSuggestions(userId: number): RecurringSuggestion[
 			   AND t.amount_cents < 0
 			   AND t.merchant IS NOT NULL
 			   AND TRIM(t.merchant) != ''
-			   AND (c.id IS NULL OR c.is_transfer = 0)
+			   AND (c.id IS NULL OR (c.is_transfer = 0 AND COALESCE(c.system_kind, '') != 'balance_adjustment'))
 			 ORDER BY t.date ASC`
 		)
 		.all(userId, sinceIso) as {

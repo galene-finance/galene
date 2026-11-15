@@ -9,6 +9,7 @@
 	import CategoryCell from '$lib/components/CategoryCell.svelte';
 	import { categoryPickerItems } from '$lib/categoryPicker';
 	import Checkbox from '$lib/components/ui/Checkbox.svelte';
+	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import Combobox from '$lib/components/ui/Combobox.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import DatePicker from '$lib/components/ui/DatePicker.svelte';
@@ -199,6 +200,26 @@
 		dialogOpen = true;
 	}
 
+	let unlockOpen = $state(false);
+	let unlockTx = $state<Transaction | null>(null);
+	let unlockIntent = $state<'edit' | 'split' | 'delete' | null>(null);
+
+	function askUnlock(tx: Transaction, intent: 'edit' | 'split' | 'delete') {
+		unlockTx = tx;
+		unlockIntent = intent;
+		unlockOpen = true;
+	}
+
+	function guardEdit(tx: Transaction) {
+		if (tx.reconciled_at) return askUnlock(tx, 'edit');
+		openEdit(tx);
+	}
+
+	function guardSplit(tx: Transaction) {
+		if (tx.reconciled_at) return askUnlock(tx, 'split');
+		openSplit(tx);
+	}
+
 	function closeDialog() {
 		editingTx = null;
 	}
@@ -262,10 +283,22 @@
 	}
 
 	function deleteTx(tx: Transaction) {
+		if (tx.reconciled_at) return askUnlock(tx, 'delete');
 		setTimeout(() => {
 			selected[tx.id] = false;
 		}, 0);
 		(document.getElementById(`delete-form-${tx.id}`) as HTMLFormElement | null)?.requestSubmit();
+	}
+
+	function afterUnlock() {
+		const tx = unlockTx;
+		const intent = unlockIntent;
+		unlockOpen = false;
+		if (!tx || !intent) return;
+		const unlocked = { ...tx, reconciled_at: null };
+		if (intent === 'edit') openEdit(unlocked);
+		else if (intent === 'split') openSplit(unlocked);
+		else deleteTx(unlocked);
 	}
 
 	// After a bulk action completes, refresh the page data in place (no full
@@ -649,6 +682,12 @@
 											class="ml-1.5 inline-flex shrink-0 align-middle rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
 											>Pending</span>
 									{/if}
+									{#if tx.reconciled_at}
+										<span
+											class="ml-1.5 inline-flex shrink-0 align-middle rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+											title="Reconciled — unlock before editing"
+											>Reconciled</span>
+									{/if}
 								</div>
 								{#if tx.merchant}
 									<button
@@ -677,7 +716,7 @@
 							{/if}
 						</td>
 						<td class="px-3 py-2">
-							<CategoryCell transaction={tx} categories={data.categories} readonly={viewer} />
+							<CategoryCell transaction={tx} categories={data.categories} readonly={viewer || !!tx.reconciled_at} />
 						</td>
 						<td class="whitespace-nowrap px-3 py-2">{tx.account_name}</td>
 						<td class="px-3 py-2">
@@ -706,8 +745,8 @@
 										<circle cx="12" cy="19" r="1.5" />
 									</svg>
 								{/snippet}
-								<MenuItem onclick={() => openEdit(tx)}>Edit</MenuItem>
-								<MenuItem onclick={() => openSplit(tx)}>Split transaction</MenuItem>
+								<MenuItem onclick={() => guardEdit(tx)}>Edit</MenuItem>
+								<MenuItem onclick={() => guardSplit(tx)}>Split transaction</MenuItem>
 								{#if tx.merchant && tx.category_id != null}
 									<MenuItem onclick={() => openRemember(tx)}>Remember this payee</MenuItem>
 								{/if}
@@ -758,6 +797,12 @@
 										class="ml-1.5 inline-flex align-middle rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
 										>Pending</span>
 								{/if}
+								{#if tx.reconciled_at}
+									<span
+										class="ml-1.5 inline-flex align-middle rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+										title="Reconciled — unlock before editing"
+										>Reconciled</span>
+								{/if}
 							</span>
 							{#if tx.merchant}
 								<button
@@ -794,7 +839,7 @@
 						</div>
 						<div class="flex items-center gap-2">
 							<span class="cat-pill inline-flex max-w-44 items-center rounded-full border border-border bg-muted">
-								<CategoryCell transaction={tx} categories={data.categories} readonly={viewer} />
+								<CategoryCell transaction={tx} categories={data.categories} readonly={viewer || !!tx.reconciled_at} />
 							</span>
 							<div class="flex min-w-0 flex-1 gap-1 overflow-hidden">
 								{#each tagsOf(tx) as tag (tag)}
@@ -818,8 +863,8 @@
 										<circle cx="12" cy="19" r="1.5" />
 									</svg>
 								{/snippet}
-								<MenuItem onclick={() => openEdit(tx)}>Edit</MenuItem>
-								<MenuItem onclick={() => openSplit(tx)}>Split transaction</MenuItem>
+								<MenuItem onclick={() => guardEdit(tx)}>Edit</MenuItem>
+								<MenuItem onclick={() => guardSplit(tx)}>Split transaction</MenuItem>
 								{#if tx.merchant && tx.category_id != null}
 									<MenuItem onclick={() => openRemember(tx)}>Remember this payee</MenuItem>
 								{/if}
@@ -882,6 +927,39 @@
 		</div>
 	</div>
 </div>
+
+<Dialog
+	bind:open={unlockOpen}
+	title="Unlock this transaction?"
+	description="It was reconciled and is locked against accidental edits. Unlocking lets you edit or delete it. The ledger amount does not change until you save."
+>
+	{#if unlockTx}
+		<form
+			id="unlock-form"
+			method="POST"
+			action="?/unlock"
+			use:enhance={() =>
+				async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') afterUnlock();
+				}}
+		>
+			<input type="hidden" name="id" value={unlockTx.id} />
+			<p class="text-sm">
+				{unlockTx.merchant ?? 'This transaction'}
+				{#if unlockTx.reconciled_at}
+					was locked when the account was reconciled.
+				{/if}
+			</p>
+		</form>
+	{/if}
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button type="button" variant="secondary" onclick={() => (unlockOpen = false)}>Cancel</Button>
+			<Button type="submit" form="unlock-form">Unlock</Button>
+		</div>
+	{/snippet}
+</Dialog>
 
 <AddTransactionDialog
 	bind:open={dialogOpen}

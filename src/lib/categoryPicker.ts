@@ -12,12 +12,12 @@ export function categoryPickerItems(
 ): CategoryPickerItem[] {
 	const includeTransfers = opts?.includeTransfers !== false;
 	const normal = categories
-		.filter((c) => c.type !== 'transfer')
+		.filter((c) => c.type !== 'transfer' && c.system_kind !== 'balance_adjustment')
 		.sort((a, b) => a.name.localeCompare(b.name))
 		.map((c) => ({ value: String(c.id), label: c.name }));
 	const transfers = includeTransfers
 		? categories
-				.filter((c) => c.type === 'transfer')
+				.filter((c) => c.type === 'transfer' && c.system_kind !== 'balance_adjustment')
 				.sort((a, b) => a.name.localeCompare(b.name))
 				.map((c) => ({ value: String(c.id), label: `${c.name} (transfer)` }))
 		: [];

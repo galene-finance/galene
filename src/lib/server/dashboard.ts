@@ -208,7 +208,7 @@ function monthSums(userId: number, from: string, to: string, f: DashboardFilters
 	}
 	// Transfer-categorized amounts are excluded from income/expense (issue #36).
 	where.push(
-		`(category_id IS NULL OR NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = transactions.category_id AND c.is_transfer = 1))`
+		`(category_id IS NULL OR NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = transactions.category_id AND (c.is_transfer = 1 OR c.system_kind = 'balance_adjustment')))`
 	);
 	const row = db()
 		.query(

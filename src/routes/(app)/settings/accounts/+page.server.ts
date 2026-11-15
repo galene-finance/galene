@@ -12,6 +12,7 @@ import { db } from '$lib/server/db';
 import { demoBlockedMessage, isDemoMode } from '$lib/server/demoMode';
 import type { AccountType } from '$lib/types';
 import { parseAmountToCents } from '$lib/utils';
+import { lastReconciledByAccount } from '$lib/server/reconcile';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -33,7 +34,12 @@ export function load({ locals }) {
 			txn_count: txnCounts.get(a.id) ?? 0
 		};
 	});
-	return { accounts, viewer: locals.user?.role === 'viewer', demo: isDemoMode() };
+	return {
+		accounts,
+		viewer: locals.user?.role === 'viewer',
+		demo: isDemoMode(),
+		lastReconciled: lastReconciledByAccount(userId)
+	};
 }
 
 function balancesAsOf(userId: number, asOf: string, accountIds: number[]): Map<number, number> {

@@ -9,7 +9,10 @@ function parseCategoryType(value: FormDataEntryValue | null): CategoryType {
 }
 
 export function load({ locals }) {
-	return { categories: getCategories(locals.user!.id), viewer: locals.user?.role === 'viewer' };
+	return {
+		categories: getCategories(locals.user!.id).filter((c) => c.system_kind !== 'balance_adjustment'),
+		viewer: locals.user?.role === 'viewer'
+	};
 }
 
 export const actions = {

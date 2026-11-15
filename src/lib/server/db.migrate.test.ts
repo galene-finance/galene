@@ -10,7 +10,8 @@ import {
 	migrate,
 	migrationCount,
 	migrationIndexBefore,
-	migrationIndexContaining
+	migrationIndexContaining,
+	backfillClearedFlags
 } from './db';
 import { openSecret, plaintextSecretLocations } from './secrets';
 
@@ -353,7 +354,7 @@ CREATE TABLE plaid_items (
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		expect(migrationCount()).toBe(35);
+		expect(migrationCount()).toBe(36);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -397,7 +398,7 @@ CREATE TABLE plaid_items (
 			db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_paid'`).get()
 		).toEqual({ o: 1 });
 		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
-		expect(migrationCount()).toBe(35);
+		expect(migrationCount()).toBe(36);
 		expect(counts()).toEqual(before);
 		expect(db.query('SELECT id, name FROM scheduled').get()).toEqual({ id: 7, name: 'Rent' });
 		expect(db.query('SELECT occurrence_date, display_date FROM scheduled_exceptions').get()).toEqual({
@@ -416,7 +417,7 @@ CREATE TABLE plaid_items (
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		expect(migrationCount()).toBe(35);
+		expect(migrationCount()).toBe(36);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -457,7 +458,7 @@ CREATE TABLE plaid_items (
 		expect(
 			db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_match_dismissed'`).get()
 		).toEqual({ o: 1 });
-		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(35);
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(36);
 		expect(counts()).toEqual(before);
 
 		db.query(
@@ -539,7 +540,7 @@ describe('migrate stored secrets (ADO-60)', () => {
 
 			migrate(db);
 
-			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(35);
+			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(36);
 			expect(plaintextSecretLocations(db)).toEqual([]);
 			const creds = (db.query('SELECT credentials FROM connections WHERE id = 7').get() as { credentials: string })
 				.credentials;
@@ -595,7 +596,7 @@ describe('migrate stored secrets (ADO-60)', () => {
 			expect((db.query('SELECT credentials FROM connections WHERE id = 7').get() as { credentials: string }).credentials).toBe(
 				plaintext
 			);
-			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(35);
+			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(36);
 		} finally {
 			db.close();
 			if (previous === undefined) delete process.env.GALENE_SECRET_KEY;
@@ -603,5 +604,96 @@ describe('migrate stored secrets (ADO-60)', () => {
 			if (previousOld === undefined) delete process.env.GALENE_SECRET_KEY_PREVIOUS;
 			else process.env.GALENE_SECRET_KEY_PREVIOUS = previousOld;
 		}
+	});
+});
+
+describe('reconcile migration', () => {
+	test('adds cleared state, sessions, and held bank lines, then replays without resetting ticks', () => {
+		const db = new Database(':memory:');
+		db.exec('PRAGMA foreign_keys = ON');
+		migrate(db);
+		const index = migrationIndexContaining('reconcile sessions (ADO-8)');
+		expect(migrationCount()).toBe(index + 1);
+
+		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
+		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
+		db.query(
+			`INSERT INTO categories (id, user_id, name, type, is_transfer) VALUES (10, 1, 'Housing', 'expense', 0)`
+		).run();
+		db.query(
+			`INSERT INTO transactions (id, user_id, account_id, category_id, date, amount_cents, merchant, provider, external_id, pending, cleared)
+			 VALUES (100, 1, 1, 10, '2026-01-02', -500, 'Rent', 'demo', 'ext-100', 0, 0)`
+		).run();
+		db.query(`INSERT INTO transaction_splits (transaction_id, category_id, amount_cents) VALUES (100, 10, 500)`).run();
+		db.query(
+			`INSERT INTO categorization_rules (user_id, name, conditions, category_id, priority, enabled)
+			 VALUES (1, 'Rent rule', '[]', 10, 0, 1)`
+		).run();
+
+		const counts = () => ({
+			tx: (db.query('SELECT COUNT(*) AS n FROM transactions WHERE category_id IS NOT NULL').get() as { n: number }).n,
+			splits: (db.query('SELECT COUNT(*) AS n FROM transaction_splits').get() as { n: number }).n,
+			rules: (db.query('SELECT COUNT(*) AS n FROM categorization_rules').get() as { n: number }).n
+		});
+		const before = counts();
+
+		db.exec('DROP TABLE reconcile_duplicate_dismissals');
+		db.exec('DROP TABLE sync_unimported');
+		db.exec('DROP TABLE reconcile_sessions');
+		db.run(`PRAGMA user_version = ${index}`);
+		migrate(db);
+
+		for (const name of ['reconcile_sessions', 'sync_unimported', 'reconcile_duplicate_dismissals']) {
+			expect(db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name)).toEqual({ o: 1 });
+		}
+		const cols = db.query('PRAGMA table_info(transactions)').all() as { name: string }[];
+		expect(cols.some((col) => col.name === 'cleared')).toBe(true);
+		expect(cols.some((col) => col.name === 'reconciled_at')).toBe(true);
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
+		expect(counts()).toEqual(before);
+		// Replay must not turn a user-uncleared synced row back on.
+		expect((db.query('SELECT cleared FROM transactions WHERE id = 100').get() as { cleared: number }).cleared).toBe(0);
+		expect(
+			(db.query(`SELECT COUNT(*) AS n FROM categories WHERE user_id = 1 AND system_kind = 'balance_adjustment'`).get() as { n: number }).n
+		).toBe(1);
+
+		db.run(`PRAGMA user_version = ${index}`);
+		expect(() => migrate(db)).not.toThrow();
+		expect((db.query('SELECT cleared FROM transactions WHERE id = 100').get() as { cleared: number }).cleared).toBe(0);
+		expect(counts()).toEqual(before);
+		db.close();
+	});
+
+	test('backfill clears synced posted rows and leaves manual and pending uncleared', () => {
+		const db = new Database(':memory:');
+		db.exec('PRAGMA foreign_keys = ON');
+		migrate(db);
+		const catCols = db.query('PRAGMA table_info(categories)').all() as { name: string }[];
+		expect(catCols.some((col) => col.name === 'system_kind')).toBe(true);
+		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
+		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
+		db.query(
+			`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider, external_id, pending, cleared)
+			 VALUES (1, 1, '2026-11-01', -100, 'Posted', 'demo', 'a', 0, 0)`
+		).run();
+		db.query(
+			`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider, external_id, pending, cleared)
+			 VALUES (1, 1, '2026-11-02', -200, 'Pending', 'demo', 'b', 1, 0)`
+		).run();
+		db.query(
+			`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, cleared)
+			 VALUES (1, 1, '2026-11-03', -300, 'Manual', 0)`
+		).run();
+		backfillClearedFlags(db);
+		const rows = db.query('SELECT merchant, cleared FROM transactions ORDER BY date').all() as {
+			merchant: string;
+			cleared: number;
+		}[];
+		expect(rows).toEqual([
+			{ merchant: 'Posted', cleared: 1 },
+			{ merchant: 'Pending', cleared: 0 },
+			{ merchant: 'Manual', cleared: 0 }
+		]);
+		db.close();
 	});
 });

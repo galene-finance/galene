@@ -48,6 +48,7 @@ export default defineConfig({
             { label: 'Categories & cashflow', slug: 'features/categories-cashflow' },
             { label: 'Calendar & scheduled', slug: 'features/calendar' },
             { label: 'Accounts & tags', slug: 'features/accounts-tags' },
+            { label: 'Reconcile', slug: 'features/reconcile' },
             { label: 'Import and export', slug: 'features/import-transactions' },
             { label: 'Appearance', slug: 'features/appearance' },
             { label: 'Advisor access', slug: 'features/advisor-access' },

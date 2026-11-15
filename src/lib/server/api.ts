@@ -1,5 +1,17 @@
 import type { RequestEvent } from '@sveltejs/kit';
 import type { User } from '$lib/types';
+import { resolveApiToken, type ResolvedApiToken } from './apiTokens';
+
+/** Bearer credentials are accepted only on the public API and MCP transports. */
+export function isApiBearerPath(pathname: string): boolean {
+	return pathname === '/api/v1' || pathname.startsWith('/api/v1/') || pathname === '/mcp';
+}
+
+/** Resolve a bearer only on its intended transports; browser routes ignore it. */
+export function resolveApiBearer(pathname: string, authorization: string | null): ResolvedApiToken | null {
+	if (!isApiBearerPath(pathname) || !authorization?.startsWith('Bearer ')) return null;
+	return resolveApiToken(authorization.slice('Bearer '.length).trim());
+}
 
 /** The request's authenticated user (session cookie or API token), or null. */
 export function apiUser(event: RequestEvent): User | null {

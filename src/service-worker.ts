@@ -60,7 +60,8 @@ sw.addEventListener('fetch', (event) => {
 		url.pathname === '/' ||
 		url.pathname.startsWith('/login') ||
 		url.pathname.startsWith('/theme.css') ||
-		url.pathname.startsWith('/version')
+		url.pathname.startsWith('/version') ||
+		url.pathname.startsWith('/health')
 	) {
 		return;
 	}

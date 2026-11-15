@@ -54,11 +54,14 @@ openssl rand -base64 32
 
 Stored values use the envelope `enc:v1:<key id>:<nonce>:<ciphertext>`. A value that does not start with `enc:v1:` is still plaintext. The key id is the first 16 hex characters of SHA-256 of the key, so a row can be matched to the key that wrote it.
 
+The check runs when the process loads, before it listens. A failure is logged and the process exits non-zero, so a container restarts instead of staying up. `GET /health` reads the database and returns 200 only when that open succeeded. The image healthcheck uses it.
+
 | Key set? | Encrypted rows in the database? | Startup |
 | --- | --- | --- |
 | No | No | Starts. One warning is logged. New secrets are stored as plaintext until a key is set. A fresh install and [demo mode](/self-host/public-demo/) do not need a key. |
-| No | Yes | Refuses to start. Set the key that encrypted this database. |
-| Yes, wrong or not 32-byte base64 | Yes | Refuses to start. The message names the variable and does not include secret values. |
+| No | Yes | Exits before listening. Set the key that encrypted this database. |
+| Set, but not 32-byte base64 | Yes or no | Exits before listening. The message names the variable and does not include the value. |
+| Set, but cannot decrypt | Yes | Exits before listening. The message does not include stored values. |
 | Yes, valid | No or yes | Starts. Plaintext secret rows are encrypted. Rows already on this key are left as they are. |
 | New key, plus `GALENE_SECRET_KEY_PREVIOUS` | Rows on either key | Starts, and logs a reminder to re-encrypt. See rotation below. |
 

@@ -5,8 +5,7 @@ import { getViewerByToken } from '$lib/server/advisor';
 import { forbidViewerMutation, guardViewerPage } from '$lib/server/viewerGuard';
 import { startSyncScheduler } from '$lib/server/scheduler';
 import { startBackupScheduler } from '$lib/server/backup';
-import { assertDataDirOnVolume } from '$lib/server/db';
-import { db } from '$lib/server/db';
+import { assertDataDirOnVolume, db, openDatabaseOrExit } from '$lib/server/db';
 import { ensureDemoBootstrap, isDemoMode } from '$lib/server/demoMode';
 import { guardDemoMode } from '$lib/server/demoGuard';
 import { backfillPlaidInstitutionIds } from '$lib/server/providers/plaid';
@@ -14,6 +13,10 @@ import type { Handle } from '@sveltejs/kit';
 
 // Fail fast (before serving) if the data directory isn't on a persistent volume.
 assertDataDirOnVolume();
+
+// The Bun adapter imports hooks before it listens. A missing or wrong secret
+// key exits here so the process never accepts traffic.
+openDatabaseOrExit();
 
 // Public demo: seed the shared login, and skip bank-sync / backup loops
 // (those features are locked; no real providers or backup destinations).
@@ -25,6 +28,11 @@ if (!isDemoMode()) {
 	// background so a duplicate Link is caught before that first sync. Never
 	// awaited here — a Plaid failure must not block the first request.
 	backfillPlaidInstitutionIds();
+}
+
+/** SvelteKit calls this from server init, which runs before the adapter listens. */
+export function init() {
+	openDatabaseOrExit();
 }
 
 export const handle: Handle = async ({ event, resolve }) => {

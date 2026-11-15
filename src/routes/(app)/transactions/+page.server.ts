@@ -27,6 +27,7 @@ import { parseAmountToCents } from '$lib/utils';
 import { parseTransactionFilters } from '$lib/server/transactionFilters';
 import { scopedAccounts, scopedCategories, scopedTransactions, viewerScope } from '$lib/server/scopeQuery';
 import { countOpenSyncReviews } from '$lib/server/sync';
+import { unlockTransaction } from '$lib/server/reconcile';
 
 const PAGE_SIZES = [25, 50, 75, 100];
 
@@ -53,20 +54,45 @@ export const actions = {
 		const form = await request.formData();
 		const { input, error } = transactionInputFromForm(userId, form);
 		if (error || !input) return { error };
-		saveTransaction(userId, input);
+		try {
+			saveTransaction(userId, input);
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : 'Could not save.' };
+		}
 		return { ok: true };
 	},
 
 	delete: async ({ request, locals }) => {
 		const form = await request.formData();
 		const id = parseInt(String(form.get('id') ?? ''), 10);
-		if (Number.isFinite(id)) deleteTransaction(locals.user!.id, id);
+		if (!Number.isFinite(id)) return { error: 'Invalid transaction.' };
+		try {
+			deleteTransaction(locals.user!.id, id);
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : 'Could not delete.' };
+		}
 		return { ok: true };
+	},
+
+	unlock: async ({ request, locals }) => {
+		const form = await request.formData();
+		const id = parseInt(String(form.get('id') ?? ''), 10);
+		if (!Number.isFinite(id)) return { error: 'Invalid transaction.' };
+		try {
+			unlockTransaction(locals.user!.id, id);
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : 'Could not unlock.' };
+		}
+		return { ok: true, message: 'Transaction unlocked.' };
 	},
 
 	'bulk-delete': async ({ request, locals }) => {
 		const form = await request.formData();
-		bulkDeleteTransactions(locals.user!.id, positiveIds(form, 'ids'));
+		try {
+			bulkDeleteTransactions(locals.user!.id, positiveIds(form, 'ids'));
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : 'Could not delete.' };
+		}
 		return { ok: true };
 	},
 
@@ -74,7 +100,11 @@ export const actions = {
 		const userId = locals.user!.id;
 		const form = await request.formData();
 		const type = form.get('type') === 'income' ? 'income' : 'expense';
-		bulkSetCategory(userId, positiveIds(form, 'ids'), resolveCategoryFromForm(userId, form, type));
+		try {
+			bulkSetCategory(userId, positiveIds(form, 'ids'), resolveCategoryFromForm(userId, form, type));
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : 'Could not update the category.' };
+		}
 		return { ok: true };
 	},
 
@@ -85,7 +115,11 @@ export const actions = {
 		const tagIds = positiveIds(form, 'tags');
 		const tagNew = String(form.get('tag_new') ?? '').trim();
 		if (tagNew) tagIds.push(getOrCreateTag(userId, tagNew));
-		bulkAddTags(userId, ids, tagIds);
+		try {
+			bulkAddTags(userId, ids, tagIds);
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : 'Could not add tags.' };
+		}
 		return { ok: true };
 	},
 
@@ -143,7 +177,11 @@ export const actions = {
 		const id = parseInt(String(form.get('id') ?? ''), 10);
 		if (!Number.isFinite(id)) return {};
 		const type = form.get('type') === 'income' ? 'income' : 'expense';
-		bulkSetCategory(userId, [id], resolveCategoryFromForm(userId, form, type));
+		try {
+			bulkSetCategory(userId, [id], resolveCategoryFromForm(userId, form, type));
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : 'Could not update the category.' };
+		}
 		return { ok: true };
 	},
 

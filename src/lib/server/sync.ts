@@ -4,7 +4,8 @@ import { getProvider } from './providers';
 import { applyCategorizationRules } from './finance';
 import { carryMatchLinks } from './scheduledMatch';
 import { notifySyncFailed, notifySyncRecovered } from './notifications';
-import type { Connection, LinkedAccount, PlaidAlreadyLinked, PlaidItemInfo, SyncSummary } from '../types';
+import type { Connection, LinkedAccount, PlaidAlreadyLinked, PlaidItemInfo, ProviderTransaction, SyncSummary } from '../types';
+import { isHeldProviderLine, releaseHeldProviderLine, touchHeldProviderLine } from './syncHeld';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
 import { openConnectionCredentials, sealConnectionCredentials } from './secrets';
 import { redactSecretText } from './providers/http';
@@ -336,65 +337,18 @@ export async function syncNow(
 		let updated = 0;
 		const seenAt = dbTime(new Date());
 		for (const pt of providerTransactions) {
-			if (isPendingAlreadyPosted(pt, postedPendingIds)) continue;
+			if (isPendingAlreadyPosted(pt, postedPendingIds)) {
+				// The posted twin is the ledger row. Do not keep the pending copy as "missing".
+				releaseHeldProviderLine(userId, providerId, pt.external_id);
+				continue;
+			}
 			const accountId = accountMap.get(pt.account_external_id);
 			if (accountId == null) continue;
-			const pendingFlag = pt.pending === true ? 1 : 0;
-			const pendingTxnId = pt.pending_transaction_id ?? null;
-			const pendingLastSeen = pendingFlag ? seenAt : null;
-			const existing = db()
-				.query('SELECT id FROM transactions WHERE user_id = ? AND provider = ? AND external_id = ?')
-				.get(userId, providerId, pt.external_id) as { id: number } | undefined;
-			if (existing) {
-				db()
-					.query(
-						`UPDATE transactions
-						 SET account_id = ?, date = ?, amount_cents = ?, merchant = ?, notes = ?,
-						     pending = ?, pending_transaction_id = ?,
-						     pending_last_seen_at = CASE WHEN ? = 1 THEN ? ELSE pending_last_seen_at END,
-						     updated_at = datetime('now')
-						 WHERE id = ? AND user_id = ?`
-					)
-					.run(
-						accountId,
-						pt.date,
-						pt.amount_cents,
-						pt.merchant ?? null,
-						pt.notes ?? null,
-						pendingFlag,
-						pendingTxnId,
-						pendingFlag,
-						pendingLastSeen,
-						existing.id,
-						userId
-					);
-				updated++;
-			} else {
-				const result = db()
-					.query(
-						`INSERT INTO transactions (
-							user_id, account_id, date, amount_cents, merchant, notes, provider, external_id,
-							pending, pending_transaction_id, pending_last_seen_at
-						 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-					)
-					.run(
-						userId,
-						accountId,
-						pt.date,
-						pt.amount_cents,
-						pt.merchant ?? null,
-						pt.notes ?? null,
-						providerId,
-						pt.external_id,
-						pendingFlag,
-						pendingTxnId,
-						pendingLastSeen
-					);
-				created++;
-				// Imported transactions start uncategorized; let the user's rules fill them in.
-				applyCategorizationRules(userId, Number(result.lastInsertRowid));
-			}
+			const outcome = upsertProviderTransaction(userId, providerId, accountId, pt, seenAt);
+			if (outcome === 'inserted') created++;
+			else if (outcome === 'updated') updated++;
 			if (!pt.pending && pt.pending_transaction_id) {
+				releaseHeldProviderLine(userId, providerId, pt.pending_transaction_id);
 				foldPendingIntoPosted(userId, providerId, accountId, pt.pending_transaction_id, pt.external_id);
 			}
 		}
@@ -487,6 +441,81 @@ interface OrphanCandidateScore {
 	amountDelta: number;
 	sameDay: boolean;
 	createdDeltaMs: number;
+}
+
+/**
+ * Insert or update one provider line.
+ * A line the user deleted stays in sync_unimported ("held") and is not imported again.
+ * New posted lines start cleared; pending lines start uncleared. Updates do not
+ * change cleared or reconciled — a tick and a finished statement stick.
+ */
+export function upsertProviderTransaction(
+	userId: number,
+	providerId: string,
+	accountId: number,
+	pt: ProviderTransaction,
+	seenAt: string
+): 'inserted' | 'updated' | 'held' {
+	const pendingFlag = pt.pending === true ? 1 : 0;
+	const pendingTxnId = pt.pending_transaction_id ?? null;
+	const pendingLastSeen = pendingFlag ? seenAt : null;
+	const existing = db()
+		.query('SELECT id FROM transactions WHERE user_id = ? AND provider = ? AND external_id = ?')
+		.get(userId, providerId, pt.external_id) as { id: number } | undefined;
+	if (existing) {
+		db()
+			.query(
+				`UPDATE transactions
+				 SET account_id = ?, date = ?, amount_cents = ?, merchant = ?, notes = ?,
+				     pending = ?, pending_transaction_id = ?,
+				     pending_last_seen_at = CASE WHEN ? = 1 THEN ? ELSE pending_last_seen_at END,
+				     updated_at = datetime('now')
+				 WHERE id = ? AND user_id = ?`
+			)
+			.run(
+				accountId,
+				pt.date,
+				pt.amount_cents,
+				pt.merchant ?? null,
+				pt.notes ?? null,
+				pendingFlag,
+				pendingTxnId,
+				pendingFlag,
+				pendingLastSeen,
+				existing.id,
+				userId
+			);
+		releaseHeldProviderLine(userId, providerId, pt.external_id);
+		return 'updated';
+	}
+	if (isHeldProviderLine(userId, providerId, pt.external_id)) {
+		touchHeldProviderLine(userId, providerId, accountId, pt, seenAt);
+		return 'held';
+	}
+	const result = db()
+		.query(
+			`INSERT INTO transactions (
+				user_id, account_id, date, amount_cents, merchant, notes, provider, external_id,
+				pending, pending_transaction_id, pending_last_seen_at, cleared
+			 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		)
+		.run(
+			userId,
+			accountId,
+			pt.date,
+			pt.amount_cents,
+			pt.merchant ?? null,
+			pt.notes ?? null,
+			providerId,
+			pt.external_id,
+			pendingFlag,
+			pendingTxnId,
+			pendingLastSeen,
+			pendingFlag ? 0 : 1
+		);
+	// Imported transactions start uncategorized; let the user's rules fill them in.
+	applyCategorizationRules(userId, Number(result.lastInsertRowid));
+	return 'inserted';
 }
 
 export function pendingIdsReplacedInResponse(

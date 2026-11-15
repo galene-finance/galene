@@ -162,6 +162,7 @@ export function buildPackFiles(scope: GrantScope, generatedAt: string): { name: 
 			 FROM transactions t
 			 LEFT JOIN categories c ON c.id = t.category_id
 			 WHERE t.user_id = ? AND t.date >= ? AND t.date <= ?${accountClause}
+			   AND COALESCE(c.system_kind, '') != 'balance_adjustment'
 			 GROUP BY c.id
 			 ORDER BY amount_cents`
 		)

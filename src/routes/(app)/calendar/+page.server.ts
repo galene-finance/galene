@@ -72,7 +72,11 @@ export const actions = {
 		const form = await request.formData();
 		const { input, error } = transactionInputFromForm(userId, form);
 		if (error || !input) return { error };
-		saveTransaction(userId, input);
+		try {
+			saveTransaction(userId, input);
+		} catch (e) {
+			return { error: e instanceof Error ? e.message : 'Could not save.' };
+		}
 		return { ok: true };
 	},
 

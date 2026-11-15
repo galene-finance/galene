@@ -154,9 +154,149 @@ export function seedDemoData(userId: number, opts?: { inTransaction?: boolean })
 			});
 		}
 
+		seedReconcileSample(userId, accounts);
+
 		if (ownTx) d.run('COMMIT');
 	} catch (error) {
 		if (ownTx) d.run('ROLLBACK');
 		throw error;
 	}
+}
+
+function isoDaysAgo(days: number): string {
+	const now = new Date();
+	const t = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - days * 86400000;
+	return new Date(t).toISOString().slice(0, 10);
+}
+
+/**
+ * Give the demo accounts a reconcile story: Checking has a gap (an uncleared
+ * check, a duplicate, and a bank line that was not imported), Savings differs
+ * by an opening-sized amount, Credit matches, and Cash has no bank balance.
+ */
+function seedReconcileSample(
+	userId: number,
+	accounts: Record<DemoRow['account'], number> & { cash?: number }
+): void {
+	const d = db();
+	const cashId = getOrCreateAccount(userId, 'Cash', 'cash');
+	saveTransaction(userId, {
+		type: 'expense',
+		amountCents: 1500,
+		date: isoDaysAgo(2),
+		account: cashId,
+		category: null,
+		merchant: 'Petty cash',
+		notes: null,
+		color: null,
+		tags: []
+	});
+
+	const cutoff = isoDaysAgo(40);
+	const markAccount = (accountId: number, prefix: string, reconcileBefore: string | null) => {
+		const txns = d
+			.query(
+				`SELECT id, date FROM transactions WHERE user_id = ? AND account_id = ? ORDER BY date, id`
+			)
+			.all(userId, accountId) as { id: number; date: string }[];
+		for (const txn of txns) {
+			const lock = reconcileBefore && txn.date < reconcileBefore ? 1 : 0;
+			d.query(
+				`UPDATE transactions
+				 SET provider = 'demo', external_id = ?, cleared = 1,
+				     reconciled_at = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END
+				 WHERE id = ? AND user_id = ?`
+			).run(`${prefix}-${txn.id}`, lock, txn.id, userId);
+		}
+	};
+
+	markAccount(accounts.checking, 'demo-checking', cutoff);
+	markAccount(accounts.credit, 'demo-credit', cutoff);
+	markAccount(accounts.savings, 'demo-savings', null);
+
+	const sample = d
+		.query(
+			`SELECT date, amount_cents, merchant FROM transactions
+			 WHERE user_id = ? AND account_id = ? AND date >= ? AND amount_cents < 0 AND merchant IS NOT NULL
+			 ORDER BY date DESC LIMIT 1`
+		)
+		.get(userId, accounts.checking, cutoff) as { date: string; amount_cents: number; merchant: string } | null;
+
+	saveTransaction(userId, {
+		type: 'expense',
+		amountCents: 12000,
+		date: isoDaysAgo(3),
+		account: accounts.checking,
+		category: null,
+		merchant: 'Check 1042',
+		notes: 'Not at the bank yet',
+		color: null,
+		tags: []
+	});
+	if (sample) {
+		saveTransaction(userId, {
+			type: 'expense',
+			amountCents: Math.abs(sample.amount_cents),
+			date: sample.date,
+			account: accounts.checking,
+			category: null,
+			merchant: sample.merchant,
+			notes: 'Added by hand',
+			color: null,
+			tags: []
+		});
+	}
+
+	const cleared = d
+		.query(
+			`SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions
+			 WHERE user_id = ? AND account_id = ? AND cleared = 1`
+		)
+		.get(userId, accounts.checking) as { s: number };
+	d.query(
+		`UPDATE accounts
+		 SET provider = 'demo', external_id = 'demo-checking',
+		     provider_balance_cents = ?, provider_balance_as_of = datetime('now')
+		 WHERE id = ? AND user_id = ?`
+	).run(cleared.s + 3738, accounts.checking, userId);
+	d.query(
+		`INSERT INTO sync_unimported (
+		   user_id, account_id, provider, external_id, date, amount_cents, merchant, notes, pending, seen_at
+		 ) VALUES (?, ?, 'demo', 'demo-missing-hardware', ?, 3738, 'Corner Hardware', 'Refund', 0, datetime('now'))`
+	).run(userId, accounts.checking, isoDaysAgo(5));
+	d.query(
+		`INSERT INTO reconcile_sessions (user_id, account_id, statement_date, bank_balance_cents, finished_at)
+		 VALUES (?, ?, ?, ?, datetime('now'))`
+	).run(userId, accounts.checking, cutoff, cleared.s);
+
+	const balanceOf = (accountId: number) =>
+		(d
+			.query(
+				`SELECT COALESCE(SUM(amount_cents), 0) AS s FROM transactions WHERE user_id = ? AND account_id = ?`
+			)
+			.get(userId, accountId) as { s: number }).s;
+
+	const creditBalance = balanceOf(accounts.credit);
+	d.query(
+		`UPDATE accounts
+		 SET provider = 'demo', external_id = 'demo-credit',
+		     provider_balance_cents = ?, provider_balance_as_of = datetime('now')
+		 WHERE id = ? AND user_id = ?`
+	).run(creditBalance, accounts.credit, userId);
+	d.query(
+		`INSERT INTO reconcile_sessions (user_id, account_id, statement_date, bank_balance_cents, finished_at)
+		 VALUES (?, ?, ?, ?, datetime('now'))`
+	).run(userId, accounts.credit, isoDaysAgo(1), creditBalance);
+
+	const savingsBalance = balanceOf(accounts.savings);
+	const earliest = d
+		.query(`SELECT MIN(date) AS d FROM transactions WHERE user_id = ? AND account_id = ?`)
+		.get(userId, accounts.savings) as { d: string | null };
+	d.query(
+		`UPDATE accounts
+		 SET provider = 'demo', external_id = 'demo-savings',
+		     opening_balance_cents = 0, opening_as_of = ?,
+		     provider_balance_cents = ?, provider_balance_as_of = datetime('now')
+		 WHERE id = ? AND user_id = ?`
+	).run(earliest.d, savingsBalance + 25000, accounts.savings, userId);
 }

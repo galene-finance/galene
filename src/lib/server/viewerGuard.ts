@@ -12,6 +12,7 @@ const VIEWER_PAGES = new Set([
 	'/(app)/transactions/export',
 	'/(app)/trends',
 	'/(app)/settings/accounts',
+	'/(app)/settings/accounts/[id]/reconcile',
 	'/(app)/settings/categories'
 ]);
 

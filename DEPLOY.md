@@ -198,7 +198,8 @@ Additional accounts (and more admins) are created by an admin under Settings →
 
 ## Healthcheck and monitoring
 
-- `docker ps` / `podman ps` shows `healthy` / `unhealthy`.
+- Docker applies the image `HEALTHCHECK`. `docker ps` / `docker compose ps` shows `healthy` / `unhealthy`.
+- **Podman:** CI publishes the image in OCI format. Podman applies a Dockerfile `HEALTHCHECK` only to Docker-format images, so under Podman and Quadlet the image check never runs. The image has `bun` and `node`, and no `curl` or `wget`. Set quadlet `HealthCmd` in JSON array form (the shell-string form loses its quotes and stays unhealthy). The probe uses port **3000** inside the container. See [Podman (compose & quadlets)](docs/src/content/docs/self-host/podman.mdx#healthcheck).
 - The healthcheck is `GET /health` → **200** (the database opened). Any other status, or a connection failure, marks the container unhealthy.
 - The app logs to stdout/stderr — `docker logs galene` / `podman logs galene`.
 
@@ -258,7 +259,7 @@ The `:mcp-*` image is **no longer published**. Switch to the app image (`:latest
 
 **Docker Hub is fine for Podman users.** The base images (`oven/bun:1.4.0`, `oven/bun:1.4.0-slim`) are pulled from Docker Hub, which Podman pulls from natively — no registry change needed. (If you ever want a different registry, you'd re-pin the base images in the `Dockerfile` and rebuild — not recommended; the Docker Hub images are the official Bun distribution.)
 
-Everything else in this guide applies to Podman as-is, plus:
+Podman follows the rest of this guide. The image healthcheck needs a quadlet `HealthCmd` on OCI images (see [Healthcheck and monitoring](#healthcheck-and-monitoring)). Also:
 
 - **Rootless Podman is fine.** The app's port is 3000 (≥ 1024), so a rootless user can bind it without privileges. If you remap to a port **below 1024**, rootless needs `sysctl net.ipv4.ip_unprivileged_port_start=0` (or run privileged).
 - **SELinux (Fedora/RHEL):** append `:z` (shared) or `:Z` (private) to **bind mounts** — e.g. `-v /path/on/host:/app/data:z`. Named volumes are relabeled by Podman automatically and need no suffix.

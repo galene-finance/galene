@@ -26,6 +26,14 @@ Environment=GALENE_COOKIE_SECURE=1
 Environment=PROTOCOL_HEADER=x-forwarded-proto
 Environment=HOST_HEADER=host
 # No Plaid / SMTP / bank secrets — leave unset.
+# OCI images: Podman does not apply the Dockerfile HEALTHCHECK.
+# JSON array form — a shell string loses the inner quotes and stays unhealthy.
+# localhost:3000 is the container listen port (PublishPort host side is 5174).
+HealthCmd=["bun", "-e", "fetch(\"http://localhost:3000/health\").then(r => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))"]
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=15s
 # Resource caps so a noisy demo cannot starve prod / marketing.
 PodmanArgs=--memory=512m --memory-swap=512m --cpus=1.0 --pids-limit=256
 

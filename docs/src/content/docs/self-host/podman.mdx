@@ -41,6 +41,11 @@ ContainerName=galene
 PublishPort=3000:3000
 Volume=galene_data:/app/data
 Environment=GALENE_COOKIE_SECURE=0
+HealthCmd=["bun", "-e", "fetch(\"http://localhost:3000/health\").then(r => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))"]
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=15s
 
 [Service]
 Restart=always
@@ -49,19 +54,48 @@ Restart=always
 WantedBy=default.target
 ```
 
-Then enable and start it:
+Quadlet generates `galene.service` from `galene.container`. Keep the file name `galene.container`; `systemctl` and `journalctl` use the generated service. `WantedBy=` in `[Install]` installs that service, so `enable` does not apply. Reload and start:
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now galene.container
-journalctl --user -u galene.container -f
+systemctl --user start galene.service
+journalctl --user -u galene.service -f
 ```
 
 Notes:
 
 - The named volume `galene_data` is created by Podman on first start and relabeled automatically. If you prefer a bind mount, use `Volume=/path/on/host:/app/data:Z` (`:Z` on SELinux hosts).
 - `GALENE_COOKIE_SECURE=0` is for plain HTTP; set it to `1` behind a TLS-terminating proxy ([Reverse proxy](/self-host/reverse-proxy/)).
-- For a system unit, use `WantedBy=multi-user.target` and `systemctl enable --now galene.container` (without `--user`).
+- For a system unit, set `WantedBy=multi-user.target`, then `systemctl daemon-reload` and `systemctl start galene.service` (without `--user`).
+
+## Healthcheck
+
+CI publishes the image in OCI format. Docker applies the Dockerfile `HEALTHCHECK`. Podman applies that instruction only to Docker-format images, so under Podman and Quadlet the image check never runs. The image has `bun` and `node`, and no `curl` or `wget`.
+
+Add these keys to the quadlet `[Container]` section (they are already in the unit above). The probe calls `http://localhost:3000/health` on the port the process listens on inside the container (`PORT` and `EXPOSE` are **3000**). `PublishPort` only chooses the host port; a mapping such as `5174:3000` still uses `localhost:3000` here.
+
+```ini
+HealthCmd=["bun", "-e", "fetch(\"http://localhost:3000/health\").then(r => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))"]
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=15s
+```
+
+:::warning
+The shell-string form (`HealthCmd=bun -e "..."`) loses its inner quotes through Quadlet and systemd, and the container stays unhealthy. Use the JSON array form above.
+:::
+
+Reload and restart, then run the check by container name (`ContainerName` in the unit; `galene` in the example):
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart galene.service
+podman healthcheck run galene
+podman ps
+```
+
+`podman healthcheck run galene` exits 0, and `podman ps` shows `(healthy)`. For a system unit, drop `--user` on the `systemctl` commands.
 
 ## Storage driver
 
@@ -84,4 +118,4 @@ Only if pull fails (private package, org policy, rate limits, etc.) run `podman 
 | Can't bind a port below 1024 as a normal user | `sysctl net.ipv4.ip_unprivileged_port_start=0`, or use a port ≥ 1024. |
 | `podman pull ghcr.io/…` fails after a fine-grained login | `podman logout ghcr.io` and pull anonymously, or use a classic PAT with `read:packages`. |
 
-Everything else — the volume requirement, healthcheck, upgrades, and the cookie behavior — is the same as [Docker & Compose](/self-host/docker/).
+The volume requirement, upgrades, and the cookie behavior match [Docker & Compose](/self-host/docker/). Podman healthcheck setup is in [Healthcheck](#healthcheck).

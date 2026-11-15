@@ -30,8 +30,10 @@ install -m 0644 galene-demo-restore.service galene-demo-restore.timer ~/.config/
 mkdir -p ~/.config/systemd/user
 install -m 0644 galene-demo-restore.service galene-demo-restore.timer ~/.config/systemd/user/
 
+# Quadlet generates galene-demo.service from galene-demo.container.
+# WantedBy=default.target installs it; enable does not apply to that service.
 systemctl --user daemon-reload
-systemctl --user enable --now galene-demo
+systemctl --user start galene-demo.service
 systemctl --user enable --now galene-demo-restore.timer
 ```
 

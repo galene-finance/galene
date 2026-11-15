@@ -53,6 +53,33 @@ function ownsAccount(userId: number, accountId: number, scope: Scope | null): Re
 	return row ?? null;
 }
 
+/**
+ * Accounts whose latest statement locked rows that a later sync demoted
+ * (cleared again, no longer reconciled) on or before that statement date.
+ */
+export function accountsNeedingReconcile(userId: number): Record<string, true> {
+	const rows = db()
+		.query(
+			`SELECT DISTINCT t.account_id AS account_id
+			 FROM transactions t
+			 JOIN accounts a ON a.id = t.account_id AND a.user_id = t.user_id
+			 JOIN reconcile_sessions s ON s.account_id = t.account_id AND s.user_id = t.user_id
+			 WHERE t.user_id = ?
+			   AND t.cleared = 1
+			   AND t.reconciled_at IS NULL
+			   AND t.date <= s.statement_date
+			   AND (a.opening_as_of IS NULL OR t.date >= a.opening_as_of)
+			   AND s.id = (
+			     SELECT MAX(id) FROM reconcile_sessions
+			     WHERE user_id = t.user_id AND account_id = t.account_id
+			   )`
+		)
+		.all(userId) as { account_id: number }[];
+	const out: Record<string, true> = {};
+	for (const row of rows) out[String(row.account_id)] = true;
+	return out;
+}
+
 export function lastReconciledByAccount(userId: number): Record<string, string> {
 	const rows = db()
 		.query(

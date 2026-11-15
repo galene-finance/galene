@@ -446,8 +446,9 @@ interface OrphanCandidateScore {
 /**
  * Insert or update one provider line.
  * A line the user deleted stays in sync_unimported ("held") and is not imported again.
- * New posted lines start cleared; pending lines start uncleared. Updates do not
- * change cleared or reconciled — a tick and a finished statement stick.
+ * New posted lines start cleared; pending lines start uncleared. An update
+ * keeps a tick and a finished statement unless the bank's amount or date
+ * changed, which demotes reconciled to cleared.
  */
 export function upsertProviderTransaction(
 	userId: number,
@@ -460,15 +461,27 @@ export function upsertProviderTransaction(
 	const pendingTxnId = pt.pending_transaction_id ?? null;
 	const pendingLastSeen = pendingFlag ? seenAt : null;
 	const existing = db()
-		.query('SELECT id FROM transactions WHERE user_id = ? AND provider = ? AND external_id = ?')
-		.get(userId, providerId, pt.external_id) as { id: number } | undefined;
+		.query(
+			`SELECT id, date, amount_cents, reconciled_at
+			 FROM transactions WHERE user_id = ? AND provider = ? AND external_id = ?`
+		)
+		.get(userId, providerId, pt.external_id) as
+		| { id: number; date: string; amount_cents: number; reconciled_at: string | null }
+		| undefined;
 	if (existing) {
+		// The bank's amount and date replace the ledger. A finished statement
+		// that no longer matches those values is cleared again, not left locked.
+		const demote =
+			existing.reconciled_at != null &&
+			(existing.date !== pt.date || existing.amount_cents !== pt.amount_cents);
 		db()
 			.query(
 				`UPDATE transactions
 				 SET account_id = ?, date = ?, amount_cents = ?, merchant = ?, notes = ?,
 				     pending = ?, pending_transaction_id = ?,
 				     pending_last_seen_at = CASE WHEN ? = 1 THEN ? ELSE pending_last_seen_at END,
+				     cleared = CASE WHEN ? = 1 THEN 1 ELSE cleared END,
+				     reconciled_at = CASE WHEN ? = 1 THEN NULL ELSE reconciled_at END,
 				     updated_at = datetime('now')
 				 WHERE id = ? AND user_id = ?`
 			)
@@ -482,6 +495,8 @@ export function upsertProviderTransaction(
 				pendingTxnId,
 				pendingFlag,
 				pendingLastSeen,
+				demote ? 1 : 0,
+				demote ? 1 : 0,
 				existing.id,
 				userId
 			);
@@ -537,8 +552,10 @@ export function isPendingAlreadyPosted(
 
 /**
  * The posted row keeps its amount, date, and external id. User fields on the
- * pending row move only where the posted row has none. Then the pending row
- * is deleted. No-op when that id is not stored on this account.
+ * pending row move only where the posted row has none. Cleared and reconciled
+ * state moves onto the posted row; a different amount or date demotes
+ * reconciled to cleared. A reconciled pending row is never deleted.
+ * No-op when that id is not stored on this account.
  */
 export function foldPendingIntoPosted(
 	userId: number,
@@ -551,26 +568,47 @@ export function foldPendingIntoPosted(
 	if (!pendingExternalId || pendingExternalId === postedExternalId) return;
 	const pending = database
 		.query(
-			`SELECT id, category_id, color, notes,
+			`SELECT id, category_id, color, notes, date, amount_cents, cleared, reconciled_at,
 				(SELECT COUNT(*) FROM transaction_splits s WHERE s.transaction_id = t.id) AS split_count
 			 FROM transactions t
 			 WHERE user_id = ? AND provider = ? AND account_id = ? AND external_id = ?`
 		)
 		.get(userId, providerId, accountId, pendingExternalId) as
-		| { id: number; category_id: number | null; color: string | null; notes: string | null; split_count: number }
+		| {
+				id: number;
+				category_id: number | null;
+				color: string | null;
+				notes: string | null;
+				date: string;
+				amount_cents: number;
+				cleared: number;
+				reconciled_at: string | null;
+				split_count: number;
+		  }
 		| undefined;
 	const posted = database
 		.query(
-			`SELECT id, category_id,
+			`SELECT id, category_id, date, amount_cents, cleared, reconciled_at,
 				(SELECT COUNT(*) FROM transaction_splits s WHERE s.transaction_id = t.id) AS split_count
 			 FROM transactions t
 			 WHERE user_id = ? AND provider = ? AND account_id = ? AND external_id = ?`
 		)
 		.get(userId, providerId, accountId, postedExternalId) as
-		| { id: number; category_id: number | null; split_count: number }
+		| {
+				id: number;
+				category_id: number | null;
+				date: string;
+				amount_cents: number;
+				cleared: number;
+				reconciled_at: string | null;
+				split_count: number;
+		  }
 		| undefined;
 	if (!pending || !posted || pending.id === posted.id) return;
 	if (pending.split_count > 0 && posted.split_count > 0) return;
+	const amountOrDateChanged = pending.amount_cents !== posted.amount_cents || pending.date !== posted.date;
+	const carryReconciled = pending.reconciled_at != null && !amountOrDateChanged;
+	const demoteReconciled = pending.reconciled_at != null && amountOrDateChanged;
 	database.run('BEGIN');
 	try {
 		database
@@ -581,23 +619,50 @@ export function foldPendingIntoPosted(
 				     notes = COALESCE(notes, ?),
 				     pending = 0,
 				     pending_transaction_id = COALESCE(pending_transaction_id, ?),
+				     cleared = CASE
+				       WHEN ? = 1 THEN 1
+				       WHEN ? = 1 THEN 1
+				       ELSE cleared
+				     END,
+				     reconciled_at = CASE
+				       WHEN ? = 1 THEN NULL
+				       WHEN ? = 1 THEN ?
+				       ELSE reconciled_at
+				     END,
 				     updated_at = datetime('now')
 				 WHERE id = ? AND user_id = ?`
 			)
-			.run(pending.category_id, pending.color, pending.notes, pendingExternalId, posted.id, userId);
+			.run(
+				pending.category_id,
+				pending.color,
+				pending.notes,
+				pendingExternalId,
+				demoteReconciled ? 1 : 0,
+				pending.cleared === 1 || carryReconciled ? 1 : 0,
+				demoteReconciled ? 1 : 0,
+				carryReconciled ? 1 : 0,
+				pending.reconciled_at,
+				posted.id,
+				userId
+			);
 		database
 			.query(
 				`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
 				 SELECT ?, tag_id FROM transaction_tags WHERE transaction_id = ?`
 			)
 			.run(posted.id, pending.id);
-		if (pending.split_count > 0 && posted.split_count === 0) {
+		// A reconciled pending row stays. Moving its splits would change the locked row.
+		if (!pending.reconciled_at && pending.split_count > 0 && posted.split_count === 0) {
 			database.query('UPDATE transaction_splits SET transaction_id = ? WHERE transaction_id = ?').run(posted.id, pending.id);
 		}
-		// A pending clear deletes this id. Carry a scheduled match onto the posted row.
-		// If that row is already matched, the pending link is dropped (one transaction, one occurrence).
-		carryMatchLinks(database, pending.id, posted.id);
-		database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(pending.id, userId);
+		if (!pending.reconciled_at) {
+			// A pending clear deletes this id. Carry a scheduled match onto the posted row.
+			// If that row is already matched, the pending link is dropped (one transaction, one occurrence).
+			carryMatchLinks(database, pending.id, posted.id);
+			database
+				.query('DELETE FROM transactions WHERE id = ? AND user_id = ? AND reconciled_at IS NULL')
+				.run(pending.id, userId);
+		}
 		database.run('COMMIT');
 	} catch (error) {
 		database.run('ROLLBACK');
@@ -765,6 +830,10 @@ export function foldOrphanIntoTarget(
 	target: { id: number; category_id: number | null; split_count: number },
 	database: Database = db()
 ): boolean {
+	const orphanRow = database
+		.query('SELECT reconciled_at FROM transactions WHERE id = ? AND user_id = ?')
+		.get(orphan.id, userId) as { reconciled_at: string | null } | null;
+	if (orphanRow?.reconciled_at) return false;
 	const orphanSplits = (
 		database.query('SELECT COUNT(*) AS c FROM transaction_splits WHERE transaction_id = ?').get(orphan.id) as {
 			c: number;
@@ -796,7 +865,9 @@ export function foldOrphanIntoTarget(
 				.run(target.id, orphan.id);
 		}
 		carryMatchLinks(database, orphan.id, target.id);
-		database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(orphan.id, userId);
+		database
+			.query('DELETE FROM transactions WHERE id = ? AND user_id = ? AND reconciled_at IS NULL')
+			.run(orphan.id, userId);
 		database.run('COMMIT');
 		return true;
 	} catch (error) {

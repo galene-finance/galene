@@ -25,6 +25,7 @@
 		earliest_txn_date: string | null;
 		txn_sum_cents: number;
 		txn_count: number;
+		reconciled_count: number;
 	};
 
 	let {
@@ -34,7 +35,13 @@
 		form:
 			| { error?: string | null; ok?: boolean; message?: string | null; source?: string }
 			| undefined;
-		data: { accounts: AccountRow[]; viewer?: boolean; demo: boolean; lastReconciled: Record<string, string> };
+		data: {
+			accounts: AccountRow[];
+			viewer?: boolean;
+			demo: boolean;
+			lastReconciled: Record<string, string>;
+			needsReconcile: Record<string, true>;
+		};
 	} = $props();
 
 	function formatBankAsOf(s: string | null | undefined): string {
@@ -329,7 +336,13 @@
 							{#if account.provider && account.provider_balance_cents != null}
 								{@const gap = account.provider_balance_cents - account.ledger_balance_cents}
 								{@const reconciledOn = data.lastReconciled[String(account.id)]}
-								{#if gap === 0}
+								{#if gap === 0 && data.needsReconcile[String(account.id)]}
+									<span
+										class="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs text-primary"
+									>
+										Needs reconcile
+									</span>
+								{:else if gap === 0}
 									<span
 										class="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground"
 									>
@@ -535,13 +548,18 @@
 <Dialog
 	bind:open={purgeOpen}
 	title={pendingPurge ? `Delete ${pendingPurge.name} and its transactions?` : 'Delete account and its transactions?'}
-	description="This permanently deletes the account and every transaction on it. Splits, tags, and sync reviews for those transactions go with them. This cannot be undone."
+	description={pendingPurge && pendingPurge.reconciled_count > 0
+		? `This permanently deletes the account and every transaction on it, including ${pendingPurge.reconciled_count} reconciled transaction${pendingPurge.reconciled_count === 1 ? '' : 's'}. Splits, tags, and sync reviews go with them. This cannot be undone.`
+		: 'This permanently deletes the account and every transaction on it. Splits, tags, and sync reviews for those transactions go with them. This cannot be undone.'}
 >
 	{#if pendingPurge}
 		<form id="account-purge-form" method="POST" action="?/delete-account-with-transactions" use:enhance class="flex flex-col gap-4">
 			<input type="hidden" name="id" value={pendingPurge.id} />
 			<p class="text-sm">
 				This account has {pendingPurge.txn_count} transaction{pendingPurge.txn_count === 1 ? '' : 's'}.
+				{#if pendingPurge.reconciled_count > 0}
+					{pendingPurge.reconciled_count} reconciled transaction{pendingPurge.reconciled_count === 1 ? '' : 's'} will be deleted with it.
+				{/if}
 				Type <span class="font-medium">{purgePhrase}</span> to confirm.
 			</p>
 			<Field label="Confirmation" error={purgeError || null}>

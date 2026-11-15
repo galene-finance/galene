@@ -27,4 +27,8 @@ Galene suggests causes. Nothing is written until you confirm, and **Finish** app
 
 Finish stays off until left to explain is **$0.00**. The way to close a remaining gap is to add the missing line or to add a balance adjustment in the review. Finish never records a statement that still has a gap.
 
-Cleared rows through the statement date lock when you finish. A later sync does not clear that lock or change the tick. Take a **Settings → Backups** copy before upgrading to a release that includes this migration.
+Cleared rows through the statement date lock when you finish. A later sync still writes the bank’s amount and date. If either of those changed on a reconciled row, that row goes back to cleared and the account chip says it needs reconciling again. Merchant and note updates leave the lock in place. Moving an account’s transactions to another account is refused while any of them are reconciled. Deleting the account and its transactions still asks you to confirm, and the confirm names how many reconciled rows will be deleted.
+
+A pending row that folds into its posted row carries cleared and reconciled state onto the posted row. If the amount or date differs, the posted row is cleared rather than left reconciled. A reconciled row is not deleted by that cleanup.
+
+Take a **Settings → Backups** copy before upgrading to a release that includes this migration.

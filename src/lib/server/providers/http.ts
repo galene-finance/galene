@@ -168,6 +168,7 @@ export function redactSecretText(value: string | null | undefined, maxLen = 200)
 	text = text.replace(/public-(?:sandbox|production|development)-[A-Za-z0-9_-]+/gi, '[redacted]');
 	text = text.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]');
 	text = text.replace(/\b[a-f0-9]{64}\b/gi, '[redacted]');
+	text = text.replace(/enc:v1:[0-9a-f]+:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+/g, '[redacted]');
 	text = text.replace(/\s+/g, ' ').trim();
 	if (!text) return null;
 	return text.slice(0, maxLen);

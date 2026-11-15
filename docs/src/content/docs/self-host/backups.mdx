@@ -16,8 +16,18 @@ volumes:
 Then in the UI: Settings → Backups → Folder → `/app/backups` → Save folder. (The compose file ships with the backups volume commented out — see [Docker & Compose](/self-host/docker/) for the full setup.)
 
 :::warning
-Backups are full copies of the database file, so they contain every user's data and all stored credentials. Keep the backups volume private, and copy it off-box if you want redundancy beyond the host.
+Backups are full copies of the database file, so they contain every user's data. Connection credentials and other stored secrets in that file are encrypted when `GALENE_SECRET_KEY` is set. Keep the backups volume private, and copy it off-box if you want redundancy beyond the host. Keep the key with your other host secrets, not only inside the backup.
 :::
+
+## Restore
+
+Stop the app, replace `galene.db` (and its `-wal` / `-shm` files, if you copy those too) with the backup, and start the app again with the **same** `GALENE_SECRET_KEY` that was set when the backup was taken.
+
+- With that key, the app opens the file and reads the stored secrets.
+- Without the key, or with a different key, the process exits before it listens. The message says `GALENE_SECRET_KEY` is missing or cannot decrypt stored credentials. It does not include the stored values. `GET /health` is not served.
+- A backup from a server that never set a key has no encrypted rows. The app starts without a key and logs one warning.
+
+Rotating the key, and the envelope format, are in [Environment variables](/reference/environment-variables/#secret-key). Take a backup before rotating, and keep the previous key until the new one has started cleanly.
 
 ## Before upgrading
 

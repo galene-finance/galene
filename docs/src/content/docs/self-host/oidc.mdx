@@ -59,7 +59,7 @@ A non-empty `GALENE_OIDC_*` variable overrides the matching Settings field at ru
 | `GALENE_OIDC_CLIENT_SECRET` | Client secret (not shown back in Settings) |
 | `GALENE_OIDC_SCOPES` | Scope string |
 
-Prefer Settings for a household install. Use the environment when the secret should stay out of the database.
+Prefer Settings for a household install. Use the environment when the secret should stay out of the database. A secret saved in Settings is encrypted with [`GALENE_SECRET_KEY`](/reference/environment-variables/#secret-key) when that key is set, and the form shows only a masked value.
 
 Behind TLS, keep [cookie and proxy settings](/self-host/reverse-proxy/) as you already do (`GALENE_COOKIE_SECURE`, `PROTOCOL_HEADER`). The SSO session cookie uses the same flags as a password session. The public origin Galene builds for the redirect URI comes from those proxy headers.
 

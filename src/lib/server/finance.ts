@@ -1,5 +1,8 @@
-import { db } from './db';
+import { BALANCE_ADJUSTMENT_KIND } from '../balanceAdjustment';
+import { db, seedBalanceAdjustmentCategories } from './db';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
+import { isSecretSetting, openSecret, sealSecret } from './secrets';
+import { holdProviderTransactions } from './syncHeld';
 import { emitDataChange } from './webhookNotify';
 import { dropAccountExternalIdFromPlaidItems, ownedIds } from './plaidItems';
 import type { GrantScope } from './advisor';
@@ -232,9 +235,43 @@ export function ensureDefaultTransferCategories(userId: number) {
 	}
 }
 
+/** System category used by reconcile adjustments. Idempotent. Returns its id. */
+export function ensureBalanceAdjustmentCategory(userId: number): number {
+	seedBalanceAdjustmentCategories(db());
+	const row = db()
+		.query(`SELECT id FROM categories WHERE user_id = ? AND system_kind = ?`)
+		.get(userId, BALANCE_ADJUSTMENT_KIND) as { id: number } | null;
+	if (!row) throw new Error('Could not create the Balance adjustment category.');
+	return row.id;
+}
+
+const RECONCILED_LOCK = 'This transaction is reconciled. Unlock it before editing or deleting.';
+
+function assertUnlocked(userId: number, ids: number[]) {
+	const unique = [...new Set(ids)].filter((id) => Number.isInteger(id) && id > 0);
+	if (unique.length === 0) return;
+	const row = db()
+		.query(
+			`SELECT COUNT(*) AS n FROM transactions
+			 WHERE user_id = ? AND reconciled_at IS NOT NULL AND id IN (${unique.map(() => '?').join(',')})`
+		)
+		.get(userId, ...unique) as { n: number };
+	if (row.n > 0) throw new Error(RECONCILED_LOCK);
+}
+
+/** SQL fragment: this category id is not the balance-adjustment system category. */
+function excludeBalanceAdjustment(categoryIdExpr: string): string {
+	return `(${categoryIdExpr} IS NULL OR NOT EXISTS (
+		SELECT 1 FROM categories c_adj
+		WHERE c_adj.id = ${categoryIdExpr} AND c_adj.system_kind = '${BALANCE_ADJUSTMENT_KIND}'
+	))`;
+}
+
 export function getCategories(userId: number): Category[] {
 	const rows = db()
-		.query('SELECT id, name, type, parent_id, color, is_transfer FROM categories WHERE user_id = ? ORDER BY name')
+		.query(
+			'SELECT id, name, type, parent_id, color, is_transfer, system_kind FROM categories WHERE user_id = ? ORDER BY name'
+		)
 		.all(userId) as {
 			id: number;
 			name: string;
@@ -242,13 +279,15 @@ export function getCategories(userId: number): Category[] {
 			parent_id: number | null;
 			color: string | null;
 			is_transfer: number;
+			system_kind: string | null;
 		}[];
 	return rows.map((r) => ({
 		id: r.id,
 		name: r.name,
 		type: categoryTypeFromRow(r.type, r.is_transfer),
 		parent_id: r.parent_id,
-		color: r.color
+		color: r.color,
+		system_kind: r.system_kind
 	}));
 }
 
@@ -328,6 +367,16 @@ export function deleteAccount(userId: number, id: number, reassignTo: number) {
 		.query('SELECT id FROM accounts WHERE id = ? AND user_id = ?')
 		.get(reassignTo, userId) as { id: number } | undefined;
 	if (!target) throw new Error('Replacement account not found.');
+
+	const locked = db()
+		.query(
+			`SELECT COUNT(*) AS n FROM transactions
+			 WHERE user_id = ? AND account_id = ? AND reconciled_at IS NOT NULL`
+		)
+		.get(userId, id) as { n: number };
+	if (locked.n > 0) {
+		throw new Error('Unlock reconciled transactions before moving them to another account.');
+	}
 
 	const removed = rowById('accounts', userId, id, 'id, name, type');
 	const d = db();
@@ -510,6 +559,12 @@ export function saveCategory(
 ) {
 	const fields = categoryDbFields(data.type);
 	if (id) {
+		const existing = db()
+			.query('SELECT system_kind FROM categories WHERE id = ? AND user_id = ?')
+			.get(id, userId) as { system_kind: string | null } | null;
+		if (existing?.system_kind === BALANCE_ADJUSTMENT_KIND) {
+			throw new Error('Balance adjustment is a system category and cannot be edited.');
+		}
 		db()
 			.query(
 				'UPDATE categories SET name = ?, type = ?, parent_id = ?, color = ?, is_transfer = ? WHERE id = ? AND user_id = ?'
@@ -566,9 +621,12 @@ function categoryDescendantIds(userId: number, id: number): number[] {
  */
 export function deleteCategory(userId: number, id: number, reassignTo: number | null = null) {
 	const owned = db()
-		.query('SELECT id FROM categories WHERE id = ? AND user_id = ?')
-		.get(id, userId) as { id: number } | undefined;
+		.query('SELECT id, system_kind FROM categories WHERE id = ? AND user_id = ?')
+		.get(id, userId) as { id: number; system_kind: string | null } | undefined;
 	if (!owned) throw new Error('Category not found.');
+	if (owned.system_kind === BALANCE_ADJUSTMENT_KIND) {
+		throw new Error('Balance adjustment is a system category and cannot be deleted.');
+	}
 
 	const descendants = categoryDescendantIds(userId, id);
 	const removing = new Set([id, ...descendants]);
@@ -584,6 +642,15 @@ export function deleteCategory(userId: number, id: number, reassignTo: number | 
 
 	const ids = [id, ...descendants];
 	const placeholders = ids.map(() => '?').join(',');
+	const locked = db()
+		.query(
+			`SELECT COUNT(*) AS n FROM transactions
+			 WHERE user_id = ? AND reconciled_at IS NOT NULL AND category_id IN (${placeholders})`
+		)
+		.get(userId, ...ids) as { n: number };
+	if (locked.n > 0) {
+		throw new Error('Unlock reconciled transactions in this category before deleting it.');
+	}
 	const removed = rowById('categories', userId, id, 'id, name, type');
 	const d = db();
 	d.run('BEGIN');
@@ -835,7 +902,11 @@ export function applyGrantScope(f: TransactionFilters, scope: GrantScope | null 
 	};
 }
 
-export function getTransactions(userId: number, f: TransactionFilters): TransactionQueryResult {
+export function getTransactions(
+	userId: number,
+	f: TransactionFilters,
+	opts?: { excludeBalanceAdjustments?: boolean }
+): TransactionQueryResult {
 	const where: string[] = ['t.user_id = ?'];
 	const params: (number | string)[] = [userId];
 
@@ -924,6 +995,7 @@ export function getTransactions(userId: number, f: TransactionFilters): Transact
 			params.push(f.amountFrom ?? 0, f.amountTo ?? 0);
 			break;
 	}
+	if (opts?.excludeBalanceAdjustments) where.push(excludeBalanceAdjustment('t.category_id'));
 
 	const whereSql = where.join(' AND ');
 	const countRow = db()
@@ -934,7 +1006,7 @@ export function getTransactions(userId: number, f: TransactionFilters): Transact
 	const rows = db()
 		.query(
 			`SELECT t.id, t.account_id, t.category_id, t.date, t.amount_cents, t.merchant, t.notes, t.color,
-			        t.pending, t.pending_transaction_id, t.pending_last_seen_at,
+			        t.pending, t.pending_transaction_id, t.pending_last_seen_at, t.cleared, t.reconciled_at,
 			        a.name AS account_name, c.name AS category_name, c.color AS category_color,
 			        CASE WHEN c.id IS NULL THEN NULL WHEN c.is_transfer = 1 THEN 'transfer' ELSE c.type END AS category_type
 			 FROM transactions t
@@ -952,7 +1024,9 @@ export function getTransactions(userId: number, f: TransactionFilters): Transact
 	})[];
 
 	for (const row of rows) {
-		row.pending = !!(row as Transaction & { pending?: number | boolean }).pending;
+		const raw = row as Transaction & { pending?: number | boolean; cleared?: number | boolean };
+		row.pending = !!raw.pending;
+		row.cleared = !!raw.cleared;
 	}
 	const items = attachSplits(userId, attachTags(userId, rows));
 	return { items, total, pages: Math.max(1, Math.ceil(total / f.pageSize)) };
@@ -1061,6 +1135,7 @@ export function saveTransaction(userId: number, input: TransactionInput) {
 	const amountCents = input.type === 'expense' ? -Math.abs(input.amountCents) : Math.abs(input.amountCents);
 	if (input.id) {
 		if (!ownsId('transactions', userId, input.id)) return;
+		assertUnlocked(userId, [input.id]);
 		db()
 			.query(
 				`UPDATE transactions
@@ -1113,6 +1188,8 @@ function setTransactionTags(userId: number, transactionId: number, tagIds: numbe
 }
 
 export function deleteTransaction(userId: number, id: number) {
+	assertUnlocked(userId, [id]);
+	holdProviderTransactions(userId, [id]);
 	const removed = rowById('transactions', userId, id, 'id, account_id, category_id, date, amount_cents, merchant, notes');
 	const result = db().query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(id, userId);
 	if (result.changes) emitChange(userId, 'transaction', 'deleted', removed);
@@ -1120,6 +1197,8 @@ export function deleteTransaction(userId: number, id: number) {
 
 export function bulkDeleteTransactions(userId: number, ids: number[]) {
 	if (ids.length === 0) return;
+	assertUnlocked(userId, ids);
+	holdProviderTransactions(userId, ids);
 	db()
 		.query(`DELETE FROM transactions WHERE user_id = ? AND id IN (${ids.map(() => '?').join(',')})`)
 		.run(userId, ...ids);
@@ -1129,6 +1208,7 @@ export function bulkSetCategory(userId: number, ids: number[], categoryId: numbe
 	assertOwnedCategory(userId, categoryId);
 	const owned = ownedTransactionIds(userId, ids);
 	if (owned.length === 0) return;
+	assertUnlocked(userId, owned);
 	db()
 		.query(
 			`UPDATE transactions SET category_id = ?, updated_at = datetime('now') WHERE user_id = ? AND id IN (${owned.map(() => '?').join(',')})`
@@ -1191,7 +1271,8 @@ export function getHomeSummary(userId: number): HomeSummary {
 			 FROM transactions t
 			 LEFT JOIN categories c ON c.id = t.category_id
 			 WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND t.amount_cents > 0
-			   AND COALESCE(c.is_transfer, 0) = 0`
+			   AND COALESCE(c.is_transfer, 0) = 0
+			   AND COALESCE(c.system_kind, '') != '${BALANCE_ADJUSTMENT_KIND}'`
 		)
 		.get(userId, monthStart, nextMonth) as { s: number };
 
@@ -1201,7 +1282,8 @@ export function getHomeSummary(userId: number): HomeSummary {
 			 FROM transactions t
 			 LEFT JOIN categories c ON c.id = t.category_id
 			 WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND t.amount_cents < 0
-			   AND COALESCE(c.is_transfer, 0) = 0`
+			   AND COALESCE(c.is_transfer, 0) = 0
+			   AND COALESCE(c.system_kind, '') != '${BALANCE_ADJUSTMENT_KIND}'`
 		)
 		.get(userId, monthStart, nextMonth) as { s: number };
 
@@ -1214,6 +1296,7 @@ export function getHomeSummary(userId: number): HomeSummary {
 			 LEFT JOIN accounts a ON a.id = t.account_id
 			 LEFT JOIN categories c ON c.id = t.category_id
 			 WHERE t.user_id = ?
+			   AND ${excludeBalanceAdjustment('t.category_id')}
 			 ORDER BY t.date DESC, t.id DESC
 			 LIMIT 10`
 		)
@@ -1237,6 +1320,7 @@ export function getHomeSummary(userId: number): HomeSummary {
 			 )
 			 LEFT JOIN categories c ON c.id = cat_id
 			 WHERE COALESCE(c.is_transfer, 0) = 0
+			   AND COALESCE(c.system_kind, '') != '${BALANCE_ADJUSTMENT_KIND}'
 			 GROUP BY c.id
 			 ORDER BY cents DESC
 			 LIMIT 5`
@@ -1265,16 +1349,19 @@ export function getSetting(userId: number, key: string): string | null {
 	const row = db().query('SELECT value FROM settings WHERE user_id = ? AND key = ?').get(userId, key) as
 		| { value: string }
 		| undefined;
-	return row?.value ?? null;
+	if (row?.value == null) return null;
+	if (isSecretSetting(key)) return openSecret(row.value);
+	return row.value;
 }
 
 export function setSetting(userId: number, key: string, value: string) {
+	const stored = isSecretSetting(key) ? sealSecret(value) : value;
 	db()
 		.query(
 			`INSERT INTO settings (user_id, key, value) VALUES (?, ?, ?)
 			 ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value`
 		)
-		.run(userId, key, value);
+		.run(userId, key, stored);
 }
 
 // ---------------------------------------------------------------------------
@@ -1539,6 +1626,12 @@ export function saveBudget(
 	data: { categoryId: number; period: Budget['period']; limitCents: number }
 ) {
 	assertOwnedCategory(userId, data.categoryId);
+	const kind = db()
+		.query('SELECT system_kind FROM categories WHERE id = ? AND user_id = ?')
+		.get(data.categoryId, userId) as { system_kind: string | null } | null;
+	if (kind?.system_kind === BALANCE_ADJUSTMENT_KIND) {
+		throw new Error('Balance adjustment is excluded from budgets.');
+	}
 	if (id != null && !ownsId('budgets', userId, id)) return;
 	if (id) {
 		db()
@@ -1609,7 +1702,8 @@ export function categoryAmountInPeriod(userId: number, categoryId: number, from:
 			`SELECT COALESCE(SUM(s.amount_cents * SIGN(t.amount_cents)), 0) AS s
 			 FROM transaction_splits s
 			 JOIN transactions t ON t.id = s.transaction_id
-			 WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND s.category_id = ?`
+			 WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND s.category_id = ?
+			   AND ${excludeBalanceAdjustment('s.category_id')}`
 		)
 		.get(userId, from, to, categoryId) as { s: number };
 	const txRow = db()
@@ -1617,6 +1711,7 @@ export function categoryAmountInPeriod(userId: number, categoryId: number, from:
 			`SELECT COALESCE(SUM(t.amount_cents), 0) AS s
 			 FROM transactions t
 			 WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND t.category_id = ?
+			   AND ${excludeBalanceAdjustment('t.category_id')}
 			   AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)`
 		)
 		.get(userId, from, to, categoryId) as { s: number };
@@ -2388,15 +2483,26 @@ function ruleMatches(
 /** Fills a missing category on a transaction from the first matching enabled rule. */
 export function applyCategorizationRules(userId: number, txId: number) {
 	const tx = db()
-		.query('SELECT account_id, amount_cents, merchant, category_id FROM transactions WHERE id = ? AND user_id = ?')
+		.query(
+			'SELECT account_id, amount_cents, merchant, category_id, reconciled_at FROM transactions WHERE id = ? AND user_id = ?'
+		)
 		.get(txId, userId) as
-		| { account_id: number; amount_cents: number; merchant: string | null; category_id: number | null }
+		| {
+				account_id: number;
+				amount_cents: number;
+				merchant: string | null;
+				category_id: number | null;
+				reconciled_at: string | null;
+		  }
 		| undefined;
-	if (!tx || tx.category_id != null) return;
+	if (!tx || tx.category_id != null || tx.reconciled_at) return;
 	for (const rule of getRules(userId).filter((r) => r.enabled === 1)) {
 		if (ruleMatches(rule.conditions, tx)) {
 			db()
-				.query('UPDATE transactions SET category_id = ?, updated_at = datetime(\'now\') WHERE id = ? AND category_id IS NULL')
+				.query(
+					`UPDATE transactions SET category_id = ?, updated_at = datetime('now')
+					 WHERE id = ? AND category_id IS NULL AND reconciled_at IS NULL`
+				)
 				.run(rule.category_id, txId);
 			return;
 		}
@@ -2414,14 +2520,19 @@ export function backfillCategorizationRules(userId: number, ruleId?: number): nu
 	const rules = getRules(userId).filter((r) => (ruleId != null ? r.id === ruleId : r.enabled === 1));
 	if (rules.length === 0) return 0;
 	const txs = db()
-		.query('SELECT id, account_id, amount_cents, merchant FROM transactions WHERE user_id = ? AND category_id IS NULL')
+		.query(
+			'SELECT id, account_id, amount_cents, merchant FROM transactions WHERE user_id = ? AND category_id IS NULL AND reconciled_at IS NULL'
+		)
 		.all(userId) as { id: number; account_id: number; amount_cents: number; merchant: string | null }[];
 	let count = 0;
 	for (const tx of txs) {
 		for (const rule of rules) {
 			if (ruleMatches(rule.conditions, tx)) {
 				db()
-					.query('UPDATE transactions SET category_id = ?, updated_at = datetime(\'now\') WHERE id = ? AND category_id IS NULL')
+					.query(
+						`UPDATE transactions SET category_id = ?, updated_at = datetime('now')
+						 WHERE id = ? AND category_id IS NULL AND reconciled_at IS NULL`
+					)
 					.run(rule.category_id, tx.id);
 				count++;
 				break;
@@ -2522,6 +2633,7 @@ export function saveTransactionSplits(
 		.query('SELECT amount_cents FROM transactions WHERE id = ? AND user_id = ?')
 		.get(txId, userId) as { amount_cents: number } | undefined;
 	if (!tx) throw new Error('Transaction not found.');
+	assertUnlocked(userId, [txId]);
 	for (const s of splits) assertOwnedCategory(userId, s.categoryId);
 	const total = Math.abs(tx.amount_cents);
 	const sum = splits.reduce((s, x) => s + x.amountCents, 0);
@@ -2551,6 +2663,7 @@ export function saveTransactionSplits(
 export function clearTransactionSplits(userId: number, txId: number) {
 	const owned = ownedTransactionIds(userId, [txId]);
 	if (owned.length === 0) return;
+	assertUnlocked(userId, owned);
 	db().query('DELETE FROM transaction_splits WHERE transaction_id = ?').run(owned[0]);
 }
 
@@ -2587,6 +2700,7 @@ export function bulkAddTags(userId: number, txIds: number[], tagIds: number[]) {
 	const ownedTx = ownedTransactionIds(userId, txIds);
 	const valid = ownedTagIds(userId, tagIds);
 	if (ownedTx.length === 0 || valid.length === 0) return;
+	assertUnlocked(userId, ownedTx);
 	for (const txId of ownedTx) {
 		for (const tagId of valid) {
 			db().query('INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)').run(txId, tagId);
@@ -2661,11 +2775,13 @@ export function categoryPartsInPeriod(
 				  FROM transaction_splits s
 				  JOIN transactions t ON t.id = s.transaction_id
 				  WHERE t.user_id = ? AND t.date >= ? AND t.date < ?${accountFilter}
+				    AND ${excludeBalanceAdjustment('s.category_id')}
 				  UNION ALL
 				  SELECT t.category_id, t.amount_cents
 				  FROM transactions t
 				  WHERE t.user_id = ? AND t.date >= ? AND t.date < ?
 				    AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)${accountFilter}
+				    AND ${excludeBalanceAdjustment('t.category_id')}
 			 )
 			 GROUP BY cat_id`
 		)
@@ -2726,6 +2842,7 @@ export function forecastPartsByCategory(
 				if (view.account_id == null || !accountIds.includes(view.account_id)) continue;
 			}
 			const cat = view.category_id != null ? catById.get(view.category_id) : undefined;
+			if (cat?.system_kind === BALANCE_ADJUSTMENT_KIND) continue;
 			if (cat?.type === 'transfer' && !(view.category_id != null && includeTransferIds?.has(view.category_id))) {
 				continue;
 			}
@@ -2742,7 +2859,11 @@ export function forecastPartsByCategory(
  * exactly. categoryId null = all categories.
  */
 export function monthSpendingCents(userId: number, from: string, to: string, categoryId: number | null): number {
-	const transferIds = new Set(getCategories(userId).filter((c) => c.type === 'transfer').map((c) => c.id));
+	const transferIds = new Set(
+		getCategories(userId)
+			.filter((c) => c.type === 'transfer' || c.system_kind === BALANCE_ADJUSTMENT_KIND)
+			.map((c) => c.id)
+	);
 	let spending = 0;
 	for (const r of categoryTotalsInPeriod(userId, from, to)) {
 		if (categoryId != null && r.categoryId !== categoryId) continue;
@@ -2911,6 +3032,7 @@ export function cashflowForMonths(
 		const rows: CashflowSectionRow[] = [...catIds]
 			.map((id) => {
 				const cat = id != null ? catById.get(id) : undefined;
+				if (cat?.system_kind === BALANCE_ADJUSTMENT_KIND) return null;
 				if (cat?.type === 'transfer') {
 					if (!categoryFilter || id == null || !categoryFilter.has(id)) return null;
 				} else if (categoryFilter) {

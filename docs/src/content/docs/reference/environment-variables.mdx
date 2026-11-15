@@ -9,6 +9,8 @@ description: Every environment variable the app image reads (including optional 
 | --- | --- | --- |
 | `GALENE_DATA_DIR` | `/app/data` | Directory for the database file. Must be a mounted volume. |
 | `GALENE_DB_PATH` | `$GALENE_DATA_DIR/galene.db` | Full path to the SQLite database. |
+| `GALENE_SECRET_KEY` | unset | 32-byte key, base64-encoded. Encrypts connection credentials and other stored secrets at rest. See below. |
+| `GALENE_SECRET_KEY_PREVIOUS` | unset | Previous key, same format. Used only while rotating so existing rows can still be read. |
 | `PORT` | `3000` | HTTP port the app listens on (UI, REST, and MCP `/mcp` when enabled). |
 | `NODE_ENV` | `production` (baked into the image) | Affects the session cookie's `Secure` flag by default. |
 | `GALENE_COOKIE_SECURE` | unset → follows `NODE_ENV` | `1`/`true`/`yes`/`on` sets the `Secure` flag; `0`/`false`/`no`/`off` clears it. |
@@ -39,3 +41,54 @@ description: Every environment variable the app image reads (including optional 
 | `GALENE_MCP_HOST` | `0.0.0.0` | Bind address when `GALENE_MCP_PORT` is set on a locally launched bundle. |
 
 When to set `GALENE_COOKIE_SECURE` and the adapter proxy headers (`PROTOCOL_HEADER`, `HOST_HEADER`, …): [Reverse proxy](/self-host/reverse-proxy/). A non-empty `GALENE_OIDC_*` / `GALENE_ENABLE_MCP` variable overrides the matching Settings field; see [Single sign-on (OIDC)](/self-host/oidc/) and [API & MCP](/features/api-mcp/). Outside the container the default `GALENE_DATA_DIR` is `./data` — see [From source](/self-host/from-source/).
+
+## Secret key
+
+`GALENE_SECRET_KEY` encrypts reversible secrets in the database: connection credentials, the provider client secret saved in Settings, the SSO client secret, webhook signing secrets, authenticator secrets, and the theme-gallery signing key. Password hashes, session tokens, and API tokens are already one-way hashes and do not use this key.
+
+Generate a key (32 bytes, standard base64):
+
+```bash
+openssl rand -base64 32
+```
+
+Stored values use the envelope `enc:v1:<key id>:<nonce>:<ciphertext>`. A value that does not start with `enc:v1:` is still plaintext. The key id is the first 16 hex characters of SHA-256 of the key, so a row can be matched to the key that wrote it.
+
+The check runs when the process loads, before it listens. A failure is logged and the process exits non-zero, so a container restarts instead of staying up. `GET /health` reads the database and returns 200 only when that open succeeded. The image healthcheck uses it.
+
+| Key set? | Encrypted rows in the database? | Startup |
+| --- | --- | --- |
+| No | No | Starts. One warning is logged. New secrets are stored as plaintext until a key is set. A fresh install and [demo mode](/self-host/public-demo/) do not need a key. |
+| No | Yes | Exits before listening. Set the key that encrypted this database. |
+| Set, but not 32-byte base64 | Yes or no | Exits before listening. The message names the variable and does not include the value. |
+| Set, but cannot decrypt | Yes | Exits before listening. The message does not include stored values. |
+| Yes, valid | No or yes | Starts. Plaintext secret rows are encrypted. Rows already on this key are left as they are. |
+| New key, plus `GALENE_SECRET_KEY_PREVIOUS` | Rows on either key | Starts, and logs a reminder to re-encrypt. See rotation below. |
+
+A backup is a copy of the database file, so it needs the same key. Restoring that file without the key fails at startup with the message above. Keep the key with your other host secrets, separate from the backup volume. Details: [Backups](/self-host/backups/).
+
+### Rotating the key
+
+1. Generate a new key.
+2. Set `GALENE_SECRET_KEY` to the new key and `GALENE_SECRET_KEY_PREVIOUS` to the old key.
+3. Stop the app so nothing else is writing the database.
+4. Re-encrypt. From a checkout, with the same `GALENE_DATA_DIR` or `GALENE_DB_PATH` the app uses:
+
+   ```bash
+   bun run secrets:rotate
+   ```
+
+   From the app image (the data volume mounted at `/app/data`):
+
+   ```bash
+   docker run --rm --entrypoint bun \
+     -v galene_data:/app/data \
+     -e GALENE_SECRET_KEY \
+     -e GALENE_SECRET_KEY_PREVIOUS \
+     ghcr.io/galene-finance/galene:<tag> \
+     rotate-secrets.js
+   ```
+
+   Pass the new and previous keys in the environment of that command. The script prints how many rows changed. It does not print secret values. Running it again is a no-op.
+5. Start the app with both variables still set and confirm it starts.
+6. Remove `GALENE_SECRET_KEY_PREVIOUS` and restart. Keep the new key. Backups taken after this step need the new key.

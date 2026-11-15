@@ -1,6 +1,8 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { BALANCE_ADJUSTMENT_KIND, BALANCE_ADJUSTMENT_NAME } from '../balanceAdjustment';
+import { encryptPlaintextSecrets, prepareStoredSecrets } from './secrets';
 import { hashToken } from './tokenHash';
 
 function dataDir(): string {
@@ -72,6 +74,7 @@ export function db(): Database {
 			// SQLITE_BUSY, so the loser can re-check state and reject cleanly.
 			database.exec('PRAGMA busy_timeout = 5000;');
 			migrate(database);
+			prepareStoredSecrets(database);
 			_db = database;
 		} catch (error) {
 			// Don't leave a half-migrated connection as the singleton — later
@@ -85,6 +88,21 @@ export function db(): Database {
 		}
 	}
 	return _db;
+}
+
+/**
+ * Open the database when the server loads hooks. The Bun adapter does that
+ * before it listens, so a failed secret-key check exits before the process
+ * accepts connections. The logged message does not include stored values.
+ */
+export function openDatabaseOrExit(exit: (code: number) => void = (code) => process.exit(code)): void {
+	try {
+		db();
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Galene will not start.';
+		console.error(message);
+		exit(1);
+	}
 }
 
 /**
@@ -1158,8 +1176,134 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_match_dismissed_sched ON scheduled_matc
 `);
 		}
 	}
+},
+{
+	// Encrypt reversible secrets when GALENE_SECRET_KEY is set. Idempotent:
+	// enc:v1 values are left unchanged. With no key this step does nothing so
+	// a fresh database still migrates; startup refuses to serve if an
+	// envelope is present and the key is missing or cannot decrypt it.
+	sql: `-- encrypt stored secrets at rest`,
+	after(database) {
+		encryptPlaintextSecrets(database);
+	}
+},
+{
+	// Reconcile (ADO-8). Cleared is a reversible tick; reconciled_at locks a row
+	// when a statement is finished. Balance adjustment is a system category.
+	// sync_unimported keeps provider lines that were not imported. Additive —
+	// no parent rebuild. afterFkOff recreates the new tables if a replay drops
+	// them (SQLite ignores foreign_keys OFF inside the migration transaction).
+	sql: `-- reconcile sessions (ADO-8)
+${reconcileTablesSql()}`,
+	after(database) {
+		const txCols = database.query('PRAGMA table_info(transactions)').all() as { name: string }[];
+		const txNames = new Set(txCols.map((col) => col.name));
+		if (!txNames.has('cleared')) {
+			database.exec(`ALTER TABLE transactions ADD COLUMN cleared INTEGER NOT NULL DEFAULT 0`);
+			backfillClearedFlags(database);
+		}
+		if (!txNames.has('reconciled_at')) {
+			database.exec(`ALTER TABLE transactions ADD COLUMN reconciled_at TEXT`);
+		}
+	},
+	afterFkOff(database) {
+		const has = (name: string) =>
+			database
+				.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = ?`)
+				.get(name) as { o: number } | null;
+		if (!has('reconcile_sessions') || !has('sync_unimported') || !has('reconcile_duplicate_dismissals')) {
+			database.exec(reconcileTablesSql());
+		}
+		// The category-uniqueness rebuild runs in an earlier afterFkOff and
+		// copies a fixed column list. Adding system_kind here, after that
+		// hook, keeps the column on a fresh migrate.
+		const catCols = database.query('PRAGMA table_info(categories)').all() as { name: string }[];
+		if (!catCols.some((col) => col.name === 'system_kind')) {
+			database.exec(`ALTER TABLE categories ADD COLUMN system_kind TEXT`);
+		}
+		seedBalanceAdjustmentCategories(database);
+	}
 }
 ];
+
+function reconcileTablesSql(): string {
+	return `
+CREATE TABLE IF NOT EXISTS reconcile_sessions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+	statement_date TEXT NOT NULL,
+	bank_balance_cents INTEGER NOT NULL,
+	finished_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reconcile_sessions_account ON reconcile_sessions(user_id, account_id, finished_at);
+
+CREATE TABLE IF NOT EXISTS sync_unimported (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+	provider TEXT NOT NULL,
+	external_id TEXT NOT NULL,
+	date TEXT NOT NULL,
+	amount_cents INTEGER NOT NULL,
+	merchant TEXT,
+	notes TEXT,
+	pending INTEGER NOT NULL DEFAULT 0,
+	seen_at TEXT NOT NULL,
+	UNIQUE (user_id, provider, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_unimported_account ON sync_unimported(user_id, account_id);
+
+CREATE TABLE IF NOT EXISTS reconcile_duplicate_dismissals (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+	transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+	match_transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+	dismissed_at TEXT NOT NULL,
+	UNIQUE (user_id, transaction_id, match_transaction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reconcile_dismiss_account ON reconcile_duplicate_dismissals(user_id, account_id);
+`;
+}
+
+/** Synced, non-pending rows start cleared. Manual and pending stay uncleared. */
+export function backfillClearedFlags(database: Database) {
+	database.exec(`
+		UPDATE transactions SET cleared = 1
+		WHERE COALESCE(pending, 0) = 0
+		  AND provider IS NOT NULL
+		  AND trim(provider) != ''
+		  AND cleared = 0
+	`);
+}
+
+/** One Balance adjustment category per user. Idempotent. */
+export function seedBalanceAdjustmentCategories(database: Database) {
+	const users = database.query('SELECT id FROM users').all() as { id: number }[];
+	for (const user of users) {
+		const existing = database
+			.query(`SELECT id FROM categories WHERE user_id = ? AND system_kind = ?`)
+			.get(user.id, BALANCE_ADJUSTMENT_KIND) as { id: number } | null;
+		if (existing) continue;
+		const named = database
+			.query(
+				`SELECT id FROM categories
+				 WHERE user_id = ? AND lower(name) = lower(?) AND COALESCE(is_transfer, 0) = 0`
+			)
+			.get(user.id, BALANCE_ADJUSTMENT_NAME) as { id: number } | null;
+		if (named) {
+			database.query(`UPDATE categories SET system_kind = ? WHERE id = ?`).run(BALANCE_ADJUSTMENT_KIND, named.id);
+			continue;
+		}
+		database
+			.query(
+				`INSERT INTO categories (user_id, name, type, parent_id, color, is_transfer, system_kind)
+				 VALUES (?, ?, 'expense', NULL, NULL, 0, ?)`
+			)
+			.run(user.id, BALANCE_ADJUSTMENT_NAME, BALANCE_ADJUSTMENT_KIND);
+	}
+}
 
 /**
  * user_version just before the category uniqueness rebuild (#17).

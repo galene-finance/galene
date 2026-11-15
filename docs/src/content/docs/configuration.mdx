@@ -13,6 +13,7 @@ Galene is configured with environment variables. Everything has a default; behin
 | `GALENE_COOKIE_SECURE` | follows `NODE_ENV` | `1` sets the session cookie's `Secure` flag, `0` clears it. The compose file ships with `"0"` for plain HTTP; set `"1"` behind a TLS-terminating proxy. |
 | `PROTOCOL_HEADER` / `HOST_HEADER` | unset | Bun adapter proxy headers — set `PROTOCOL_HEADER=x-forwarded-proto` and usually `HOST_HEADER=host` behind TLS. See [Reverse proxy](/self-host/reverse-proxy/). |
 | `GALENE_ALLOW_EPHEMERAL_DATA` | unset | `1` disables the startup check that the data directory is a mounted volume. Throwaway containers only. |
+| `GALENE_SECRET_KEY` | unset | 32-byte base64 key. Encrypts connection credentials and other stored secrets. Generate with `openssl rand -base64 32`. Optional until you save credentials; required to open a database that already has encrypted rows. |
 
 Single sign-on is configured in Settings → Security. Optional `GALENE_OIDC_*` variables override those fields when set — see [Single sign-on (OIDC)](/self-host/oidc/), [Authentik (OIDC)](/self-host/oidc-authentik/), and the full table in [Environment variables](/reference/environment-variables/).
 

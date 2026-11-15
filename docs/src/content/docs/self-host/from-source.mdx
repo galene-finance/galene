@@ -33,6 +33,7 @@ The server listens on port **3000** by default. Run it under your service manage
 | `GALENE_DATA_DIR` | `./data` | Where the database file lives. On Linux this must sit on its own mount — see below. |
 | `PORT` | `3000` | HTTP port. |
 | `GALENE_COOKIE_SECURE` | follows `NODE_ENV` | `0` for plain HTTP, `1` behind a TLS-terminating proxy ([Reverse proxy](/self-host/reverse-proxy/)). |
+| `GALENE_SECRET_KEY` | unset | 32-byte base64 key for secrets at rest. `bun run secrets:rotate` re-encrypts after a change. |
 
 The full table is in [Environment variables](/reference/environment-variables/).
 

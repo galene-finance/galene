@@ -8,6 +8,7 @@
 	import Select from '$lib/components/ui/Select.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import DemoReadonlyBanner from '$lib/components/DemoReadonlyBanner.svelte';
+	import { page } from '$app/state';
 	import { toastFormResult } from '$lib/toasts';
 	import { ACCOUNT_TYPES } from '$lib/types';
 	import type { Account, AccountType } from '$lib/types';
@@ -24,6 +25,7 @@
 		earliest_txn_date: string | null;
 		txn_sum_cents: number;
 		txn_count: number;
+		reconciled_count: number;
 	};
 
 	let {
@@ -33,7 +35,13 @@
 		form:
 			| { error?: string | null; ok?: boolean; message?: string | null; source?: string }
 			| undefined;
-		data: { accounts: AccountRow[]; viewer?: boolean; demo: boolean };
+		data: {
+			accounts: AccountRow[];
+			viewer?: boolean;
+			demo: boolean;
+			lastReconciled: Record<string, string>;
+			needsReconcile: Record<string, true>;
+		};
 	} = $props();
 
 	function formatBankAsOf(s: string | null | undefined): string {
@@ -104,6 +112,23 @@
 	const showProviderSuggest = $derived(
 		!suggestionDismissed && providerSuggestion != null
 	);
+
+	function shortDate(iso: string): string {
+		const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+		if (!y || !m || !d) return iso;
+		return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+	}
+
+	let editFromQuery = $state(false);
+	$effect(() => {
+		if (editFromQuery || data.viewer) return;
+		const id = page.url.searchParams.get('edit');
+		if (!id) return;
+		const account = data.accounts.find((a) => String(a.id) === id);
+		if (!account) return;
+		editFromQuery = true;
+		openEdit(account);
+	});
 
 	function openCreate() {
 		accEditId = null;
@@ -292,28 +317,56 @@
 								>
 							{/if}
 							<div class="flex w-full flex-col items-end text-right text-xs sm:w-auto sm:min-w-[9rem]">
-								<span
-									class="font-medium {account.ledger_balance_cents < 0
-										? 'text-destructive'
-										: 'text-foreground'}"
-								>
+								<span class="font-medium text-foreground">
 									<span class="mr-1 font-normal text-muted-foreground">Ledger</span>
 									{formatMoney(account.ledger_balance_cents)}
 								</span>
 								{#if account.provider && account.provider_balance_cents != null}
 									<span
-										class={account.provider_balance_cents < 0
-											? 'text-destructive'
-											: 'text-muted-foreground'}
+										class="text-muted-foreground"
 										title={account.provider_balance_as_of
 											? `Bank as of ${formatBankAsOf(account.provider_balance_as_of)}`
 											: 'Bank balance from last sync'}
 									>
-										<span class="mr-1 text-muted-foreground">Bank</span>
+										<span class="mr-1">Bank</span>
 										{formatMoney(account.provider_balance_cents)}
 									</span>
 								{/if}
 							</div>
+							{#if account.provider && account.provider_balance_cents != null}
+								{@const gap = account.provider_balance_cents - account.ledger_balance_cents}
+								{@const reconciledOn = data.lastReconciled[String(account.id)]}
+								{#if gap === 0 && data.needsReconcile[String(account.id)]}
+									<span
+										class="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs text-primary"
+									>
+										Needs reconcile
+									</span>
+								{:else if gap === 0}
+									<span
+										class="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+									>
+										<svg class="size-3 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+											<path d="M5 13l4 4L19 7" />
+										</svg>
+										{reconciledOn ? `Reconciled ${shortDate(reconciledOn)}` : 'Matches'}
+									</span>
+								{:else}
+									<span
+										class="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs text-primary"
+									>
+										Differs by {formatMoney(Math.abs(gap))}
+									</span>
+								{/if}
+							{:else}
+								<span class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">No bank balance</span>
+							{/if}
+							<a
+								href="/settings/accounts/{account.id}/reconcile"
+								class="text-sm text-primary hover:underline"
+							>
+								Reconcile
+							</a>
 							{#if !data.viewer}
 							<button
 								type="button"
@@ -495,13 +548,18 @@
 <Dialog
 	bind:open={purgeOpen}
 	title={pendingPurge ? `Delete ${pendingPurge.name} and its transactions?` : 'Delete account and its transactions?'}
-	description="This permanently deletes the account and every transaction on it. Splits, tags, and sync reviews for those transactions go with them. This cannot be undone."
+	description={pendingPurge && pendingPurge.reconciled_count > 0
+		? `This permanently deletes the account and every transaction on it, including ${pendingPurge.reconciled_count} reconciled transaction${pendingPurge.reconciled_count === 1 ? '' : 's'}. Splits, tags, and sync reviews go with them. This cannot be undone.`
+		: 'This permanently deletes the account and every transaction on it. Splits, tags, and sync reviews for those transactions go with them. This cannot be undone.'}
 >
 	{#if pendingPurge}
 		<form id="account-purge-form" method="POST" action="?/delete-account-with-transactions" use:enhance class="flex flex-col gap-4">
 			<input type="hidden" name="id" value={pendingPurge.id} />
 			<p class="text-sm">
 				This account has {pendingPurge.txn_count} transaction{pendingPurge.txn_count === 1 ? '' : 's'}.
+				{#if pendingPurge.reconciled_count > 0}
+					{pendingPurge.reconciled_count} reconciled transaction{pendingPurge.reconciled_count === 1 ? '' : 's'} will be deleted with it.
+				{/if}
 				Type <span class="font-medium">{purgePhrase}</span> to confirm.
 			</p>
 			<Field label="Confirmation" error={purgeError || null}>

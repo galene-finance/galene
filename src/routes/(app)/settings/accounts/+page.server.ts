@@ -12,6 +12,7 @@ import { db } from '$lib/server/db';
 import { demoBlockedMessage, isDemoMode } from '$lib/server/demoMode';
 import type { AccountType } from '$lib/types';
 import { parseAmountToCents } from '$lib/utils';
+import { accountsNeedingReconcile, lastReconciledByAccount } from '$lib/server/reconcile';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -20,6 +21,7 @@ export function load({ locals }) {
 	const scope = locals.viewer?.scope ?? null;
 	const balances = scope ? balancesAsOf(userId, scope.dateTo, scope.accountIds) : getAccountBalances(userId);
 	const txnCounts = transactionCounts(userId);
+	const reconciledCounts = reconciledTransactionCounts(userId);
 	const anchors = getAccountTxnAnchors(userId);
 	const accounts = getAccounts(userId)
 		.filter((a) => !scope || scope.accountIds.length === 0 || scope.accountIds.includes(a.id))
@@ -30,10 +32,17 @@ export function load({ locals }) {
 			ledger_balance_cents: balances.get(a.id) ?? 0,
 			earliest_txn_date: anchor?.earliestDate ?? null,
 			txn_sum_cents: anchor?.sumAllCents ?? 0,
-			txn_count: txnCounts.get(a.id) ?? 0
+			txn_count: txnCounts.get(a.id) ?? 0,
+			reconciled_count: reconciledCounts.get(a.id) ?? 0
 		};
 	});
-	return { accounts, viewer: locals.user?.role === 'viewer', demo: isDemoMode() };
+	return {
+		accounts,
+		viewer: locals.user?.role === 'viewer',
+		demo: isDemoMode(),
+		lastReconciled: lastReconciledByAccount(userId),
+		needsReconcile: accountsNeedingReconcile(userId)
+	};
 }
 
 function balancesAsOf(userId: number, asOf: string, accountIds: number[]): Map<number, number> {
@@ -54,6 +63,17 @@ function transactionCounts(userId: number): Map<number, number> {
 	const rows = db()
 		.query(
 			`SELECT account_id AS id, COUNT(*) AS n FROM transactions WHERE user_id = ? GROUP BY account_id`
+		)
+		.all(userId) as { id: number; n: number }[];
+	return new Map(rows.map((r) => [r.id, r.n]));
+}
+
+function reconciledTransactionCounts(userId: number): Map<number, number> {
+	const rows = db()
+		.query(
+			`SELECT account_id AS id, COUNT(*) AS n FROM transactions
+			 WHERE user_id = ? AND reconciled_at IS NOT NULL
+			 GROUP BY account_id`
 		)
 		.all(userId) as { id: number; n: number }[];
 	return new Map(rows.map((r) => [r.id, r.n]));

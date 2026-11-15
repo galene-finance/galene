@@ -105,20 +105,24 @@ function balancesData(userId: number, f: DashboardFilters): DashboardWidgetData 
 }
 
 function recentData(userId: number, f: DashboardFilters): DashboardWidgetData {
-	const { items } = getTransactions(userId, {
-		accountIds: f.accountIds ?? [],
-		categoryIds: f.categoryIds ?? [],
-		tagIds: f.tagIds ?? [],
-		emptyFields: [],
-		amountOp: '',
-		amountFrom: null,
-		amountTo: null,
-		dateFrom: null,
-		dateTo: null,
-		q: '',
-		page: 1,
-		pageSize: f.limit ?? 10
-	});
+	const { items } = getTransactions(
+		userId,
+		{
+			accountIds: f.accountIds ?? [],
+			categoryIds: f.categoryIds ?? [],
+			tagIds: f.tagIds ?? [],
+			emptyFields: [],
+			amountOp: '',
+			amountFrom: null,
+			amountTo: null,
+			dateFrom: null,
+			dateTo: null,
+			q: '',
+			page: 1,
+			pageSize: f.limit ?? 10
+		},
+		{ excludeBalanceAdjustments: true }
+	);
 	return { kind: 'recent', items };
 }
 
@@ -208,7 +212,7 @@ function monthSums(userId: number, from: string, to: string, f: DashboardFilters
 	}
 	// Transfer-categorized amounts are excluded from income/expense (issue #36).
 	where.push(
-		`(category_id IS NULL OR NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = transactions.category_id AND c.is_transfer = 1))`
+		`(category_id IS NULL OR NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = transactions.category_id AND (c.is_transfer = 1 OR c.system_kind = 'balance_adjustment')))`
 	);
 	const row = db()
 		.query(

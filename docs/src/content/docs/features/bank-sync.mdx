@@ -25,5 +25,7 @@ Each connection can auto-sync on a schedule. The server checks every minute and 
 
 On each successful SimpleFIN or Plaid sync, Galene stores the institution-reported **bank balance** (signed cents) and an **as-of** timestamp per linked account — SimpleFIN’s `balance` / `balance-date` when present, otherwise Plaid’s current/available balance stamped at fetch time. Demo Bank also reports sample balances.
 
-The Home **Balances** widget and **Settings → Accounts** show **Ledger** (Galene’s computed balance, including any opening-balance anchor) beside **Bank** when a provider balance exists. Manual accounts never show a Bank value. Galene does **not** auto-adjust the ledger to match the bank. On **Settings → Accounts → Edit**, you can apply a **suggested opening** from bank − transactions (user confirm only) — see [Accounts & tags](/features/accounts-tags/).
+The Home **Balances** widget and **Settings → Accounts** show **Ledger** (Galene’s computed balance, including any opening-balance anchor) beside **Bank** when a provider balance exists. Manual accounts never show a Bank value. Galene does **not** auto-adjust the ledger to match the bank. On **Settings → Accounts → Edit**, you can apply a **suggested opening** from bank − transactions (user confirm only) — see [Accounts & tags](/features/accounts-tags/). Comparing the two and locking cleared rows is [Reconcile](/features/reconcile/).
+
+Deleting a synced transaction keeps the provider line in a held table (`sync_unimported`) instead of importing it again on the next sync. Reconcile lists those lines as missing from Galene. A pending line that the same response already posts is not held.
 

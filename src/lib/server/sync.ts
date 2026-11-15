@@ -4,8 +4,11 @@ import { getProvider } from './providers';
 import { applyCategorizationRules } from './finance';
 import { carryMatchLinks } from './scheduledMatch';
 import { notifySyncFailed, notifySyncRecovered } from './notifications';
-import type { Connection, LinkedAccount, PlaidAlreadyLinked, PlaidItemInfo, SyncSummary } from '../types';
+import type { Connection, LinkedAccount, PlaidAlreadyLinked, PlaidItemInfo, ProviderTransaction, SyncSummary } from '../types';
+import { isHeldProviderLine, releaseHeldProviderLine, touchHeldProviderLine } from './syncHeld';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
+import { openConnectionCredentials, sealConnectionCredentials } from './secrets';
+import { redactSecretText } from './providers/http';
 import { ownedIds } from './finance';
 import {
 	accessTokenForItem,
@@ -130,12 +133,13 @@ export async function connect(
 	// merge new ones in instead of clobbering them — Plaid keeps one access
 	// token per linked bank in a list and appends to it on each Link.
 	const row = getConnection(userId, providerId);
-	const existing = row ? (JSON.parse(row.credentials) as Record<string, string>) : {};
+	const existing = row ? openConnectionCredentials(row.credentials) : {};
 	const result = await provider.connect(credentials, { userId, credentials, existing });
 	if (result && typeof result === 'object' && 'alreadyLinked' in result && result.alreadyLinked) {
 		return result as PlaidAlreadyLinked;
 	}
-	const stored = result && typeof result === 'object' ? result : credentials;
+	const stored: Record<string, string> =
+		result && typeof result === 'object' ? (result as Record<string, string>) : credentials;
 	db()
 		.query(
 			`INSERT INTO connections (user_id, provider, credentials, status) VALUES (?, ?, ?, 'connected')
@@ -144,7 +148,7 @@ export async function connect(
 			     status = 'connected',
 			     last_error = NULL`
 		)
-		.run(userId, providerId, JSON.stringify(stored));
+		.run(userId, providerId, sealConnectionCredentials(stored));
 }
 
 /**
@@ -195,7 +199,7 @@ export async function syncNow(
 	if (!conn) return { error: 'Connect to the provider first.' };
 	const provider = getProvider(providerId)!;
 	const providerLabel = provider.label;
-	const credentials = JSON.parse(conn.credentials) as Record<string, string>;
+	const credentials = openConnectionCredentials(conn.credentials);
 	const ctx = {
 		userId,
 		credentials,
@@ -333,65 +337,18 @@ export async function syncNow(
 		let updated = 0;
 		const seenAt = dbTime(new Date());
 		for (const pt of providerTransactions) {
-			if (isPendingAlreadyPosted(pt, postedPendingIds)) continue;
+			if (isPendingAlreadyPosted(pt, postedPendingIds)) {
+				// The posted twin is the ledger row. Do not keep the pending copy as "missing".
+				releaseHeldProviderLine(userId, providerId, pt.external_id);
+				continue;
+			}
 			const accountId = accountMap.get(pt.account_external_id);
 			if (accountId == null) continue;
-			const pendingFlag = pt.pending === true ? 1 : 0;
-			const pendingTxnId = pt.pending_transaction_id ?? null;
-			const pendingLastSeen = pendingFlag ? seenAt : null;
-			const existing = db()
-				.query('SELECT id FROM transactions WHERE user_id = ? AND provider = ? AND external_id = ?')
-				.get(userId, providerId, pt.external_id) as { id: number } | undefined;
-			if (existing) {
-				db()
-					.query(
-						`UPDATE transactions
-						 SET account_id = ?, date = ?, amount_cents = ?, merchant = ?, notes = ?,
-						     pending = ?, pending_transaction_id = ?,
-						     pending_last_seen_at = CASE WHEN ? = 1 THEN ? ELSE pending_last_seen_at END,
-						     updated_at = datetime('now')
-						 WHERE id = ? AND user_id = ?`
-					)
-					.run(
-						accountId,
-						pt.date,
-						pt.amount_cents,
-						pt.merchant ?? null,
-						pt.notes ?? null,
-						pendingFlag,
-						pendingTxnId,
-						pendingFlag,
-						pendingLastSeen,
-						existing.id,
-						userId
-					);
-				updated++;
-			} else {
-				const result = db()
-					.query(
-						`INSERT INTO transactions (
-							user_id, account_id, date, amount_cents, merchant, notes, provider, external_id,
-							pending, pending_transaction_id, pending_last_seen_at
-						 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-					)
-					.run(
-						userId,
-						accountId,
-						pt.date,
-						pt.amount_cents,
-						pt.merchant ?? null,
-						pt.notes ?? null,
-						providerId,
-						pt.external_id,
-						pendingFlag,
-						pendingTxnId,
-						pendingLastSeen
-					);
-				created++;
-				// Imported transactions start uncategorized; let the user's rules fill them in.
-				applyCategorizationRules(userId, Number(result.lastInsertRowid));
-			}
+			const outcome = upsertProviderTransaction(userId, providerId, accountId, pt, seenAt);
+			if (outcome === 'inserted') created++;
+			else if (outcome === 'updated') updated++;
 			if (!pt.pending && pt.pending_transaction_id) {
+				releaseHeldProviderLine(userId, providerId, pt.pending_transaction_id);
 				foldPendingIntoPosted(userId, providerId, accountId, pt.pending_transaction_id, pt.external_id);
 			}
 		}
@@ -443,7 +400,8 @@ export async function syncNow(
 		if (wasInError) notifySyncRecovered(userId, providerLabel, conn.id);
 		return { accounts: accountMap.size, created, updated, merged, lastSyncedAt };
 	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Sync failed.';
+		const message =
+			redactSecretText(error instanceof Error ? error.message : '', 500) ?? 'Sync failed.';
 		db()
 			.query("UPDATE connections SET status = 'error', last_error = ? WHERE id = ? AND user_id = ?")
 			.run(message, conn.id, userId);
@@ -463,6 +421,8 @@ interface OrphanRow {
 	notes: string | null;
 	external_id: string;
 	created_at: string;
+	pending: number;
+	reconciled_at: string | null;
 }
 
 interface ReplacementRow {
@@ -485,6 +445,96 @@ interface OrphanCandidateScore {
 	createdDeltaMs: number;
 }
 
+/**
+ * Insert or update one provider line.
+ * A line the user deleted stays in sync_unimported ("held") and is not imported again.
+ * New posted lines start cleared; pending lines start uncleared. An update
+ * keeps a tick and a finished statement unless the bank's amount or date
+ * changed, which demotes reconciled to cleared.
+ */
+export function upsertProviderTransaction(
+	userId: number,
+	providerId: string,
+	accountId: number,
+	pt: ProviderTransaction,
+	seenAt: string
+): 'inserted' | 'updated' | 'held' {
+	const pendingFlag = pt.pending === true ? 1 : 0;
+	const pendingTxnId = pt.pending_transaction_id ?? null;
+	const pendingLastSeen = pendingFlag ? seenAt : null;
+	const existing = db()
+		.query(
+			`SELECT id, date, amount_cents, reconciled_at
+			 FROM transactions WHERE user_id = ? AND provider = ? AND external_id = ?`
+		)
+		.get(userId, providerId, pt.external_id) as
+		| { id: number; date: string; amount_cents: number; reconciled_at: string | null }
+		| undefined;
+	if (existing) {
+		// The bank's amount and date replace the ledger. A finished statement
+		// that no longer matches those values is cleared again, not left locked.
+		const demote =
+			existing.reconciled_at != null &&
+			(existing.date !== pt.date || existing.amount_cents !== pt.amount_cents);
+		db()
+			.query(
+				`UPDATE transactions
+				 SET account_id = ?, date = ?, amount_cents = ?, merchant = ?, notes = ?,
+				     pending = ?, pending_transaction_id = ?,
+				     pending_last_seen_at = CASE WHEN ? = 1 THEN ? ELSE pending_last_seen_at END,
+				     cleared = CASE WHEN ? = 1 THEN 1 ELSE cleared END,
+				     reconciled_at = CASE WHEN ? = 1 THEN NULL ELSE reconciled_at END,
+				     updated_at = datetime('now')
+				 WHERE id = ? AND user_id = ?`
+			)
+			.run(
+				accountId,
+				pt.date,
+				pt.amount_cents,
+				pt.merchant ?? null,
+				pt.notes ?? null,
+				pendingFlag,
+				pendingTxnId,
+				pendingFlag,
+				pendingLastSeen,
+				demote ? 1 : 0,
+				demote ? 1 : 0,
+				existing.id,
+				userId
+			);
+		releaseHeldProviderLine(userId, providerId, pt.external_id);
+		return 'updated';
+	}
+	if (isHeldProviderLine(userId, providerId, pt.external_id)) {
+		touchHeldProviderLine(userId, providerId, accountId, pt, seenAt);
+		return 'held';
+	}
+	const result = db()
+		.query(
+			`INSERT INTO transactions (
+				user_id, account_id, date, amount_cents, merchant, notes, provider, external_id,
+				pending, pending_transaction_id, pending_last_seen_at, cleared
+			 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		)
+		.run(
+			userId,
+			accountId,
+			pt.date,
+			pt.amount_cents,
+			pt.merchant ?? null,
+			pt.notes ?? null,
+			providerId,
+			pt.external_id,
+			pendingFlag,
+			pendingTxnId,
+			pendingLastSeen,
+			pendingFlag ? 0 : 1
+		);
+	// Imported transactions start uncategorized; let the user's rules fill them in.
+	applyCategorizationRules(userId, Number(result.lastInsertRowid));
+	return 'inserted';
+}
+
 export function pendingIdsReplacedInResponse(
 	transactions: { pending?: boolean; pending_transaction_id?: string | null }[]
 ): Set<string> {
@@ -503,9 +553,11 @@ export function isPendingAlreadyPosted(
 }
 
 /**
- * The posted row keeps its amount, date, and external id. User fields on the
- * pending row move only where the posted row has none. Then the pending row
- * is deleted. No-op when that id is not stored on this account.
+ * A pending-to-posted fold is a replacement. User fields on the pending row
+ * move only where the posted row has none, and cleared/reconciled state moves
+ * onto the posted row. A different amount or date demotes reconciled to
+ * cleared. The pending row is then removed, including when it was reconciled.
+ * No-op when that id is not stored on this account.
  */
 export function foldPendingIntoPosted(
 	userId: number,
@@ -518,26 +570,47 @@ export function foldPendingIntoPosted(
 	if (!pendingExternalId || pendingExternalId === postedExternalId) return;
 	const pending = database
 		.query(
-			`SELECT id, category_id, color, notes,
+			`SELECT id, category_id, color, notes, date, amount_cents, cleared, reconciled_at,
 				(SELECT COUNT(*) FROM transaction_splits s WHERE s.transaction_id = t.id) AS split_count
 			 FROM transactions t
 			 WHERE user_id = ? AND provider = ? AND account_id = ? AND external_id = ?`
 		)
 		.get(userId, providerId, accountId, pendingExternalId) as
-		| { id: number; category_id: number | null; color: string | null; notes: string | null; split_count: number }
+		| {
+				id: number;
+				category_id: number | null;
+				color: string | null;
+				notes: string | null;
+				date: string;
+				amount_cents: number;
+				cleared: number;
+				reconciled_at: string | null;
+				split_count: number;
+		  }
 		| undefined;
 	const posted = database
 		.query(
-			`SELECT id, category_id,
+			`SELECT id, category_id, date, amount_cents, cleared, reconciled_at,
 				(SELECT COUNT(*) FROM transaction_splits s WHERE s.transaction_id = t.id) AS split_count
 			 FROM transactions t
 			 WHERE user_id = ? AND provider = ? AND account_id = ? AND external_id = ?`
 		)
 		.get(userId, providerId, accountId, postedExternalId) as
-		| { id: number; category_id: number | null; split_count: number }
+		| {
+				id: number;
+				category_id: number | null;
+				date: string;
+				amount_cents: number;
+				cleared: number;
+				reconciled_at: string | null;
+				split_count: number;
+		  }
 		| undefined;
 	if (!pending || !posted || pending.id === posted.id) return;
 	if (pending.split_count > 0 && posted.split_count > 0) return;
+	const amountOrDateChanged = pending.amount_cents !== posted.amount_cents || pending.date !== posted.date;
+	const carryReconciled = pending.reconciled_at != null && !amountOrDateChanged;
+	const demoteReconciled = pending.reconciled_at != null && amountOrDateChanged;
 	database.run('BEGIN');
 	try {
 		database
@@ -548,10 +621,32 @@ export function foldPendingIntoPosted(
 				     notes = COALESCE(notes, ?),
 				     pending = 0,
 				     pending_transaction_id = COALESCE(pending_transaction_id, ?),
+				     cleared = CASE
+				       WHEN ? = 1 THEN 1
+				       WHEN ? = 1 THEN 1
+				       ELSE cleared
+				     END,
+				     reconciled_at = CASE
+				       WHEN ? = 1 THEN NULL
+				       WHEN ? = 1 THEN ?
+				       ELSE reconciled_at
+				     END,
 				     updated_at = datetime('now')
 				 WHERE id = ? AND user_id = ?`
 			)
-			.run(pending.category_id, pending.color, pending.notes, pendingExternalId, posted.id, userId);
+			.run(
+				pending.category_id,
+				pending.color,
+				pending.notes,
+				pendingExternalId,
+				demoteReconciled ? 1 : 0,
+				pending.cleared === 1 || carryReconciled ? 1 : 0,
+				demoteReconciled ? 1 : 0,
+				carryReconciled ? 1 : 0,
+				pending.reconciled_at,
+				posted.id,
+				userId
+			);
 		database
 			.query(
 				`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
@@ -561,7 +656,7 @@ export function foldPendingIntoPosted(
 		if (pending.split_count > 0 && posted.split_count === 0) {
 			database.query('UPDATE transaction_splits SET transaction_id = ? WHERE transaction_id = ?').run(posted.id, pending.id);
 		}
-		// A pending clear deletes this id. Carry a scheduled match onto the posted row.
+		// The posted row replaces the pending one. Carry a scheduled match onto it.
 		// If that row is already matched, the pending link is dropped (one transaction, one occurrence).
 		carryMatchLinks(database, pending.id, posted.id);
 		database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(pending.id, userId);
@@ -675,7 +770,8 @@ export function mergeRepostedTransactions(
 ): number {
 	const orphans = database
 		.query(
-			`SELECT id, account_id, date, amount_cents, merchant, category_id, color, notes, external_id, created_at
+			`SELECT id, account_id, date, amount_cents, merchant, category_id, color, notes, external_id, created_at,
+			        pending, reconciled_at
 			 FROM transactions
 			 WHERE user_id = ? AND provider = ? AND date >= ?
 			   AND external_id IS NOT NULL AND external_id != ''`
@@ -706,6 +802,17 @@ export function mergeRepostedTransactions(
 		const live = candidates.filter((c) => liveIds.has(c.external_id));
 		const target = pickRepostTarget(orphan, live);
 		if (!target) {
+			// The bank dropped a reconciled pending row and never posted a replacement.
+			// Leave it for the user, but the finished statement no longer matches.
+			if (orphan.pending === 1 && orphan.reconciled_at) {
+				database
+					.query(
+						`UPDATE transactions
+						 SET cleared = 1, reconciled_at = NULL, updated_at = datetime('now')
+						 WHERE id = ? AND user_id = ? AND reconciled_at IS NOT NULL`
+					)
+					.run(orphan.id, userId);
+			}
 			// 0 or ambiguous — queue for user review instead of silent leave (#127).
 			enqueueSyncReview(userId, providerId, orphan.id, live.map((c) => c.id), database);
 			continue;
@@ -732,12 +839,26 @@ export function foldOrphanIntoTarget(
 	target: { id: number; category_id: number | null; split_count: number },
 	database: Database = db()
 ): boolean {
+	const orphanState = database
+		.query(
+			`SELECT date, amount_cents, cleared, reconciled_at FROM transactions WHERE id = ? AND user_id = ?`
+		)
+		.get(orphan.id, userId) as
+		| { date: string; amount_cents: number; cleared: number; reconciled_at: string | null }
+		| null;
+	const targetState = database
+		.query(`SELECT date, amount_cents FROM transactions WHERE id = ? AND user_id = ?`)
+		.get(target.id, userId) as { date: string; amount_cents: number } | null;
+	if (!orphanState || !targetState) return false;
 	const orphanSplits = (
 		database.query('SELECT COUNT(*) AS c FROM transaction_splits WHERE transaction_id = ?').get(orphan.id) as {
 			c: number;
 		}
 	).c;
 	if (orphanSplits > 0 && target.split_count > 0) return false;
+	const changed = orphanState.amount_cents !== targetState.amount_cents || orphanState.date !== targetState.date;
+	const carryReconciled = orphanState.reconciled_at != null && !changed;
+	const demoteReconciled = orphanState.reconciled_at != null && changed;
 	database.run('BEGIN');
 	try {
 		database
@@ -747,10 +868,31 @@ export function foldOrphanIntoTarget(
 				     color = COALESCE(color, ?),
 				     notes = COALESCE(notes, ?),
 				     pending = 0,
+				     cleared = CASE
+				       WHEN ? = 1 THEN 1
+				       WHEN ? = 1 THEN 1
+				       ELSE cleared
+				     END,
+				     reconciled_at = CASE
+				       WHEN ? = 1 THEN NULL
+				       WHEN ? = 1 THEN ?
+				       ELSE reconciled_at
+				     END,
 				     updated_at = datetime('now')
 				 WHERE id = ? AND user_id = ?`
 			)
-			.run(orphan.category_id, orphan.color, orphan.notes, target.id, userId);
+			.run(
+				orphan.category_id,
+				orphan.color,
+				orphan.notes,
+				demoteReconciled ? 1 : 0,
+				orphanState.cleared === 1 || carryReconciled ? 1 : 0,
+				demoteReconciled ? 1 : 0,
+				carryReconciled ? 1 : 0,
+				orphanState.reconciled_at,
+				target.id,
+				userId
+			);
 		database
 			.query(
 				`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
@@ -996,7 +1138,7 @@ export function resolveSyncReview(
 export function listPlaidItemsForSettings(userId: number): PlaidItemInfo[] {
 	const conn = getConnection(userId, 'plaid');
 	if (!conn) return [];
-	const tokens = accessTokensFromCredentials(JSON.parse(conn.credentials) as Record<string, string>);
+	const tokens = accessTokensFromCredentials(openConnectionCredentials(conn.credentials));
 	return listPlaidItemViews(userId, conn.id, tokens, new Map()).map((item) => ({
 		id: item.id,
 		label: item.institutionName?.trim() || 'A linked institution',
@@ -1054,7 +1196,7 @@ export async function removePlaidItemForUser(userId: number, itemRowId: number):
 	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
 	const conn = getConnection(userId, 'plaid');
 	if (!conn) throw new Error('That linked institution was not found.');
-	const creds = JSON.parse(conn.credentials) as Record<string, string>;
+	const creds = openConnectionCredentials(conn.credentials);
 	const tokens = accessTokensFromCredentials(creds);
 	const access = ownedItemAccessToken(userId, itemRowId, tokens);
 	const item = db()
@@ -1079,7 +1221,7 @@ export async function removePlaidItemForUser(userId: number, itemRowId: number):
 	}
 	db()
 		.query('UPDATE connections SET credentials = ? WHERE id = ? AND user_id = ?')
-		.run(JSON.stringify(replaceAccessTokens(creds, next)), conn.id, userId);
+		.run(sealConnectionCredentials(replaceAccessTokens(creds, next)), conn.id, userId);
 }
 
 function ownedItemAccessToken(userId: number, itemRowId: number, tokens?: string[]): string {
@@ -1088,7 +1230,7 @@ function ownedItemAccessToken(userId: number, itemRowId: number, tokens?: string
 	}
 	const conn = getConnection(userId, 'plaid');
 	if (!conn) throw new Error('That linked institution was not found.');
-	const list = tokens ?? accessTokensFromCredentials(JSON.parse(conn.credentials) as Record<string, string>);
+	const list = tokens ?? accessTokensFromCredentials(openConnectionCredentials(conn.credentials));
 	const access = accessTokenForItem(userId, itemRowId, list);
 	if (!access) throw new Error('That linked institution was not found.');
 	return access;

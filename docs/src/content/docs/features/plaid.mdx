@@ -43,7 +43,7 @@ In practical terms, the free path gives you on the order of a handful of live ba
 
 ## How your secret is handled
 
-The client secret never reaches the browser. Galene's server creates a link token with Plaid's `/link/token/create`, the widget returns a one-time public token, and the server exchanges it via `/item/public_token/exchange` for the long-lived access token that later syncs use.
+The client secret never reaches the browser. Galene's server creates a link token with Plaid's `/link/token/create`, the widget returns a one-time public token, and the server exchanges it via `/item/public_token/exchange` for the long-lived access token that later syncs use. The client secret and the connection credentials are encrypted in the database when [`GALENE_SECRET_KEY`](/reference/environment-variables/#secret-key) is set.
 
 With only a client ID (no secret), existing connected Items keep syncing, but you cannot start new Link connections. In sandbox, new Links also need the sandbox instance name.
 

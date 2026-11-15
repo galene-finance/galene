@@ -46,7 +46,8 @@ RUN bun run build
 #   mcp-bundle.js  — stdio / optional standalone HTTP entry
 #   mcp-handler.js — in-process /mcp route (named exports)
 RUN bun build mcp/index.ts --target=bun --define GALENE_VERSION="\"$APP_VERSION\"" --outfile=mcp-dist/mcp-bundle.js \
- && bun build mcp/http.ts --target=bun --outfile=mcp-dist/mcp-handler.js
+ && bun build mcp/http.ts --target=bun --outfile=mcp-dist/mcp-handler.js \
+ && bun build src/cli/rotate-secrets.ts --target=bun --outfile=rotate-secrets.js
 
 # ---------- app ----------
 FROM oven/bun:1.4.0-slim AS app
@@ -82,13 +83,18 @@ COPY --from=build --chown=galene:galene /app/build ./build
 # HTTP MCP is served by the app at /mcp (loads mcp-handler.js) when enabled.
 COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-bundle.js ./mcp-bundle.js
 COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-handler.js ./mcp-handler.js
+# Re-encrypt stored secrets after GALENE_SECRET_KEY changes:
+#   docker run --rm --entrypoint bun -v galene_data:/app/data \
+#     -e GALENE_SECRET_KEY -e GALENE_SECRET_KEY_PREVIOUS <image> rotate-secrets.js
+COPY --from=build --chown=galene:galene /app/rotate-secrets.js ./rotate-secrets.js
 
 # Created in the image so a named volume initialized from them is owned by the
 # app user (a fresh named volume would otherwise be root-owned and unwritable).
 RUN mkdir -p /app/data /app/backups && chown galene:galene /app/data /app/backups
 
-# /api/v1 answers 401 without a token — a reachable, answering server
+# /health reads the database. A missing or wrong secret key exits before listen,
+# so this probe fails closed (connection error, or 503 if the process is up).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD bun -e 'fetch("http://localhost:3000/api/v1").then(r => process.exit(r.status === 401 ? 0 : 1)).catch(() => process.exit(1))'
+    CMD bun -e 'fetch("http://localhost:3000/health").then(r => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))'
 
 CMD ["bun", "build/index.js"]

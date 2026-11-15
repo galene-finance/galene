@@ -1,0 +1,34 @@
+---
+title: Reconcile
+description: Compare an account’s ledger to the bank balance, tick what cleared, and finish only when nothing is left unexplained.
+---
+
+Reconcile lives on **Settings → Accounts**. Each row shows a status chip (matches, differs by an amount, or no bank balance) and a **Reconcile** link. The screen is `/settings/accounts/<id>/reconcile`.
+
+Tick the rows the bank statement shows. A tick is **cleared** — reversible, and not a change to the amount. **Finish reconcile** locks those rows as **reconciled**. Editing or deleting a reconciled row asks you to unlock it first. The same lock is enforced on the server, including the write API.
+
+## What the numbers mean
+
+The headline compares the **bank balance** to the **full ledger** (opening balance plus every transaction on or after the opening date). The work on the screen compares the bank balance to the **cleared** balance through the statement date.
+
+**Left to explain** is bank minus cleared. Uncleared rows (a check the bank has not processed, a duplicate you still have marked not cleared) explain the gap between ledger and cleared. They are not silently dropped.
+
+The bank balance starts from the last provider balance when the account is linked. You can edit it, or type one for a manual account from a paper statement. Manual accounts do not list “missing from Galene” lines.
+
+## Why they differ
+
+Galene suggests causes. Nothing is written until you confirm, and **Finish** applies the whole review in one step:
+
+- **Missing from Galene** — a bank line sync saw and did not import. Synced, posted lines are imported. If you delete one, Galene keeps the provider’s copy and does not import it again on the next sync. Add it from the reconcile screen (or leave it). Pending lines that the same response already posts are not kept; the posted line is the ledger row.
+- **Possible duplicate** — same merchant, amount, and day, one manual and one synced. Delete the hand-added copy, or keep both. Keep both is listed in the finish review and recorded only when you confirm. Leaving the page or cancelling the review writes nothing, and the hint comes back next time.
+- **Not at the bank yet** — an uncleared manual or pending line. Leaving it open is normal.
+- **Opening balance** — when an opening date is set. If the remaining gap is not explained by missing bank lines, edit the opening balance on the account. Galene does not change it for you.
+- **Balance adjustment** — an explicit transaction that makes cleared match the bank. It uses the system category **Balance adjustment**, which is left out of budgets, cashflow, trends, Home recent transactions, the summary recent list, and other category spend totals. The amount still counts in the account ledger, and the transaction still appears on the Transactions page and on this screen.
+
+Finish stays off until left to explain is **$0.00**. The way to close a remaining gap is to add the missing line or to add a balance adjustment in the review. Finish never records a statement that still has a gap.
+
+Cleared rows through the statement date lock when you finish. A later sync still writes the bank’s amount and date. If either of those changed on a reconciled row, that row goes back to cleared and the account chip says it needs reconciling again. Merchant and note updates leave the lock in place. Moving an account’s transactions to another account is refused while any of them are reconciled. Deleting the account and its transactions still asks you to confirm, and the confirm names how many reconciled rows will be deleted.
+
+A pending row that folds into its posted row is a replacement. Cleared and reconciled state, splits, tags, and other edits move onto the posted row, and the pending row is removed so the amount is counted once. If the amount or date differs, the posted row is cleared rather than left reconciled. A reconciled pending row the bank drops without posting stays in the ledger, marked cleared, and the account chip says it needs reconciling.
+
+Take a **Settings → Backups** copy before upgrading to a release that includes this migration.

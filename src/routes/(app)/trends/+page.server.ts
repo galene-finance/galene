@@ -132,7 +132,11 @@ export function load({ locals, url }) {
 
 	const rangeFrom = points[0]?.from ?? toISO(from);
 	const rangeTo = points[points.length - 1]?.to ?? toISO(to);
-	const transferIds = new Set(categories.filter((c) => c.type === 'transfer').map((c) => c.id));
+	const transferIds = new Set(
+		categories
+			.filter((c) => c.type === 'transfer' || c.system_kind === 'balance_adjustment')
+			.map((c) => c.id)
+	);
 	let periodRows = getTransactionsInPeriod(userId, rangeFrom, rangeTo);
 	if (scope) {
 		const allowed = scope.accountIds.length > 0 ? new Set(scope.accountIds) : null;

@@ -9,6 +9,7 @@
     "preview": "bun -b vite preview",
     "check": "svelte-kit sync && svelte-check",
     "mcp": "bun mcp/index.ts",
+    "secrets:rotate": "bun src/cli/rotate-secrets.ts",
     "playwright": "playwright-cli",
     "test:migrate": "bun test src/lib/server/db.migrate.test.ts"
   },

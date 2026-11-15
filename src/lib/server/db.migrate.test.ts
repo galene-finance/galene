@@ -4,6 +4,7 @@
  */
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
+import { randomBytes } from 'node:crypto';
 import {
 	categoryUniquenessMigrationIndex,
 	migrate,
@@ -11,6 +12,7 @@ import {
 	migrationIndexBefore,
 	migrationIndexContaining
 } from './db';
+import { openSecret, plaintextSecretLocations } from './secrets';
 
 function seedPreCategoryUniqueness(db: Database) {
 	// Build schema as of just before the #17 category-uniqueness migration:
@@ -351,7 +353,7 @@ CREATE TABLE plaid_items (
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		expect(migrationCount()).toBe(34);
+		expect(migrationCount()).toBe(35);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -395,7 +397,7 @@ CREATE TABLE plaid_items (
 			db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_paid'`).get()
 		).toEqual({ o: 1 });
 		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
-		expect(migrationCount()).toBe(34);
+		expect(migrationCount()).toBe(35);
 		expect(counts()).toEqual(before);
 		expect(db.query('SELECT id, name FROM scheduled').get()).toEqual({ id: 7, name: 'Rent' });
 		expect(db.query('SELECT occurrence_date, display_date FROM scheduled_exceptions').get()).toEqual({
@@ -414,7 +416,7 @@ CREATE TABLE plaid_items (
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		expect(migrationCount()).toBe(34);
+		expect(migrationCount()).toBe(35);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -455,7 +457,7 @@ CREATE TABLE plaid_items (
 		expect(
 			db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_match_dismissed'`).get()
 		).toEqual({ o: 1 });
-		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(34);
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(35);
 		expect(counts()).toEqual(before);
 
 		db.query(
@@ -493,4 +495,113 @@ CREATE TABLE plaid_items (
 		db.close();
 	});
 
+});
+
+describe('migrate stored secrets (ADO-60)', () => {
+	const plaintext = '{"access_tokens":"[\\"access-sandbox-fixture\\"]"}';
+
+	function plantPlaintext(db: Database) {
+		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
+		db.query(
+			`INSERT INTO connections (id, user_id, provider, credentials) VALUES (7, 1, 'plaid', ?)`
+		).run(plaintext);
+		db.query(`INSERT INTO settings (user_id, key, value) VALUES (1, 'plaid_client_secret', 'client-secret-VALUE')`).run();
+		db.query(
+			`INSERT INTO oidc_config (id, enabled, mode, issuer, client_id, client_secret, scopes)
+			 VALUES (1, 0, 'optional', '', '', 'oidc-secret-value', 'openid')`
+		).run();
+		db.query(
+			`INSERT INTO webhooks (id, user_id, name, url, secret, secret_hint, events, filters, fields)
+			 VALUES (3, 1, 'Hook', 'https://example.com/hook', 'whsec_fixture', 'ture', '[]', '{}', '[]')`
+		).run();
+		db.query(
+			`INSERT INTO user_mfa_methods (id, user_id, type, label, secret, enabled, confirmed_at)
+			 VALUES (4, 1, 'totp', 'x', 'JBSWY3DPEHPK3PXP', 1, datetime('now'))`
+		).run();
+		db.query(
+			`INSERT INTO gallery_instance (id, public_key, private_key) VALUES (1, 'pub', '-----BEGIN PRIVATE KEY-----fixture')`
+		).run();
+	}
+
+	test('encrypts plaintext secrets once when the key is set and does not double-encrypt', () => {
+		const previous = process.env.GALENE_SECRET_KEY;
+		const previousOld = process.env.GALENE_SECRET_KEY_PREVIOUS;
+		process.env.GALENE_SECRET_KEY = randomBytes(32).toString('base64');
+		delete process.env.GALENE_SECRET_KEY_PREVIOUS;
+		const db = new Database(':memory:');
+		try {
+			db.exec('PRAGMA foreign_keys = ON');
+			migrate(db);
+			const index = migrationIndexContaining('encrypt stored secrets at rest');
+			db.run(`PRAGMA user_version = ${index}`);
+			plantPlaintext(db);
+			expect(plaintextSecretLocations(db).length).toBeGreaterThan(0);
+
+			migrate(db);
+
+			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(35);
+			expect(plaintextSecretLocations(db)).toEqual([]);
+			const creds = (db.query('SELECT credentials FROM connections WHERE id = 7').get() as { credentials: string })
+				.credentials;
+			expect(creds.startsWith('enc:v1:')).toBe(true);
+			expect(creds).not.toContain('access-sandbox-fixture');
+			expect(openSecret(creds)).toBe(plaintext);
+			expect(openSecret((db.query(`SELECT value FROM settings WHERE key = 'plaid_client_secret'`).get() as { value: string }).value)).toBe(
+				'client-secret-VALUE'
+			);
+			expect(openSecret((db.query('SELECT client_secret AS value FROM oidc_config').get() as { value: string }).value)).toBe(
+				'oidc-secret-value'
+			);
+			expect(openSecret((db.query('SELECT secret AS value FROM webhooks').get() as { value: string }).value)).toBe(
+				'whsec_fixture'
+			);
+			expect(openSecret((db.query('SELECT secret AS value FROM user_mfa_methods').get() as { value: string }).value)).toBe(
+				'JBSWY3DPEHPK3PXP'
+			);
+			expect(openSecret((db.query('SELECT private_key AS value FROM gallery_instance').get() as { value: string }).value)).toBe(
+				'-----BEGIN PRIVATE KEY-----fixture'
+			);
+
+			const before = (db.query('SELECT credentials FROM connections WHERE id = 7').get() as { credentials: string })
+				.credentials;
+			db.run(`PRAGMA user_version = ${index}`);
+			expect(() => migrate(db)).not.toThrow();
+			expect((db.query('SELECT credentials FROM connections WHERE id = 7').get() as { credentials: string }).credentials).toBe(
+				before
+			);
+			expect(plaintextSecretLocations(db)).toEqual([]);
+		} finally {
+			db.close();
+			if (previous === undefined) delete process.env.GALENE_SECRET_KEY;
+			else process.env.GALENE_SECRET_KEY = previous;
+			if (previousOld === undefined) delete process.env.GALENE_SECRET_KEY_PREVIOUS;
+			else process.env.GALENE_SECRET_KEY_PREVIOUS = previousOld;
+		}
+	});
+
+	test('leaves plaintext in place when no key is set', () => {
+		const previous = process.env.GALENE_SECRET_KEY;
+		const previousOld = process.env.GALENE_SECRET_KEY_PREVIOUS;
+		delete process.env.GALENE_SECRET_KEY;
+		delete process.env.GALENE_SECRET_KEY_PREVIOUS;
+		const db = new Database(':memory:');
+		try {
+			db.exec('PRAGMA foreign_keys = ON');
+			migrate(db);
+			const index = migrationIndexContaining('encrypt stored secrets at rest');
+			db.run(`PRAGMA user_version = ${index}`);
+			plantPlaintext(db);
+			expect(() => migrate(db)).not.toThrow();
+			expect((db.query('SELECT credentials FROM connections WHERE id = 7').get() as { credentials: string }).credentials).toBe(
+				plaintext
+			);
+			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(35);
+		} finally {
+			db.close();
+			if (previous === undefined) delete process.env.GALENE_SECRET_KEY;
+			else process.env.GALENE_SECRET_KEY = previous;
+			if (previousOld === undefined) delete process.env.GALENE_SECRET_KEY_PREVIOUS;
+			else process.env.GALENE_SECRET_KEY_PREVIOUS = previousOld;
+		}
+	});
 });

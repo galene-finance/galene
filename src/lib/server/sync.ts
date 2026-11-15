@@ -6,6 +6,8 @@ import { carryMatchLinks } from './scheduledMatch';
 import { notifySyncFailed, notifySyncRecovered } from './notifications';
 import type { Connection, LinkedAccount, PlaidAlreadyLinked, PlaidItemInfo, SyncSummary } from '../types';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
+import { openConnectionCredentials, sealConnectionCredentials } from './secrets';
+import { redactSecretText } from './providers/http';
 import { ownedIds } from './finance';
 import {
 	accessTokenForItem,
@@ -130,12 +132,13 @@ export async function connect(
 	// merge new ones in instead of clobbering them — Plaid keeps one access
 	// token per linked bank in a list and appends to it on each Link.
 	const row = getConnection(userId, providerId);
-	const existing = row ? (JSON.parse(row.credentials) as Record<string, string>) : {};
+	const existing = row ? openConnectionCredentials(row.credentials) : {};
 	const result = await provider.connect(credentials, { userId, credentials, existing });
 	if (result && typeof result === 'object' && 'alreadyLinked' in result && result.alreadyLinked) {
 		return result as PlaidAlreadyLinked;
 	}
-	const stored = result && typeof result === 'object' ? result : credentials;
+	const stored: Record<string, string> =
+		result && typeof result === 'object' ? (result as Record<string, string>) : credentials;
 	db()
 		.query(
 			`INSERT INTO connections (user_id, provider, credentials, status) VALUES (?, ?, ?, 'connected')
@@ -144,7 +147,7 @@ export async function connect(
 			     status = 'connected',
 			     last_error = NULL`
 		)
-		.run(userId, providerId, JSON.stringify(stored));
+		.run(userId, providerId, sealConnectionCredentials(stored));
 }
 
 /**
@@ -195,7 +198,7 @@ export async function syncNow(
 	if (!conn) return { error: 'Connect to the provider first.' };
 	const provider = getProvider(providerId)!;
 	const providerLabel = provider.label;
-	const credentials = JSON.parse(conn.credentials) as Record<string, string>;
+	const credentials = openConnectionCredentials(conn.credentials);
 	const ctx = {
 		userId,
 		credentials,
@@ -443,7 +446,8 @@ export async function syncNow(
 		if (wasInError) notifySyncRecovered(userId, providerLabel, conn.id);
 		return { accounts: accountMap.size, created, updated, merged, lastSyncedAt };
 	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Sync failed.';
+		const message =
+			redactSecretText(error instanceof Error ? error.message : '', 500) ?? 'Sync failed.';
 		db()
 			.query("UPDATE connections SET status = 'error', last_error = ? WHERE id = ? AND user_id = ?")
 			.run(message, conn.id, userId);
@@ -996,7 +1000,7 @@ export function resolveSyncReview(
 export function listPlaidItemsForSettings(userId: number): PlaidItemInfo[] {
 	const conn = getConnection(userId, 'plaid');
 	if (!conn) return [];
-	const tokens = accessTokensFromCredentials(JSON.parse(conn.credentials) as Record<string, string>);
+	const tokens = accessTokensFromCredentials(openConnectionCredentials(conn.credentials));
 	return listPlaidItemViews(userId, conn.id, tokens, new Map()).map((item) => ({
 		id: item.id,
 		label: item.institutionName?.trim() || 'A linked institution',
@@ -1054,7 +1058,7 @@ export async function removePlaidItemForUser(userId: number, itemRowId: number):
 	if (isDemoMode()) throw new Error(demoBlockedMessage('Bank sync'));
 	const conn = getConnection(userId, 'plaid');
 	if (!conn) throw new Error('That linked institution was not found.');
-	const creds = JSON.parse(conn.credentials) as Record<string, string>;
+	const creds = openConnectionCredentials(conn.credentials);
 	const tokens = accessTokensFromCredentials(creds);
 	const access = ownedItemAccessToken(userId, itemRowId, tokens);
 	const item = db()
@@ -1079,7 +1083,7 @@ export async function removePlaidItemForUser(userId: number, itemRowId: number):
 	}
 	db()
 		.query('UPDATE connections SET credentials = ? WHERE id = ? AND user_id = ?')
-		.run(JSON.stringify(replaceAccessTokens(creds, next)), conn.id, userId);
+		.run(sealConnectionCredentials(replaceAccessTokens(creds, next)), conn.id, userId);
 }
 
 function ownedItemAccessToken(userId: number, itemRowId: number, tokens?: string[]): string {
@@ -1088,7 +1092,7 @@ function ownedItemAccessToken(userId: number, itemRowId: number, tokens?: string
 	}
 	const conn = getConnection(userId, 'plaid');
 	if (!conn) throw new Error('That linked institution was not found.');
-	const list = tokens ?? accessTokensFromCredentials(JSON.parse(conn.credentials) as Record<string, string>);
+	const list = tokens ?? accessTokensFromCredentials(openConnectionCredentials(conn.credentials));
 	const access = accessTokenForItem(userId, itemRowId, list);
 	if (!access) throw new Error('That linked institution was not found.');
 	return access;

@@ -46,7 +46,8 @@ RUN bun run build
 #   mcp-bundle.js  — stdio / optional standalone HTTP entry
 #   mcp-handler.js — in-process /mcp route (named exports)
 RUN bun build mcp/index.ts --target=bun --define GALENE_VERSION="\"$APP_VERSION\"" --outfile=mcp-dist/mcp-bundle.js \
- && bun build mcp/http.ts --target=bun --outfile=mcp-dist/mcp-handler.js
+ && bun build mcp/http.ts --target=bun --outfile=mcp-dist/mcp-handler.js \
+ && bun build src/cli/rotate-secrets.ts --target=bun --outfile=rotate-secrets.js
 
 # ---------- app ----------
 FROM oven/bun:1.4.0-slim AS app
@@ -82,6 +83,10 @@ COPY --from=build --chown=galene:galene /app/build ./build
 # HTTP MCP is served by the app at /mcp (loads mcp-handler.js) when enabled.
 COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-bundle.js ./mcp-bundle.js
 COPY --from=build --chown=galene:galene /app/mcp-dist/mcp-handler.js ./mcp-handler.js
+# Re-encrypt stored secrets after GALENE_SECRET_KEY changes:
+#   docker run --rm --entrypoint bun -v galene_data:/app/data \
+#     -e GALENE_SECRET_KEY -e GALENE_SECRET_KEY_PREVIOUS <image> rotate-secrets.js
+COPY --from=build --chown=galene:galene /app/rotate-secrets.js ./rotate-secrets.js
 
 # Created in the image so a named volume initialized from them is owned by the
 # app user (a fresh named volume would otherwise be root-owned and unwritable).

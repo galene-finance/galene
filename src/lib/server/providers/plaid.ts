@@ -27,6 +27,7 @@ import {
 import { itemFailureSentence, logPlaidItemSyncFailure, PLAID_PARTIAL_FAILURE_FALLBACK } from '../plaidItemStatus';
 import { isDemoMode } from '../demoMode';
 import { db } from '../db';
+import { openConnectionCredentials } from '../secrets';
 import { fetchJson, ProviderHttpError } from './http';
 
 const NAME = 'Plaid';
@@ -536,11 +537,7 @@ export function storedPlaidAccessTokens(userId: number): string[] {
 		.query('SELECT credentials FROM connections WHERE user_id = ? AND provider = ?')
 		.get(userId, 'plaid') as { credentials: string } | undefined;
 	if (!row) return [];
-	try {
-		return accessTokens(JSON.parse(row.credentials) as Record<string, string>);
-	} catch {
-		return [];
-	}
+	return accessTokens(openConnectionCredentials(row.credentials));
 }
 
 /**

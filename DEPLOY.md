@@ -119,7 +119,7 @@ docker run -d --name galene \
 
 Then in the UI: Settings → Backups → Folder → `/app/backups` → Save folder. (The compose file ships with the backups volume commented out — uncomment it if you use scheduled backups.)
 
-> Backups are full copies of the database file, so they contain **every user's data** and all stored credentials. Treat the backups volume like the data volume: keep it private, and copy it off-box if you want redundancy beyond the host.
+> Backups are full copies of the database file, so they contain **every user's data**. Connection credentials in that file are encrypted when `GALENE_SECRET_KEY` is set. Treat the backups volume like the data volume: keep it private, copy it off-box if you want redundancy beyond the host, and keep the key with your other host secrets. Restoring without that key stops startup. See the docs page for environment variables.
 
 ---
 
@@ -137,6 +137,7 @@ Then in the UI: Settings → Backups → Folder → `/app/backups` → Save fold
 | `ADDRESS_HEADER` | *(unset)* | Optional Bun adapter: client IP header (e.g. `x-forwarded-for`) for logging / rate limits. |
 | `XFF_DEPTH` | `1` | Optional Bun adapter: which hop in `X-Forwarded-For` is the client when `ADDRESS_HEADER=x-forwarded-for`. |
 | `GALENE_ALLOW_EPHEMERAL_DATA` | *(unset)* | `1` disables the startup volume check. Only for throwaway/test containers. |
+| `GALENE_SECRET_KEY` | *(unset)* | 32-byte base64 key (`openssl rand -base64 32`). Encrypts connection credentials and other stored secrets. Optional until credentials are saved; required to open a database that already contains encrypted rows. `GALENE_SECRET_KEY_PREVIOUS` is the old key during rotation. |
 | `GALENE_DEMO` | *(unset)* | `1` enables **public demo mode**: Settings for bank sync, backups, API/MCP, advisor, users, SSO, 2FA, and Data wipe stay visible as read-only; mutating APIs are refused. Bootstraps `demo@test.com` / `demopass1` with seed data (MFA cleared on every boot). See `deploy/demo/`. |
 
 MCP (Settings-managed HTTP on the app, or stdio from the app image):

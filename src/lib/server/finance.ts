@@ -1,5 +1,6 @@
 import { db } from './db';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
+import { isSecretSetting, openSecret, sealSecret } from './secrets';
 import { emitDataChange } from './webhookNotify';
 import { dropAccountExternalIdFromPlaidItems, ownedIds } from './plaidItems';
 import type { GrantScope } from './advisor';
@@ -1265,16 +1266,19 @@ export function getSetting(userId: number, key: string): string | null {
 	const row = db().query('SELECT value FROM settings WHERE user_id = ? AND key = ?').get(userId, key) as
 		| { value: string }
 		| undefined;
-	return row?.value ?? null;
+	if (row?.value == null) return null;
+	if (isSecretSetting(key)) return openSecret(row.value);
+	return row.value;
 }
 
 export function setSetting(userId: number, key: string, value: string) {
+	const stored = isSecretSetting(key) ? sealSecret(value) : value;
 	db()
 		.query(
 			`INSERT INTO settings (user_id, key, value) VALUES (?, ?, ?)
 			 ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value`
 		)
-		.run(userId, key, value);
+		.run(userId, key, stored);
 }
 
 // ---------------------------------------------------------------------------

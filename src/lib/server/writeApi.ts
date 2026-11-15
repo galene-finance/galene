@@ -1,6 +1,7 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { db } from './db';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
+import { openSecret, sealSecret } from './secrets';
 import {
 	deleteAccount,
 	deleteBudget,
@@ -925,7 +926,7 @@ export function createWebhook(
 				userId,
 				name,
 				url,
-				secret,
+				sealSecret(secret),
 				hint,
 				JSON.stringify(events),
 				JSON.stringify(filters),
@@ -991,7 +992,7 @@ export function rotateWebhookSecret(
 	const existing = db().query('SELECT id FROM webhooks WHERE id = ? AND user_id = ?').get(id, userId);
 	if (!existing) return { ok: false, error: 'Webhook not found.' };
 	const { secret, hint } = newSecret();
-	db().query('UPDATE webhooks SET secret = ?, secret_hint = ? WHERE id = ? AND user_id = ?').run(secret, hint, id, userId);
+	db().query('UPDATE webhooks SET secret = ?, secret_hint = ? WHERE id = ? AND user_id = ?').run(sealSecret(secret), hint, id, userId);
 	return { ok: true, secret };
 }
 
@@ -1009,7 +1010,7 @@ export async function dispatchWebhooks(userId: number, event: WebhookEvent | Dat
 		if (!webhookMatches(filters, events, hookEvent)) continue;
 		const payload = projectPayload(hookEvent, JSON.parse(row.fields) as string[]);
 		const body = JSON.stringify(payload);
-		const signature = signWebhookBody(row.secret, body);
+		const signature = signWebhookBody(openSecret(row.secret), body);
 		const send = transportForTests ?? fetch;
 		try {
 			await send(row.url, {

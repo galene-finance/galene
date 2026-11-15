@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { encryptPlaintextSecrets, prepareStoredSecrets } from './secrets';
 import { hashToken } from './tokenHash';
 
 function dataDir(): string {
@@ -72,6 +73,7 @@ export function db(): Database {
 			// SQLITE_BUSY, so the loser can re-check state and reject cleanly.
 			database.exec('PRAGMA busy_timeout = 5000;');
 			migrate(database);
+			prepareStoredSecrets(database);
 			_db = database;
 		} catch (error) {
 			// Don't leave a half-migrated connection as the singleton — later
@@ -1157,6 +1159,16 @@ CREATE TABLE scheduled_match_dismissed (
 CREATE INDEX IF NOT EXISTS idx_scheduled_match_dismissed_sched ON scheduled_match_dismissed(scheduled_id);
 `);
 		}
+	}
+},
+{
+	// Encrypt reversible secrets when GALENE_SECRET_KEY is set. Idempotent:
+	// enc:v1 values are left unchanged. With no key this step does nothing so
+	// a fresh database still migrates; startup refuses to serve if an
+	// envelope is present and the key is missing or cannot decrypt it.
+	sql: `-- encrypt stored secrets at rest`,
+	after(database) {
+		encryptPlaintextSecrets(database);
 	}
 }
 ];

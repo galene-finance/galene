@@ -12,6 +12,7 @@
  */
 import { createHash, createPrivateKey, generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import { db } from './db';
+import { openSecret, sealSecret } from './secrets';
 import { serializeThemePack } from '../theme-pack';
 
 export const THEME_GALLERY_ORIGIN = 'https://themes.galene.finance';
@@ -37,14 +38,14 @@ export function ensureInstanceKey(): { publicKey: string; privateKey: KeyObject 
 	if (existing) {
 		return {
 			publicKey: existing.public_key,
-			privateKey: createPrivateKey(existing.private_key)
+			privateKey: createPrivateKey(openSecret(existing.private_key))
 		};
 	}
 	const { publicKey, privateKey } = generateKeyPairSync('ed25519');
 	const publicB64 = publicKey.export({ format: 'jwk' }).x;
 	if (!publicB64) throw new Error('Could not create a gallery signing key.');
 	const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-	database.query('INSERT INTO gallery_instance (id, public_key, private_key) VALUES (1, ?, ?)').run(publicB64, pem);
+	database.query('INSERT INTO gallery_instance (id, public_key, private_key) VALUES (1, ?, ?)').run(publicB64, sealSecret(pem));
 	return { publicKey: publicB64, privateKey };
 }
 

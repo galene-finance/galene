@@ -368,6 +368,16 @@ export function deleteAccount(userId: number, id: number, reassignTo: number) {
 		.get(reassignTo, userId) as { id: number } | undefined;
 	if (!target) throw new Error('Replacement account not found.');
 
+	const locked = db()
+		.query(
+			`SELECT COUNT(*) AS n FROM transactions
+			 WHERE user_id = ? AND account_id = ? AND reconciled_at IS NOT NULL`
+		)
+		.get(userId, id) as { n: number };
+	if (locked.n > 0) {
+		throw new Error('Unlock reconciled transactions before moving them to another account.');
+	}
+
 	const removed = rowById('accounts', userId, id, 'id, name, type');
 	const d = db();
 	d.run('BEGIN');

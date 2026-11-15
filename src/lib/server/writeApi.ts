@@ -3,6 +3,7 @@ import { db } from './db';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
 import { openSecret, sealSecret } from './secrets';
 import {
+	clearTransactionSplits,
 	deleteAccount,
 	deleteBudget,
 	deleteCategory,
@@ -449,7 +450,7 @@ function applySplit(userId: number, txId: number, body: Record<string, unknown>)
 	const raw = body.splits;
 	if (!Array.isArray(raw)) throw new Error('splits must be an array.');
 	if (raw.length === 0) {
-		db().query('DELETE FROM transaction_splits WHERE transaction_id = ?').run(txId);
+		clearTransactionSplits(userId, txId);
 		const after = mustSnapshot('transactions', userId, txId);
 		return done('update', 'split', 'updated', beforeTx, after, txId);
 	}

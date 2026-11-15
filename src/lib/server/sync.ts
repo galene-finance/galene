@@ -421,6 +421,8 @@ interface OrphanRow {
 	notes: string | null;
 	external_id: string;
 	created_at: string;
+	pending: number;
+	reconciled_at: string | null;
 }
 
 interface ReplacementRow {
@@ -551,10 +553,10 @@ export function isPendingAlreadyPosted(
 }
 
 /**
- * The posted row keeps its amount, date, and external id. User fields on the
- * pending row move only where the posted row has none. Cleared and reconciled
- * state moves onto the posted row; a different amount or date demotes
- * reconciled to cleared. A reconciled pending row is never deleted.
+ * A pending-to-posted fold is a replacement. User fields on the pending row
+ * move only where the posted row has none, and cleared/reconciled state moves
+ * onto the posted row. A different amount or date demotes reconciled to
+ * cleared. The pending row is then removed, including when it was reconciled.
  * No-op when that id is not stored on this account.
  */
 export function foldPendingIntoPosted(
@@ -651,18 +653,13 @@ export function foldPendingIntoPosted(
 				 SELECT ?, tag_id FROM transaction_tags WHERE transaction_id = ?`
 			)
 			.run(posted.id, pending.id);
-		// A reconciled pending row stays. Moving its splits would change the locked row.
-		if (!pending.reconciled_at && pending.split_count > 0 && posted.split_count === 0) {
+		if (pending.split_count > 0 && posted.split_count === 0) {
 			database.query('UPDATE transaction_splits SET transaction_id = ? WHERE transaction_id = ?').run(posted.id, pending.id);
 		}
-		if (!pending.reconciled_at) {
-			// A pending clear deletes this id. Carry a scheduled match onto the posted row.
-			// If that row is already matched, the pending link is dropped (one transaction, one occurrence).
-			carryMatchLinks(database, pending.id, posted.id);
-			database
-				.query('DELETE FROM transactions WHERE id = ? AND user_id = ? AND reconciled_at IS NULL')
-				.run(pending.id, userId);
-		}
+		// The posted row replaces the pending one. Carry a scheduled match onto it.
+		// If that row is already matched, the pending link is dropped (one transaction, one occurrence).
+		carryMatchLinks(database, pending.id, posted.id);
+		database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(pending.id, userId);
 		database.run('COMMIT');
 	} catch (error) {
 		database.run('ROLLBACK');
@@ -773,7 +770,8 @@ export function mergeRepostedTransactions(
 ): number {
 	const orphans = database
 		.query(
-			`SELECT id, account_id, date, amount_cents, merchant, category_id, color, notes, external_id, created_at
+			`SELECT id, account_id, date, amount_cents, merchant, category_id, color, notes, external_id, created_at,
+			        pending, reconciled_at
 			 FROM transactions
 			 WHERE user_id = ? AND provider = ? AND date >= ?
 			   AND external_id IS NOT NULL AND external_id != ''`
@@ -804,6 +802,17 @@ export function mergeRepostedTransactions(
 		const live = candidates.filter((c) => liveIds.has(c.external_id));
 		const target = pickRepostTarget(orphan, live);
 		if (!target) {
+			// The bank dropped a reconciled pending row and never posted a replacement.
+			// Leave it for the user, but the finished statement no longer matches.
+			if (orphan.pending === 1 && orphan.reconciled_at) {
+				database
+					.query(
+						`UPDATE transactions
+						 SET cleared = 1, reconciled_at = NULL, updated_at = datetime('now')
+						 WHERE id = ? AND user_id = ? AND reconciled_at IS NOT NULL`
+					)
+					.run(orphan.id, userId);
+			}
 			// 0 or ambiguous — queue for user review instead of silent leave (#127).
 			enqueueSyncReview(userId, providerId, orphan.id, live.map((c) => c.id), database);
 			continue;
@@ -830,16 +839,26 @@ export function foldOrphanIntoTarget(
 	target: { id: number; category_id: number | null; split_count: number },
 	database: Database = db()
 ): boolean {
-	const orphanRow = database
-		.query('SELECT reconciled_at FROM transactions WHERE id = ? AND user_id = ?')
-		.get(orphan.id, userId) as { reconciled_at: string | null } | null;
-	if (orphanRow?.reconciled_at) return false;
+	const orphanState = database
+		.query(
+			`SELECT date, amount_cents, cleared, reconciled_at FROM transactions WHERE id = ? AND user_id = ?`
+		)
+		.get(orphan.id, userId) as
+		| { date: string; amount_cents: number; cleared: number; reconciled_at: string | null }
+		| null;
+	const targetState = database
+		.query(`SELECT date, amount_cents FROM transactions WHERE id = ? AND user_id = ?`)
+		.get(target.id, userId) as { date: string; amount_cents: number } | null;
+	if (!orphanState || !targetState) return false;
 	const orphanSplits = (
 		database.query('SELECT COUNT(*) AS c FROM transaction_splits WHERE transaction_id = ?').get(orphan.id) as {
 			c: number;
 		}
 	).c;
 	if (orphanSplits > 0 && target.split_count > 0) return false;
+	const changed = orphanState.amount_cents !== targetState.amount_cents || orphanState.date !== targetState.date;
+	const carryReconciled = orphanState.reconciled_at != null && !changed;
+	const demoteReconciled = orphanState.reconciled_at != null && changed;
 	database.run('BEGIN');
 	try {
 		database
@@ -849,10 +868,31 @@ export function foldOrphanIntoTarget(
 				     color = COALESCE(color, ?),
 				     notes = COALESCE(notes, ?),
 				     pending = 0,
+				     cleared = CASE
+				       WHEN ? = 1 THEN 1
+				       WHEN ? = 1 THEN 1
+				       ELSE cleared
+				     END,
+				     reconciled_at = CASE
+				       WHEN ? = 1 THEN NULL
+				       WHEN ? = 1 THEN ?
+				       ELSE reconciled_at
+				     END,
 				     updated_at = datetime('now')
 				 WHERE id = ? AND user_id = ?`
 			)
-			.run(orphan.category_id, orphan.color, orphan.notes, target.id, userId);
+			.run(
+				orphan.category_id,
+				orphan.color,
+				orphan.notes,
+				demoteReconciled ? 1 : 0,
+				orphanState.cleared === 1 || carryReconciled ? 1 : 0,
+				demoteReconciled ? 1 : 0,
+				carryReconciled ? 1 : 0,
+				orphanState.reconciled_at,
+				target.id,
+				userId
+			);
 		database
 			.query(
 				`INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id)
@@ -865,9 +905,7 @@ export function foldOrphanIntoTarget(
 				.run(target.id, orphan.id);
 		}
 		carryMatchLinks(database, orphan.id, target.id);
-		database
-			.query('DELETE FROM transactions WHERE id = ? AND user_id = ? AND reconciled_at IS NULL')
-			.run(orphan.id, userId);
+		database.query('DELETE FROM transactions WHERE id = ? AND user_id = ?').run(orphan.id, userId);
 		database.run('COMMIT');
 		return true;
 	} catch (error) {

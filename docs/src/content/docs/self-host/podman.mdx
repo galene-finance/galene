@@ -54,19 +54,19 @@ Restart=always
 WantedBy=default.target
 ```
 
-Then enable and start it:
+Quadlet generates `galene.service` from `galene.container`. Keep the file name `galene.container`; `systemctl` and `journalctl` use the generated service. `WantedBy=` in `[Install]` installs that service, so `enable` does not apply. Reload and start:
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now galene.container
-journalctl --user -u galene.container -f
+systemctl --user start galene.service
+journalctl --user -u galene.service -f
 ```
 
 Notes:
 
 - The named volume `galene_data` is created by Podman on first start and relabeled automatically. If you prefer a bind mount, use `Volume=/path/on/host:/app/data:Z` (`:Z` on SELinux hosts).
 - `GALENE_COOKIE_SECURE=0` is for plain HTTP; set it to `1` behind a TLS-terminating proxy ([Reverse proxy](/self-host/reverse-proxy/)).
-- For a system unit, use `WantedBy=multi-user.target` and `systemctl enable --now galene.container` (without `--user`).
+- For a system unit, set `WantedBy=multi-user.target`, then `systemctl daemon-reload` and `systemctl start galene.service` (without `--user`).
 
 ## Healthcheck
 
@@ -90,7 +90,7 @@ Reload and restart, then run the check by container name (`ContainerName` in the
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user restart galene.container
+systemctl --user restart galene.service
 podman healthcheck run galene
 podman ps
 ```

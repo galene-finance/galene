@@ -1,6 +1,7 @@
 # Quadlet unit for the public Galene demo (ADO-37).
 # Install on the app host as e.g. ~/.config/containers/systemd/galene-demo.container
-# then: systemctl --user daemon-reload && systemctl --user enable --now galene-demo
+# Quadlet generates galene-demo.service. WantedBy= installs it; enable does not apply.
+# then: systemctl --user daemon-reload && systemctl --user start galene-demo.service
 #
 # Uses a SEPARATE data directory from production (/opt/galene). Do not point
 # Volume at the prod data path.

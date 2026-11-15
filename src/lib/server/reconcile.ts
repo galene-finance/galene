@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import { BALANCE_ADJUSTMENT_KIND, BALANCE_ADJUSTMENT_NAME } from '../balanceAdjustment';
 import {
 	buildReconcileView,
@@ -29,12 +30,19 @@ export interface ReconcileLoad {
 	lastStatementDate: string | null;
 }
 
+export interface DismissPair {
+	manualId: number;
+	syncedId: number;
+}
+
 export interface FinishPlan {
 	bankBalanceCents: number;
 	statementDate: string;
 	adjustment: { amountCents: number; date: string; note: string } | null;
 	addUnimportedIds: number[];
 	deleteIds: number[];
+	/** Possible duplicates the user chose to keep. Written only when finish commits. */
+	dismissPairs?: DismissPair[];
 }
 
 interface Scope {
@@ -216,22 +224,48 @@ export function tickAllThrough(userId: number, accountId: number, through: strin
 		.run(userId, accountId, through);
 }
 
-export function dismissDuplicate(
-	userId: number,
-	accountId: number,
-	manualId: number,
-	syncedId: number
-): void {
-	if (!ownsAccount(userId, accountId, null)) throw new Error('Account not found.');
-	assertIdsOnAccount(userId, accountId, [manualId, syncedId]);
-	db()
-		.query(
-			`INSERT INTO reconcile_duplicate_dismissals
-			   (user_id, account_id, transaction_id, match_transaction_id, dismissed_at)
-			 VALUES (?, ?, ?, ?, datetime('now'))
-			 ON CONFLICT(user_id, transaction_id, match_transaction_id) DO NOTHING`
-		)
-		.run(userId, accountId, manualId, syncedId);
+function normalizeDismissPairs(pairs: DismissPair[] | undefined): DismissPair[] {
+	if (!pairs || pairs.length === 0) return [];
+	const seen = new Set<string>();
+	const out: DismissPair[] = [];
+	for (const pair of pairs) {
+		const manualId = pair?.manualId;
+		const syncedId = pair?.syncedId;
+		if (
+			!Number.isInteger(manualId) ||
+			!Number.isInteger(syncedId) ||
+			manualId <= 0 ||
+			syncedId <= 0 ||
+			manualId === syncedId
+		) {
+			throw new Error('That transaction is not on this account.');
+		}
+		const key = `${manualId}:${syncedId}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push({ manualId, syncedId });
+	}
+	return out;
+}
+
+/** Ownership and account match. Does not write. */
+function assertDismissPairs(userId: number, accountId: number, pairs: DismissPair[]): void {
+	if (pairs.length === 0) return;
+	const ids = [...new Set(pairs.flatMap((pair) => [pair.manualId, pair.syncedId]))];
+	assertIdsOnAccount(userId, accountId, ids);
+}
+
+function writeDismissPairs(database: Database, userId: number, accountId: number, pairs: DismissPair[]): void {
+	for (const pair of pairs) {
+		database
+			.query(
+				`INSERT INTO reconcile_duplicate_dismissals
+				   (user_id, account_id, transaction_id, match_transaction_id, dismissed_at)
+				 VALUES (?, ?, ?, ?, datetime('now'))
+				 ON CONFLICT(user_id, transaction_id, match_transaction_id) DO NOTHING`
+			)
+			.run(userId, accountId, pair.manualId, pair.syncedId);
+	}
 }
 
 export function unlockTransaction(userId: number, id: number): void {
@@ -270,12 +304,14 @@ export function finishReconcile(userId: number, accountId: number, plan: FinishP
 	}
 	const addIds = [...new Set(plan.addUnimportedIds)].filter((id) => Number.isInteger(id) && id > 0);
 	const deleteIds = [...new Set(plan.deleteIds)].filter((id) => Number.isInteger(id) && id > 0);
+	const dismissPairs = normalizeDismissPairs(plan.dismissPairs);
 
 	const database = db();
 	database.run('BEGIN');
 	try {
 		const loaded = loadReconcile(userId, accountId, null);
 		if (!loaded) throw new Error('Account not found.');
+		assertDismissPairs(userId, accountId, dismissPairs);
 		const view = buildReconcileView({
 			openingCents: loaded.account.opening_balance_cents ?? 0,
 			openingAsOf: loaded.account.opening_as_of,
@@ -368,6 +404,9 @@ export function finishReconcile(userId: number, accountId: number, plan: FinishP
 				)
 				.run(userId, accountId, categoryId, adjustment.date, adjustment.amountCents, BALANCE_ADJUSTMENT_NAME, note);
 		}
+
+		// After the $0 gate and the reconciled-row lock on deletes. A refusal rolls back.
+		writeDismissPairs(database, userId, accountId, dismissPairs);
 
 		const openingAsOf = loaded.account.opening_as_of;
 		const marked = database

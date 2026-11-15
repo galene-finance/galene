@@ -105,20 +105,24 @@ function balancesData(userId: number, f: DashboardFilters): DashboardWidgetData 
 }
 
 function recentData(userId: number, f: DashboardFilters): DashboardWidgetData {
-	const { items } = getTransactions(userId, {
-		accountIds: f.accountIds ?? [],
-		categoryIds: f.categoryIds ?? [],
-		tagIds: f.tagIds ?? [],
-		emptyFields: [],
-		amountOp: '',
-		amountFrom: null,
-		amountTo: null,
-		dateFrom: null,
-		dateTo: null,
-		q: '',
-		page: 1,
-		pageSize: f.limit ?? 10
-	});
+	const { items } = getTransactions(
+		userId,
+		{
+			accountIds: f.accountIds ?? [],
+			categoryIds: f.categoryIds ?? [],
+			tagIds: f.tagIds ?? [],
+			emptyFields: [],
+			amountOp: '',
+			amountFrom: null,
+			amountTo: null,
+			dateFrom: null,
+			dateTo: null,
+			q: '',
+			page: 1,
+			pageSize: f.limit ?? 10
+		},
+		{ excludeBalanceAdjustments: true }
+	);
 	return { kind: 'recent', items };
 }
 

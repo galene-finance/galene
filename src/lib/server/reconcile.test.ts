@@ -8,7 +8,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { closeDbForTests, db } from './db';
 import { createApiToken } from './apiTokens';
-import { cashflowForMonths, deleteAccount, deleteTransaction, getHomeSummary, saveTransaction } from './finance';
+import { computeDashboardData } from './dashboard';
+import { cashflowForMonths, deleteAccount, deleteTransaction, getAccountBalances, getHomeSummary, getTransactions, saveTransaction } from './finance';
+import { generateComputedAlerts, listNotifications } from './notifications';
 import { accountsNeedingReconcile, finishReconcile, loadReconcile, setCleared, unlockTransaction } from './reconcile';
 import { foldPendingIntoPosted, mergeRepostedTransactions, upsertProviderTransaction } from './sync';
 import { isHeldProviderLine } from './syncHeld';
@@ -129,6 +131,8 @@ describe('reconcile finish', () => {
 
 		const summary = getHomeSummary(userId);
 		expect(summary.monthIncomeCents).toBe(0);
+		expect(summary.balanceCents).toBe(-480 - 12000 + 3738);
+		expect(summary.recent.map((row) => row.merchant)).not.toContain('Balance adjustment');
 		expect(summary.topCategories.find((row) => row.name === 'Balance adjustment')).toBeUndefined();
 		const flow = cashflowForMonths(userId, ['2026-11']);
 		const names = [...flow.sections.income.rows, ...flow.sections.expense.rows].map((row) => row.categoryName);
@@ -250,6 +254,228 @@ describe('reconcile finish', () => {
 		unlockTransaction(userId, id);
 		deleteTransaction(userId, id);
 		expect((db().query('SELECT COUNT(*) AS n FROM transactions').get() as { n: number }).n).toBe(0);
+	});
+});
+
+function dismissalCount(): number {
+	return (db().query('SELECT COUNT(*) AS n FROM reconcile_duplicate_dismissals').get() as { n: number }).n;
+}
+
+function sessionCount(): number {
+	return (db().query('SELECT COUNT(*) AS n FROM reconcile_sessions').get() as { n: number }).n;
+}
+
+describe('keep both waits for finish', () => {
+	test('a refused or cancelled finish writes no dismissal, and confirm writes one', () => {
+		const userId = user('keep@example.com');
+		const accountId = account(userId, 'demo');
+		const synced = db()
+			.query(
+				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider, external_id, cleared)
+				 VALUES (?, ?, '2026-11-12', -480, 'Coffee Shop', 'demo', 'cafe', 1)`
+			)
+			.run(userId, accountId);
+		const manual = db()
+			.query(
+				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, cleared)
+				 VALUES (?, ?, '2026-11-12', -480, 'Coffee Shop', 0)`
+			)
+			.run(userId, accountId);
+		const pair = { manualId: Number(manual.lastInsertRowid), syncedId: Number(synced.lastInsertRowid) };
+		const plan = {
+			statementDate: '2026-11-14',
+			adjustment: null,
+			addUnimportedIds: [] as number[],
+			deleteIds: [] as number[]
+		};
+
+		// Staged on the client only. Cancel, or leave, never calls finish.
+		expect(dismissalCount()).toBe(0);
+		expect(sessionCount()).toBe(0);
+
+		expect(() =>
+			finishReconcile(userId, accountId, {
+				...plan,
+				bankBalanceCents: 0,
+				dismissPairs: [pair]
+			})
+		).toThrow(/\$0\.00/);
+		expect(dismissalCount()).toBe(0);
+		expect(sessionCount()).toBe(0);
+
+		const stranger = user('keep-stranger@example.com');
+		expect(() =>
+			finishReconcile(stranger, accountId, {
+				...plan,
+				bankBalanceCents: -480,
+				dismissPairs: [pair]
+			})
+		).toThrow(/Account not found/);
+		expect(dismissalCount()).toBe(0);
+
+		db().query(`INSERT INTO accounts (user_id, name, type) VALUES (?, 'Savings', 'bank')`).run(userId);
+		const savingsId = (
+			db().query(`SELECT id FROM accounts WHERE user_id = ? AND name = 'Savings'`).get(userId) as { id: number }
+		).id;
+		const foreign = db()
+			.query(
+				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, cleared)
+				 VALUES (?, ?, '2026-11-12', -480, 'Coffee Shop', 1)`
+			)
+			.run(userId, savingsId);
+		expect(() =>
+			finishReconcile(userId, accountId, {
+				...plan,
+				bankBalanceCents: -480,
+				dismissPairs: [{ manualId: pair.manualId, syncedId: Number(foreign.lastInsertRowid) }]
+			})
+		).toThrow(/not on this account/);
+		expect(dismissalCount()).toBe(0);
+		expect(sessionCount()).toBe(0);
+
+		finishReconcile(userId, accountId, {
+			...plan,
+			bankBalanceCents: -480,
+			dismissPairs: [pair]
+		});
+		expect(dismissalCount()).toBe(1);
+		expect(
+			db()
+				.query(
+					`SELECT user_id, account_id, transaction_id, match_transaction_id
+					 FROM reconcile_duplicate_dismissals`
+				)
+				.get()
+		).toEqual({
+			user_id: userId,
+			account_id: accountId,
+			transaction_id: pair.manualId,
+			match_transaction_id: pair.syncedId
+		});
+		const kept = db()
+			.query(`SELECT id FROM transactions WHERE account_id = ? ORDER BY id`)
+			.all(accountId) as { id: number }[];
+		expect(kept.map((row) => row.id)).toEqual([pair.syncedId, pair.manualId]);
+		expect(loadReconcile(userId, accountId, null)?.dismissedPairs).toContain(`${pair.manualId}:${pair.syncedId}`);
+	});
+
+	test('deleting a reconciled row rolls back a staged keep both', () => {
+		const userId = user('keep-lock@example.com');
+		const accountId = account(userId, 'demo');
+		const rent = db()
+			.query(
+				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, cleared, reconciled_at)
+				 VALUES (?, ?, '2026-11-02', -100, 'Rent', 1, datetime('now'))`
+			)
+			.run(userId, accountId);
+		const synced = db()
+			.query(
+				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider, external_id, cleared)
+				 VALUES (?, ?, '2026-11-12', -480, 'Coffee Shop', 'demo', 'cafe', 1)`
+			)
+			.run(userId, accountId);
+		const manual = db()
+			.query(
+				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, cleared)
+				 VALUES (?, ?, '2026-11-12', -480, 'Coffee Shop', 0)`
+			)
+			.run(userId, accountId);
+		expect(() =>
+			finishReconcile(userId, accountId, {
+				bankBalanceCents: -480,
+				statementDate: '2026-11-14',
+				adjustment: null,
+				addUnimportedIds: [],
+				deleteIds: [Number(rent.lastInsertRowid)],
+				dismissPairs: [{ manualId: Number(manual.lastInsertRowid), syncedId: Number(synced.lastInsertRowid) }]
+			})
+		).toThrow(/Unlock/);
+		expect(dismissalCount()).toBe(0);
+		expect(sessionCount()).toBe(0);
+		expect((db().query('SELECT id FROM transactions WHERE merchant = ?').get('Rent') as { id: number }).id).toBe(
+			Number(rent.lastInsertRowid)
+		);
+	});
+});
+
+describe('balance adjustment on home', () => {
+	test('recent feeds omit a $2.50 adjustment and the account balance includes it', () => {
+		const userId = user('home-adj@example.com');
+		const now = new Date();
+		const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+		const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+		db()
+			.query(
+				`INSERT INTO accounts (user_id, name, type, opening_balance_cents, opening_as_of)
+				 VALUES (?, 'Checking', 'bank', 0, ?)`
+			)
+			.run(userId, monthStart);
+		const accountId = (db().query('SELECT id FROM accounts WHERE user_id = ?').get(userId) as { id: number }).id;
+		db()
+			.query(
+				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, cleared)
+				 VALUES (?, ?, ?, -1000, 'Grocery', 0)`
+			)
+			.run(userId, accountId, monthStart);
+
+		finishReconcile(userId, accountId, {
+			bankBalanceCents: 250,
+			statementDate: today,
+			adjustment: { amountCents: 250, date: today, note: 'Reconcile' },
+			addUnimportedIds: [],
+			deleteIds: []
+		});
+
+		const summary = getHomeSummary(userId);
+		expect(summary.recent.map((row) => row.merchant)).toEqual(['Grocery']);
+		expect(summary.recent.some((row) => row.amount_cents === 250)).toBe(false);
+		expect(summary.balanceCents).toBe(250 - 1000);
+		expect(summary.monthIncomeCents).toBe(0);
+		expect(getAccountBalances(userId).get(accountId)).toBe(250 - 1000);
+
+		const widgets = computeDashboardData(userId, [
+			{ id: 'recent', type: 'recent', x: 0, y: 0, w: 6, h: 5, filters: { limit: 10 } },
+			{ id: 'balances', type: 'balances', x: 0, y: 0, w: 4, h: 4, filters: {} },
+			{ id: 'month', type: 'month', x: 0, y: 0, w: 4, h: 2, filters: {} },
+			{ id: 'notifications', type: 'notifications', x: 0, y: 0, w: 4, h: 4, filters: {} }
+		]);
+		const recent = widgets.recent;
+		expect(recent?.kind).toBe('recent');
+		if (recent?.kind === 'recent') {
+			expect(recent.items.map((row) => row.merchant)).toEqual(['Grocery']);
+			expect(recent.items.some((row) => row.amount_cents === 250)).toBe(false);
+		}
+		const balances = widgets.balances;
+		if (balances?.kind === 'balances') {
+			expect(balances.items.find((row) => row.id === accountId)?.balanceCents).toBe(250 - 1000);
+		}
+		const month = widgets.month;
+		if (month?.kind === 'month') expect(month.incomeCents).toBe(0);
+
+		generateComputedAlerts(userId);
+		const notes = listNotifications(userId);
+		expect(notes.some((row) => /balance adjustment/i.test(`${row.title} ${row.body}`))).toBe(false);
+		const widgetNotes = widgets.notifications;
+		if (widgetNotes?.kind === 'notifications') {
+			expect(widgetNotes.items.some((row) => /balance adjustment/i.test(`${row.title} ${row.body}`))).toBe(false);
+		}
+
+		const ledger = getTransactions(userId, {
+			accountIds: [],
+			categoryIds: [],
+			tagIds: [],
+			emptyFields: [],
+			amountOp: '',
+			amountFrom: null,
+			amountTo: null,
+			dateFrom: null,
+			dateTo: null,
+			q: '',
+			page: 1,
+			pageSize: 20
+		});
+		expect(ledger.items.map((row) => row.merchant)).toContain('Balance adjustment');
+		expect(ledger.items.find((row) => row.merchant === 'Balance adjustment')?.amount_cents).toBe(250);
 	});
 });
 

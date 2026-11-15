@@ -902,7 +902,11 @@ export function applyGrantScope(f: TransactionFilters, scope: GrantScope | null 
 	};
 }
 
-export function getTransactions(userId: number, f: TransactionFilters): TransactionQueryResult {
+export function getTransactions(
+	userId: number,
+	f: TransactionFilters,
+	opts?: { excludeBalanceAdjustments?: boolean }
+): TransactionQueryResult {
 	const where: string[] = ['t.user_id = ?'];
 	const params: (number | string)[] = [userId];
 
@@ -991,6 +995,7 @@ export function getTransactions(userId: number, f: TransactionFilters): Transact
 			params.push(f.amountFrom ?? 0, f.amountTo ?? 0);
 			break;
 	}
+	if (opts?.excludeBalanceAdjustments) where.push(excludeBalanceAdjustment('t.category_id'));
 
 	const whereSql = where.join(' AND ');
 	const countRow = db()
@@ -1291,6 +1296,7 @@ export function getHomeSummary(userId: number): HomeSummary {
 			 LEFT JOIN accounts a ON a.id = t.account_id
 			 LEFT JOIN categories c ON c.id = t.category_id
 			 WHERE t.user_id = ?
+			   AND ${excludeBalanceAdjustment('t.category_id')}
 			 ORDER BY t.date DESC, t.id DESC
 			 LIMIT 10`
 		)

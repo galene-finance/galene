@@ -1,12 +1,12 @@
 import { error } from '@sveltejs/kit';
 import { isDemoMode } from '$lib/server/demoMode';
 import {
-	dismissDuplicate,
 	finishReconcile,
 	loadReconcile,
 	setCleared,
 	tickAllThrough,
-	unlockTransaction
+	unlockTransaction,
+	type DismissPair
 } from '$lib/server/reconcile';
 import { todayISO } from '$lib/utils';
 
@@ -18,6 +18,16 @@ function accountIdOf(params: { id?: string }): number {
 
 function message(error: unknown, fallback: string) {
 	return error instanceof Error ? error.message : fallback;
+}
+
+function dismissPairsOf(value: unknown): DismissPair[] {
+	if (value == null) return [];
+	if (!Array.isArray(value)) throw new Error('Could not read the review.');
+	return value.map((item) => {
+		if (!item || typeof item !== 'object') throw new Error('Could not read the review.');
+		const row = item as { manualId?: unknown; syncedId?: unknown };
+		return { manualId: Number(row.manualId), syncedId: Number(row.syncedId) };
+	});
 }
 
 export function load({ locals, params }) {
@@ -60,19 +70,6 @@ export const actions = {
 		return { ok: true, source: 'tick' as const };
 	},
 
-	'keep-both': async ({ request, locals, params }) => {
-		const accountId = accountIdOf(params);
-		const form = await request.formData();
-		const manualId = parseInt(String(form.get('manual_id') ?? ''), 10);
-		const syncedId = parseInt(String(form.get('synced_id') ?? ''), 10);
-		try {
-			dismissDuplicate(locals.user!.id, accountId, manualId, syncedId);
-		} catch (e) {
-			return { error: message(e, 'Could not keep both.'), source: 'duplicate' as const };
-		}
-		return { ok: true, source: 'duplicate' as const };
-	},
-
 	unlock: async ({ request, locals }) => {
 		const form = await request.formData();
 		const id = parseInt(String(form.get('id') ?? ''), 10);
@@ -109,7 +106,8 @@ export const actions = {
 							}
 						: null,
 				addUnimportedIds: Array.isArray(body.addUnimportedIds) ? body.addUnimportedIds.map(Number) : [],
-				deleteIds: Array.isArray(body.deleteIds) ? body.deleteIds.map(Number) : []
+				deleteIds: Array.isArray(body.deleteIds) ? body.deleteIds.map(Number) : [],
+				dismissPairs: dismissPairsOf(body.dismissPairs)
 			});
 		} catch (e) {
 			return { error: message(e, 'Could not finish reconcile.'), source: 'finish' as const };

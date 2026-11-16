@@ -693,7 +693,7 @@
 	<input name="plan" value={planJson} />
 </form>
 
-<Dialog bind:open={adjustOpen} title="Add balance adjustment" description="Adds one transaction to {data.account.name} so it matches the bank. Nothing else changes, and nothing is written until you finish.">
+<Dialog class="reconcile-dialog" bind:open={adjustOpen} title="Add balance adjustment" description="Adds one transaction to {data.account.name} so it matches the bank. Nothing else changes, and nothing is written until you finish.">
 	<div class="flex min-w-0 flex-col gap-4">
 		<Field class="min-w-0" label="Amount">
 			<Input class="min-w-0" type="text" inputmode="decimal" bind:value={adjustAmount} autocomplete="off" />
@@ -717,6 +717,7 @@
 </Dialog>
 
 <Dialog
+	class="reconcile-dialog"
 	bind:open={() => duplicate != null, (open) => { if (!open) { duplicate = null; duplicateSynced = null; } }}
 	title="Possible duplicate"
 	description="Same merchant, amount, and day. The bank shows only one."
@@ -751,6 +752,7 @@
 </Dialog>
 
 <Dialog
+	class="reconcile-dialog"
 	bind:open={() => missingLine != null, (open) => { if (!open) missingLine = null; }}
 	title="Add transaction"
 	description="Adds the bank line to {data.account.name} when you finish. Nothing is written yet."
@@ -769,7 +771,7 @@
 	{/snippet}
 </Dialog>
 
-<Dialog bind:open={finishOpen} title="Finish reconcile" description="{data.account.name} matches the bank through {through ? shortDate(through) : 'this date'}.">
+<Dialog class="reconcile-dialog" bind:open={finishOpen} title="Finish reconcile" description="{data.account.name} matches the bank through {through ? shortDate(through) : 'this date'}.">
 	<dl class="min-w-0 space-y-1 text-sm">
 		<div class="flex min-w-0 justify-between gap-3"><dt class="min-w-0 text-muted-foreground">Bank balance</dt><dd class="shrink-0 tabular-nums">{formatMoney(parseAmountToCents(bankText) ?? 0)}</dd></div>
 		<div class="flex min-w-0 justify-between gap-3"><dt class="min-w-0 text-muted-foreground">Cleared in Galene</dt><dd class="shrink-0 tabular-nums">{formatMoney(view.previewClearedCents)}</dd></div>
@@ -792,6 +794,7 @@
 </Dialog>
 
 <Dialog
+	class="reconcile-dialog"
 	bind:open={() => unlockRow != null, (open) => { if (!open) unlockRow = null; }}
 	title="Unlock this transaction?"
 	description="It was reconciled and is locked against accidental edits. Unlocking does not change the amount."
@@ -824,15 +827,24 @@
 	}
 	/*
 	 * Text and date fields use a large min-content width. As grid/flex items
-	 * that minimum widens the card, the list, and the page. Pin every field
-	 * on this screen — including portaled dialogs — to its column.
+	 * that minimum widens the card, the list, and the page. Pin fields on this
+	 * screen to their column. Dialogs portal outside .reconcile-page, so they
+	 * opt in with class="reconcile-dialog" on Dialog. The ancestor class is
+	 * required: a bare :global(input) stays in the document after navigation
+	 * and would restyle fields on other pages.
 	 */
-	:global(.reconcile-page input:not([type='checkbox'], [type='radio'], [type='hidden'])),
-	:global(.dialog-content input:not([type='checkbox'], [type='radio'], [type='hidden'])) {
+	.reconcile-page :global(input:not([type='checkbox'], [type='radio'], [type='hidden'])) {
 		min-width: 0;
 		max-width: 100%;
 	}
-	:global(input[type='date']::-webkit-datetime-edit) {
+	:global(.reconcile-dialog input:not([type='checkbox'], [type='radio'], [type='hidden'])) {
+		min-width: 0;
+		max-width: 100%;
+	}
+	.reconcile-page :global(input[type='date']::-webkit-datetime-edit) {
+		min-width: 0;
+	}
+	:global(.reconcile-dialog input[type='date']::-webkit-datetime-edit) {
 		min-width: 0;
 	}
 </style>

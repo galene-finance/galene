@@ -27,7 +27,7 @@ const actionDialogs = [
 
 describe('Dialog scroll structure', () => {
 	test('body is the only scroller and height uses dvh with a vh fallback', () => {
-		expect(dialogSrc).toContain('class="dialog-body min-h-0 flex-1 overflow-y-auto overscroll-contain');
+		expect(dialogSrc).toContain('class="dialog-body min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain');
 		expect(appCss).toContain('-webkit-overflow-scrolling: touch');
 		expect(appCss).toContain('max-height: calc(100vh - 2rem)');
 		expect(appCss).toContain('max-height: calc(100dvh - 2rem');

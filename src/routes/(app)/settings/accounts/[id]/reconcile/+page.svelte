@@ -241,13 +241,13 @@
 
 <Title title="Reconcile {data.account.name}" />
 
-<div class="settings-stack mx-auto max-w-6xl pb-24 lg:pb-0">
+<div class="reconcile-page settings-stack mx-auto w-full min-w-0 max-w-6xl">
 	<a href="/settings/accounts" class="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
 		← Accounts
 	</a>
-	<div class="flex flex-wrap items-end justify-between gap-3">
-		<div>
-			<h1 class="text-2xl font-semibold tracking-tight">Reconcile {data.account.name}</h1>
+	<div class="flex min-w-0 flex-wrap items-end justify-between gap-3">
+		<div class="min-w-0">
+			<h1 class="break-words text-2xl font-semibold tracking-tight">Reconcile {data.account.name}</h1>
 			<p class="mt-1 text-sm text-muted-foreground">
 				Tick what the bank shows. Nothing is written until you confirm.
 			</p>
@@ -263,12 +263,13 @@
 		<p class="text-sm text-destructive" role="alert">{form.error}</p>
 	{/if}
 
-	<div class="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-		<div class="flex flex-col gap-4">
-			<section class="rounded-lg border border-border bg-surface p-4">
-				<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
-					<Field label="Bank balance">
+	<div class="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+		<div class="flex min-w-0 flex-col gap-4">
+			<section class="min-w-0 rounded-lg border border-border bg-surface p-4">
+				<div class="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,auto)] sm:items-end">
+					<Field class="min-w-0" label="Bank balance">
 						<Input
+							class="min-w-0"
 							type="text"
 							inputmode="decimal"
 							bind:value={bankText}
@@ -277,15 +278,19 @@
 							aria-describedby="bank-help"
 						/>
 					</Field>
-					<Field label="Through">
-						<Input type="date" bind:value={through} disabled={readonly} />
+					<Field class="min-w-0" label="Through">
+						<Input class="min-w-0" type="date" bind:value={through} disabled={readonly} />
 					</Field>
-					<div class="flex flex-col gap-1">
+					<div class="flex min-w-0 flex-col gap-1">
 						<span class="text-sm font-medium text-foreground">Show</span>
-						<div class="flex h-9 overflow-hidden rounded-md border border-border" role="group" aria-label="Which rows to show">
+						<div
+							class="flex h-9 w-full min-w-0 overflow-hidden rounded-md border border-border sm:w-auto"
+							role="group"
+							aria-label="Which rows to show"
+						>
 							<button
 								type="button"
-								class="px-3 text-sm {showAll ? 'text-muted-foreground' : 'bg-primary/15 font-medium text-primary'}"
+								class="min-w-0 flex-1 truncate px-3 text-sm sm:flex-initial {showAll ? 'text-muted-foreground' : 'bg-primary/15 font-medium text-primary'}"
 								aria-pressed={!showAll}
 								onclick={() => (showAll = false)}
 							>
@@ -293,7 +298,7 @@
 							</button>
 							<button
 								type="button"
-								class="border-l border-border px-3 text-sm {showAll ? 'bg-primary/15 font-medium text-primary' : 'text-muted-foreground'}"
+								class="shrink-0 border-l border-border px-3 text-sm {showAll ? 'bg-primary/15 font-medium text-primary' : 'text-muted-foreground'}"
 								aria-pressed={showAll}
 								onclick={() => (showAll = true)}
 							>
@@ -305,13 +310,13 @@
 				<p id="bank-help" class="mt-2 text-xs text-muted-foreground">{bankHelp()}</p>
 			</section>
 
-			<section class="overflow-hidden rounded-lg border border-border bg-surface">
-				<div class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-					<p class="text-sm text-muted-foreground">
+			<section class="min-w-0 overflow-hidden rounded-lg border border-border bg-surface">
+				<div class="flex min-w-0 flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+					<p class="min-w-0 text-sm text-muted-foreground">
 						{view.toCheck} to check{#if view.reconciledShown} · {view.reconciledShown} reconciled shown{/if}
 					</p>
 					{#if !readonly}
-						<Button type="button" variant="secondary" size="sm" onclick={tickAll} disabled={!through}>
+						<Button type="button" variant="secondary" size="sm" class="w-full min-w-0 sm:w-auto" onclick={tickAll} disabled={!through}>
 							Tick all through {through ? shortDate(through) : '…'}
 						</Button>
 					{/if}
@@ -386,10 +391,10 @@
 					</table>
 				</div>
 
-				<ul class="md:hidden">
+				<ul class="min-w-0 md:hidden">
 					{#each view.visibleRows as row (row.id)}
-						<li class="border-b border-border last:border-0">
-							<div class="flex min-h-11 items-start gap-3 px-3 py-3 {row.reconciledAt ? 'text-muted-foreground' : ''}">
+						<li class="min-w-0 border-b border-border last:border-0">
+							<div class="flex min-h-11 min-w-0 items-start gap-3 px-3 py-3 {row.reconciledAt ? 'text-muted-foreground' : ''}">
 								<div class="pt-0.5">
 									<Checkbox
 										checked={row.cleared}
@@ -404,13 +409,13 @@
 									disabled={readonly || !!row.reconciledAt}
 									onclick={() => toggle(row, !row.cleared)}
 								>
-									<div class="flex items-baseline justify-between gap-2">
-										<span class="truncate font-medium">{row.merchant ?? '—'}</span>
+									<div class="flex min-w-0 items-baseline justify-between gap-2">
+										<span class="min-w-0 flex-1 truncate font-medium">{row.merchant ?? '—'}</span>
 										<span class="shrink-0 font-medium tabular-nums {row.amountCents > 0 && !row.reconciledAt ? 'text-success' : ''}">
 											{formatMoney(row.amountCents)}
 										</span>
 									</div>
-									<span class="mt-0.5 block text-xs text-muted-foreground">
+									<span class="mt-0.5 block min-w-0 truncate text-xs text-muted-foreground">
 										{shortDate(row.date)}{#if row.categoryName} · {row.categoryName}{/if}
 									</span>
 									{#if hintFor(row)}
@@ -442,9 +447,9 @@
 						{#if showEarlier}
 							<ul class="mt-2 space-y-1 text-xs">
 								{#each view.collapsedRows as row (row.id)}
-									<li class="flex justify-between gap-3">
-										<span class="truncate">{shortDate(row.date)} · {row.merchant ?? '—'}</span>
-										<span class="tabular-nums">{formatMoney(row.amountCents)}</span>
+									<li class="flex min-w-0 justify-between gap-3">
+										<span class="min-w-0 flex-1 truncate">{shortDate(row.date)} · {row.merchant ?? '—'}</span>
+										<span class="shrink-0 tabular-nums">{formatMoney(row.amountCents)}</span>
 									</li>
 								{/each}
 							</ul>
@@ -454,8 +459,8 @@
 			</section>
 		</div>
 
-		<aside class="flex flex-col gap-4">
-			<section class="rounded-lg border border-border bg-surface" aria-labelledby="left-heading">
+		<aside class="flex min-w-0 flex-col gap-4">
+			<section class="min-w-0 rounded-lg border border-border bg-surface" aria-labelledby="left-heading">
 				<div class="border-b border-border px-4 py-3">
 					<h2 id="left-heading" class="text-sm font-medium text-muted-foreground">Left to explain</h2>
 					<p class="mt-1 text-3xl font-semibold tabular-nums" aria-live="polite">
@@ -478,57 +483,57 @@
 						{/if}
 					</p>
 				</div>
-				<dl class="space-y-1.5 px-4 py-3 text-sm">
-					<div class="flex justify-between gap-3">
-						<dt class="text-muted-foreground">Ledger (all)</dt>
-						<dd class="tabular-nums">{formatMoney(view.ledgerCents)}</dd>
+				<dl class="min-w-0 space-y-1.5 px-4 py-3 text-sm">
+					<div class="flex min-w-0 justify-between gap-3">
+						<dt class="min-w-0 text-muted-foreground">Ledger (all)</dt>
+						<dd class="shrink-0 tabular-nums">{formatMoney(view.ledgerCents)}</dd>
 					</div>
 					{#if view.afterThroughCents !== 0}
-						<div class="flex justify-between gap-3">
-							<dt class="text-muted-foreground">After {through ? shortDate(through) : 'statement'}</dt>
-							<dd class="tabular-nums">{formatMoney(view.afterThroughCents)}</dd>
+						<div class="flex min-w-0 justify-between gap-3">
+							<dt class="min-w-0 text-muted-foreground">After {through ? shortDate(through) : 'statement'}</dt>
+							<dd class="shrink-0 tabular-nums">{formatMoney(view.afterThroughCents)}</dd>
 						</div>
 					{/if}
-					<div class="flex justify-between gap-3">
-						<dt class="text-muted-foreground">Not cleared ({view.notClearedCount})</dt>
-						<dd class="tabular-nums">{formatMoney(view.notClearedEffectCents)}</dd>
+					<div class="flex min-w-0 justify-between gap-3">
+						<dt class="min-w-0 text-muted-foreground">Not cleared ({view.notClearedCount})</dt>
+						<dd class="shrink-0 tabular-nums">{formatMoney(view.notClearedEffectCents)}</dd>
 					</div>
 					{#if view.stagedCents !== 0}
-						<div class="flex justify-between gap-3">
-							<dt class="text-muted-foreground">On finish</dt>
-							<dd class="tabular-nums">{formatMoney(view.stagedCents)}</dd>
+						<div class="flex min-w-0 justify-between gap-3">
+							<dt class="min-w-0 text-muted-foreground">On finish</dt>
+							<dd class="shrink-0 tabular-nums">{formatMoney(view.stagedCents)}</dd>
 						</div>
 					{/if}
-					<div class="flex justify-between gap-3">
-						<dt class="text-muted-foreground">Cleared in Galene</dt>
-						<dd class="tabular-nums">{formatMoney(view.previewClearedCents)}</dd>
+					<div class="flex min-w-0 justify-between gap-3">
+						<dt class="min-w-0 text-muted-foreground">Cleared in Galene</dt>
+						<dd class="shrink-0 tabular-nums">{formatMoney(view.previewClearedCents)}</dd>
 					</div>
-					<div class="flex justify-between gap-3 border-t border-border pt-1.5">
-						<dt class="text-muted-foreground">Bank{through ? `, ${shortDate(through)}` : ''}</dt>
-						<dd class="tabular-nums">{view.previewLeftCents == null ? '—' : formatMoney(parseAmountToCents(bankText) ?? 0)}</dd>
+					<div class="flex min-w-0 justify-between gap-3 border-t border-border pt-1.5">
+						<dt class="min-w-0 text-muted-foreground">Bank{through ? `, ${shortDate(through)}` : ''}</dt>
+						<dd class="shrink-0 tabular-nums">{view.previewLeftCents == null ? '—' : formatMoney(parseAmountToCents(bankText) ?? 0)}</dd>
 					</div>
-					<div class="flex justify-between gap-3 font-medium">
-						<dt>Left to explain</dt>
-						<dd class="tabular-nums">{view.previewLeftCents == null ? '—' : formatMoney(view.previewLeftCents)}</dd>
+					<div class="flex min-w-0 justify-between gap-3 font-medium">
+						<dt class="min-w-0">Left to explain</dt>
+						<dd class="shrink-0 tabular-nums">{view.previewLeftCents == null ? '—' : formatMoney(view.previewLeftCents)}</dd>
 					</div>
 				</dl>
 			</section>
 
-			<section class="rounded-lg border border-border bg-surface">
+			<section class="min-w-0 rounded-lg border border-border bg-surface">
 				<div class="border-b border-border px-4 py-3">
 					<h2 class="font-medium">Why they differ</h2>
 					<p class="text-sm text-muted-foreground">Galene’s best guesses. Nothing changes until you confirm.</p>
 				</div>
 				<ul class="divide-y divide-border">
 					{#each view.missingShown as line (line.id)}
-						<li class="flex gap-3 px-4 py-3">
+						<li class="flex min-w-0 gap-3 px-4 py-3">
 							<span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary" aria-hidden="true">
 								<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18M12 3l9 5H3z" /></svg>
 							</span>
-							<div class="min-w-0 flex-1">
-								<div class="flex justify-between gap-2 text-sm font-medium">
+							<div class="min-w-0 flex-1 break-words">
+								<div class="flex min-w-0 justify-between gap-2 text-sm font-medium">
 									<span>Missing from Galene</span>
-									<span class="tabular-nums">{formatMoney(line.amountCents)}</span>
+									<span class="shrink-0 tabular-nums">{formatMoney(line.amountCents)}</span>
 								</div>
 								<p class="mt-0.5 text-xs text-muted-foreground">
 									The bank shows <span class="font-medium text-foreground">{line.merchant ?? 'a transaction'} {formatMoney(line.amountCents)}</span>
@@ -548,14 +553,14 @@
 						</li>
 					{/each}
 					{#each view.duplicates as pair (`${pair.manual.id}-${pair.synced.id}`)}
-						<li class="flex gap-3 px-4 py-3">
+						<li class="flex min-w-0 gap-3 px-4 py-3">
 							<span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground" aria-hidden="true">
 								<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M4 16V6a2 2 0 0 1 2-2h10" /></svg>
 							</span>
-							<div class="min-w-0 flex-1">
-								<div class="flex justify-between gap-2 text-sm font-medium">
+							<div class="min-w-0 flex-1 break-words">
+								<div class="flex min-w-0 justify-between gap-2 text-sm font-medium">
 									<span>Possible duplicate</span>
-									<span class="tabular-nums">{formatMoney(pair.manual.amountCents)}</span>
+									<span class="shrink-0 tabular-nums">{formatMoney(pair.manual.amountCents)}</span>
 								</div>
 								<p class="mt-0.5 text-xs text-muted-foreground">
 									Two {pair.manual.merchant} {formatMoney(pair.manual.amountCents)} on {shortDate(pair.manual.date)}. The bank shows one.
@@ -582,14 +587,14 @@
 						</li>
 					{/each}
 					{#each view.notAtBank as row (row.id)}
-						<li class="flex gap-3 px-4 py-3">
+						<li class="flex min-w-0 gap-3 px-4 py-3">
 							<span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground" aria-hidden="true">
 								<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
 							</span>
-							<div class="min-w-0 flex-1">
-								<div class="flex justify-between gap-2 text-sm font-medium">
+							<div class="min-w-0 flex-1 break-words">
+								<div class="flex min-w-0 justify-between gap-2 text-sm font-medium">
 									<span>Not at the bank yet</span>
-									<span class="tabular-nums">{formatMoney(row.amountCents)}</span>
+									<span class="shrink-0 tabular-nums">{formatMoney(row.amountCents)}</span>
 								</div>
 								<p class="mt-0.5 text-xs text-muted-foreground">
 									{row.merchant ?? 'This item'} ({shortDate(row.date)}) hasn’t cleared. Usually fine to leave; it clears on its own.
@@ -598,7 +603,7 @@
 						</li>
 					{/each}
 					{#if view.opening}
-						<li class="flex gap-3 px-4 py-3">
+						<li class="flex min-w-0 gap-3 px-4 py-3">
 							<span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md {view.opening.ok ? 'bg-muted text-success' : 'bg-primary/10 text-primary'}" aria-hidden="true">
 								{#if view.opening.ok}
 									<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7" /></svg>
@@ -606,7 +611,7 @@
 									<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8v.01" /></svg>
 								{/if}
 							</span>
-							<div class="min-w-0 flex-1">
+							<div class="min-w-0 flex-1 break-words">
 								<div class="text-sm font-medium">Opening balance</div>
 								{#if view.opening.ok}
 									<p class="mt-0.5 text-xs text-muted-foreground">Matches the bank on {shortDate(view.opening.asOf)}. Nothing to do.</p>
@@ -636,7 +641,7 @@
 				{/if}
 			</section>
 
-			<section class="hidden rounded-lg border border-border bg-surface p-4 lg:block">
+			<section class="hidden min-w-0 rounded-lg border border-border bg-surface p-4 lg:block">
 				<Button type="button" class="w-full" disabled={!view.canFinish || readonly} onclick={openFinish}>
 					Finish reconcile
 				</Button>
@@ -649,13 +654,13 @@
 </div>
 
 {#if !readonly}
-	<div class="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 py-3 backdrop-blur lg:hidden">
-		<div class="mx-auto flex max-w-6xl items-center justify-between gap-3">
-			<div>
+	<div class="reconcile-footer fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 backdrop-blur lg:hidden">
+		<div class="mx-auto flex min-w-0 max-w-6xl items-center justify-between gap-3">
+			<div class="min-w-0">
 				<p class="text-xs text-muted-foreground">Left to explain</p>
-				<p class="text-lg font-semibold tabular-nums">{view.previewLeftCents == null ? '—' : formatMoney(view.previewLeftCents)}</p>
+				<p class="truncate text-lg font-semibold tabular-nums">{view.previewLeftCents == null ? '—' : formatMoney(view.previewLeftCents)}</p>
 			</div>
-			<Button type="button" disabled={!view.canFinish} onclick={openFinish}>Finish</Button>
+			<Button type="button" class="shrink-0" disabled={!view.canFinish} onclick={openFinish}>Finish</Button>
 		</div>
 	</div>
 {/if}
@@ -689,18 +694,18 @@
 </form>
 
 <Dialog bind:open={adjustOpen} title="Add balance adjustment" description="Adds one transaction to {data.account.name} so it matches the bank. Nothing else changes, and nothing is written until you finish.">
-	<div class="flex flex-col gap-4">
-		<Field label="Amount">
-			<Input type="text" inputmode="decimal" bind:value={adjustAmount} autocomplete="off" />
+	<div class="flex min-w-0 flex-col gap-4">
+		<Field class="min-w-0" label="Amount">
+			<Input class="min-w-0" type="text" inputmode="decimal" bind:value={adjustAmount} autocomplete="off" />
 		</Field>
 		<p class="-mt-2 text-xs text-muted-foreground">Prefilled with what’s left to explain. Positive = money in.</p>
-		<div class="grid gap-3 sm:grid-cols-2">
-			<Field label="Date"><Input type="date" bind:value={adjustDate} /></Field>
-			<Field label="Category">
-				<Input type="text" value="Balance adjustment" disabled />
+		<div class="grid min-w-0 gap-3 sm:grid-cols-2">
+			<Field class="min-w-0" label="Date"><Input class="min-w-0" type="date" bind:value={adjustDate} /></Field>
+			<Field class="min-w-0" label="Category">
+				<Input class="min-w-0" type="text" value="Balance adjustment" disabled />
 			</Field>
 		</div>
-		<Field label="Note"><Input type="text" bind:value={adjustNote} /></Field>
+		<Field class="min-w-0" label="Note"><Input class="min-w-0" type="text" bind:value={adjustNote} /></Field>
 		<p class="text-xs text-muted-foreground">Shows in Transactions like any other entry. You can edit or delete it later, after unlocking it.</p>
 	</div>
 	{#snippet footer()}
@@ -720,17 +725,17 @@
 		<div class="flex flex-col gap-3 text-sm">
 			{#if duplicateSynced}
 				<div class="rounded-md border border-border px-3 py-2">
-					<div class="flex justify-between gap-2 font-medium">
-						<span>{duplicateSynced.merchant}</span>
-						<span class="text-success">{formatMoney(duplicateSynced.amountCents)}</span>
+					<div class="flex min-w-0 justify-between gap-2 font-medium">
+						<span class="min-w-0 truncate">{duplicateSynced.merchant}</span>
+						<span class="shrink-0 text-success">{formatMoney(duplicateSynced.amountCents)}</span>
 					</div>
 					<p class="text-xs text-muted-foreground">{shortDate(duplicateSynced.date)} · synced · Cleared</p>
 				</div>
 			{/if}
-			<div class="rounded-md border border-primary/40 bg-primary/10 px-3 py-2">
-				<div class="flex justify-between gap-2 font-medium">
-					<span>{duplicate.merchant}</span>
-					<span>{formatMoney(duplicate.amountCents)}</span>
+			<div class="min-w-0 rounded-md border border-primary/40 bg-primary/10 px-3 py-2">
+				<div class="flex min-w-0 justify-between gap-2 font-medium">
+					<span class="min-w-0 truncate">{duplicate.merchant}</span>
+					<span class="shrink-0">{formatMoney(duplicate.amountCents)}</span>
 				</div>
 				<p class="text-xs text-muted-foreground">{shortDate(duplicate.date)} · added by hand · Not cleared</p>
 			</div>
@@ -751,7 +756,7 @@
 	description="Adds the bank line to {data.account.name} when you finish. Nothing is written yet."
 >
 	{#if missingLine}
-		<p class="text-sm">
+		<p class="break-words text-sm">
 			<span class="font-medium">{missingLine.merchant ?? 'Bank line'}</span>
 			{formatMoney(missingLine.amountCents)} on {shortDate(missingLine.date)}.
 		</p>
@@ -765,16 +770,16 @@
 </Dialog>
 
 <Dialog bind:open={finishOpen} title="Finish reconcile" description="{data.account.name} matches the bank through {through ? shortDate(through) : 'this date'}.">
-	<dl class="space-y-1 text-sm">
-		<div class="flex justify-between gap-3"><dt class="text-muted-foreground">Bank balance</dt><dd class="tabular-nums">{formatMoney(parseAmountToCents(bankText) ?? 0)}</dd></div>
-		<div class="flex justify-between gap-3"><dt class="text-muted-foreground">Cleared in Galene</dt><dd class="tabular-nums">{formatMoney(view.previewClearedCents)}</dd></div>
-		<div class="flex justify-between gap-3 border-t border-border pt-1 font-medium"><dt>Difference</dt><dd class="tabular-nums">{formatMoney(view.previewLeftCents ?? 0)}</dd></div>
+	<dl class="min-w-0 space-y-1 text-sm">
+		<div class="flex min-w-0 justify-between gap-3"><dt class="min-w-0 text-muted-foreground">Bank balance</dt><dd class="shrink-0 tabular-nums">{formatMoney(parseAmountToCents(bankText) ?? 0)}</dd></div>
+		<div class="flex min-w-0 justify-between gap-3"><dt class="min-w-0 text-muted-foreground">Cleared in Galene</dt><dd class="shrink-0 tabular-nums">{formatMoney(view.previewClearedCents)}</dd></div>
+		<div class="flex min-w-0 justify-between gap-3 border-t border-border pt-1 font-medium"><dt class="min-w-0">Difference</dt><dd class="shrink-0 tabular-nums">{formatMoney(view.previewLeftCents ?? 0)}</dd></div>
 	</dl>
-	<ul class="mt-4 space-y-3">
+	<ul class="mt-4 min-w-0 space-y-3">
 		{#each reviewItems as item, i (i)}
-			<li>
-				<p class="text-sm font-medium">{item.title}</p>
-				<p class="text-xs text-muted-foreground">{item.detail}</p>
+			<li class="min-w-0">
+				<p class="break-words text-sm font-medium">{item.title}</p>
+				<p class="break-words text-xs text-muted-foreground">{item.detail}</p>
 			</li>
 		{/each}
 	</ul>
@@ -792,7 +797,7 @@
 	description="It was reconciled and is locked against accidental edits. Unlocking does not change the amount."
 >
 	{#if unlockRow}
-		<p class="text-sm">{unlockRow.merchant ?? 'This transaction'} on {shortDate(unlockRow.date)} can be edited or deleted after you unlock it.</p>
+		<p class="break-words text-sm">{unlockRow.merchant ?? 'This transaction'} on {shortDate(unlockRow.date)} can be edited or deleted after you unlock it.</p>
 	{/if}
 	{#snippet footer()}
 		<div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -801,3 +806,33 @@
 		</div>
 	{/snippet}
 </Dialog>
+
+<style>
+	/* The sticky Finish bar covers the bottom of the scrollport. Pad the page
+	   by the bar, and grow both when the iOS home indicator is present. */
+	.reconcile-page {
+		padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+	}
+	@media (min-width: 64rem) {
+		.reconcile-page {
+			padding-bottom: 0;
+		}
+	}
+	.reconcile-footer {
+		padding-top: 0.75rem;
+		padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+	}
+	/*
+	 * Text and date fields use a large min-content width. As grid/flex items
+	 * that minimum widens the card, the list, and the page. Pin every field
+	 * on this screen — including portaled dialogs — to its column.
+	 */
+	:global(.reconcile-page input:not([type='checkbox'], [type='radio'], [type='hidden'])),
+	:global(.dialog-content input:not([type='checkbox'], [type='radio'], [type='hidden'])) {
+		min-width: 0;
+		max-width: 100%;
+	}
+	:global(input[type='date']::-webkit-datetime-edit) {
+		min-width: 0;
+	}
+</style>

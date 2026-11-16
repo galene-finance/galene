@@ -268,14 +268,15 @@
 	}
 </script>
 
-<Title title="Home" />
+<Title title="Overview" />
 
 <div class="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-4 2xl:max-w-7xl">
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<div>
-			<h1 class="text-2xl font-semibold tracking-tight">Home</h1>
+			<p class="finance-eyebrow mb-1">YOUR FINANCIAL PICTURE</p>
+			<h1 class="text-3xl font-semibold tracking-tight">Overview</h1>
 			<p class="text-sm text-muted-foreground">
-				Your dashboard. Turn on edit mode to add, move, resize, or filter widgets.
+				A clear view of what is recorded, what is owed, and what comes next.
 			</p>
 		</div>
 		{#if !viewer}

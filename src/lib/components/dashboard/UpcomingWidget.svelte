@@ -16,7 +16,7 @@
 
 {#if data.days.length === 0}
 	<p class="text-sm text-muted-foreground">
-		Nothing scheduled. Add an expectation on the
+		No scheduled expectations in this view. This does not mean no bills are due. Add known bills and income on the
 		<a href="/calendar" class="text-primary underline underline-offset-2">Calendar</a> page
 		{#if data.recurringSuggestionCount > 0}
 			or

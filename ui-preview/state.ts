@@ -1,0 +1,1 @@
+export const page={data:{branding:{name:'Galene'}},url:new URL('http://localhost/')};

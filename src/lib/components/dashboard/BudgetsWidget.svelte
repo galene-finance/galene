@@ -7,10 +7,7 @@
 </script>
 
 {#if data.items.length === 0}
-	<p class="text-sm text-muted-foreground">
-		No budgets match. Add one on the
-		<a href="/budget" class="text-primary underline underline-offset-2">Budget</a> page.
-	</p>
+	<div class="finance-empty"><strong>No matching budgets</strong><p>A budget makes the remaining room in each category visible. Review your filters or <a href="/budget">set up a budget</a>.</p></div>
 {:else}
 	<ul class="flex flex-col gap-3">
 		{#each data.items as b (b.id)}

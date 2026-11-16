@@ -4,17 +4,17 @@ import type { Theme, ThemeColors } from './types';
 export const DEFAULT_THEME_SLUG = 'light';
 
 const light: ThemeColors = {
-	background: '#f8fafc',
+	background: '#f3f6fa',
 	surface: '#ffffff',
 	surfaceHover: '#f1f5f9',
-	foreground: '#1e293b',
-	mutedForeground: '#64748b',
-	primary: '#0d9488',
+	foreground: '#172b43',
+	mutedForeground: '#52647a',
+	primary: '#086c70',
 	primaryForeground: '#ffffff',
-	success: '#16a34a',
-	destructive: '#dc2626',
+	success: '#167046',
+	destructive: '#b91c1c',
 	border: '#e2e8f0',
-	warning: '#f59e0b',
+	warning: '#946000',
 	input: '#cbd5e1',
 	radius: '0.5rem'
 };

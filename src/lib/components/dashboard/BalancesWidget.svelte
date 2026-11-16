@@ -1,60 +1,41 @@
 <script lang="ts">
-	import { formatMoney } from '$lib/utils';
-	import type { DashboardWidgetData } from '$lib/types';
-
-	type Data = Extract<DashboardWidgetData, { kind: 'balances' }>;
-	let { data }: { data: Data } = $props();
-
-	/** Format UTC DB datetime for a short local display. */
-	function formatBankAsOf(s: string | null): string {
-		if (!s) return '';
-		const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
-		if (Number.isNaN(d.getTime())) return s;
-		return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-	}
+ import { formatMoney } from '$lib/utils';
+ import { accountSection, bankTimestamp } from '$lib/financePresentation';
+ import type { DashboardWidgetData } from '$lib/types';
+ type Data = Extract<DashboardWidgetData, {kind:'balances'}>;
+ let { data }: {data: Data} = $props();
+ const sections = [{key:'cash',label:'Cash accounts'}, {key:'debts',label:'Cards & loans'}, {key:'other',label:'Investments & other'}] as const;
 </script>
 
 {#if data.items.length === 0}
-	<p class="text-sm text-muted-foreground">
-		No accounts match. Add one on the
-		<a href="/settings/accounts" class="text-primary underline underline-offset-2">Accounts</a> page.
-	</p>
+ <div class="finance-empty"><strong>No matching accounts</strong><p>Check your filters or review <a href="/settings/accounts">Accounts</a>.</p></div>
 {:else}
-	<ul class="flex min-w-0 flex-col gap-2.5">
-		{#each data.items as a (a.id)}
-			<li class="flex min-w-0 items-start gap-2.5">
-				<span class="mt-1.5 size-2.5 shrink-0 rounded-full" style="background: {a.color ?? 'transparent'}"></span>
-				<div class="min-w-0 flex-1">
-					<p class="truncate text-sm font-medium">{a.name}</p>
-					<p class="truncate text-xs capitalize text-muted-foreground">{a.type}</p>
-				</div>
-				<div class="min-w-0 max-w-[55%] shrink text-right">
-					<p
-						class="truncate text-sm font-medium {a.balanceCents < 0 ? 'text-destructive' : ''}"
-						title="Ledger {formatMoney(a.balanceCents)}"
-					>
-						<span class="mr-1 text-xs font-normal text-muted-foreground">Ledger</span>
-						{formatMoney(a.balanceCents)}
-					</p>
-					{#if a.bankCents != null}
-						<p
-							class="truncate text-xs {a.bankCents < 0 ? 'text-destructive' : 'text-muted-foreground'}"
-							title={a.bankAsOf
-								? `Bank ${formatMoney(a.bankCents)} as of ${formatBankAsOf(a.bankAsOf)}`
-								: `Bank ${formatMoney(a.bankCents)} from last sync`}
-						>
-							<span class="mr-1 font-normal text-muted-foreground">Bank</span>
-							{formatMoney(a.bankCents)}
-						</p>
-					{/if}
-				</div>
-			</li>
-		{/each}
-	</ul>
-	<div class="mt-3 flex min-w-0 items-center justify-between gap-2 border-t border-border pt-2.5 text-sm">
-		<span class="min-w-0 truncate text-muted-foreground">Total (ledger)</span>
-		<span class="min-w-0 truncate font-semibold {data.totalCents < 0 ? 'text-destructive' : ''}"
-			>{formatMoney(data.totalCents)}</span
-		>
-	</div>
+ <p class="finance-caption mb-4">Bank snapshots and ledger records are separate views. Neither is a spendable-cash estimate.</p>
+ {#each sections as section}
+  {@const accounts = data.items.filter(a => accountSection(a) === section.key)}
+  {#if accounts.length}
+   <section class="account-section" aria-label={section.label}>
+    <h4 class="finance-eyebrow">{section.label} <span class="account-count">{accounts.length}</span></h4>
+    {#each accounts as a (a.id)}
+     <div class="account-row">
+      <div class="account-name"><span class="account-dot" style:background={a.color ?? 'var(--primary)'}></span><span>{a.name}</span></div>
+      <dl class="account-values">
+       <div><dt>Bank snapshot</dt><dd>{a.bankCents == null ? 'Not supplied' : formatMoney(a.bankCents)}</dd></div>
+       <div><dt>Ledger</dt><dd>{formatMoney(a.balanceCents)}</dd></div>
+      </dl>
+      {#if a.bankCents != null}
+       <p class="finance-caption">{bankTimestamp(a.bankAsOf)}</p>
+       {#if a.bankCents !== a.balanceCents}
+        <p class="balance-warning"><span aria-hidden="true">!</span> Balances differ · {formatMoney(Math.abs(a.bankCents - a.balanceCents))} gap</p>
+       {/if}
+      {:else}
+       <p class="finance-caption">Ledger only · no bank comparison available</p>
+      {/if}
+      {#if section.key === 'debts'}<p class="finance-caption">Debt account · signed balances as recorded</p>{/if}
+     </div>
+    {/each}
+   </section>
+  {/if}
+ {/each}
+ <p class="finance-caption mt-4 border-t border-border pt-3">Grouped by account type and loan/mortgage names. Balances are not reconciled here; no combined cash or net-worth total is implied.</p>
 {/if}

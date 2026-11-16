@@ -40,7 +40,7 @@
 					{ href: '/advisor/export', label: 'Export' }
 				]
 			: [
-					{ href: '/', label: 'Home' },
+					{ href: '/', label: 'Overview' },
 					{ href: '/transactions', label: 'Transactions' },
 					{ href: '/budget', label: 'Budget' },
 					{ href: '/calendar', label: 'Calendar' },

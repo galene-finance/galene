@@ -1,29 +1,14 @@
 <script lang="ts">
-	import { formatMoney } from '$lib/utils';
-	import type { DashboardWidgetData } from '$lib/types';
-
-	type Data = Extract<DashboardWidgetData, { kind: 'month' }>;
-	let { data }: { data: Data } = $props();
+ import { formatMoney } from '$lib/utils';
+ import { comparisonWidth } from '$lib/financePresentation';
+ import type { DashboardWidgetData } from '$lib/types';
+ type Data = Extract<DashboardWidgetData, {kind:'month'}>;
+ let { data }: {data: Data} = $props();
+ const maximum = $derived(Math.max(data.incomeCents, data.expenseCents, 0));
 </script>
-
-<div class="flex min-w-0 items-baseline justify-between gap-2">
-	<div class="min-w-0 flex-1">
-		<p class="truncate text-xs text-muted-foreground">Income</p>
-		<p class="truncate text-lg font-semibold text-success">{formatMoney(data.incomeCents)}</p>
-	</div>
-	<div class="min-w-0 flex-1 text-right">
-		<p class="truncate text-xs text-muted-foreground">Expenses</p>
-		<p class="truncate text-lg font-semibold">{formatMoney(data.expenseCents)}</p>
-	</div>
+<div class="month-overview">
+ <div class="month-net"><div><p class="finance-eyebrow">{data.label} · recorded net</p><p class="finance-amount" class:text-destructive={data.netCents < 0}>{formatMoney(data.netCents)}</p></div><a href="/cashflow" class="finance-link">Cash flow ↗</a></div>
+ <div class="comparison-row"><div><span>Income</span><strong>{formatMoney(data.incomeCents)}</strong></div><div class="comparison-track" aria-hidden="true"><span style:width="{comparisonWidth(data.incomeCents,maximum)}%" style:background="var(--primary)"></span></div></div>
+ <div class="comparison-row"><div><span>Expenses</span><strong>{formatMoney(data.expenseCents)}</strong></div><div class="comparison-track" aria-hidden="true"><span style:width="{comparisonWidth(data.expenseCents,maximum)}%" style:background="var(--muted-foreground)"></span></div></div>
+ <p class="finance-caption">Income minus expenses, not available cash. {data.prevLabel}: {formatMoney(data.prevIncomeCents)} in / {formatMoney(data.prevExpenseCents)} out.</p>
 </div>
-
-<div class="mt-2 flex min-w-0 items-baseline justify-between gap-2 border-t border-border pt-2">
-	<p class="shrink-0 text-xs text-muted-foreground">Net</p>
-	<p class="min-w-0 truncate text-sm font-semibold {data.netCents < 0 ? 'text-destructive' : 'text-success'}">
-		{formatMoney(data.netCents)}
-	</p>
-</div>
-
-<p class="mt-2 truncate text-xs text-muted-foreground" title="Last month ({data.prevLabel}): {formatMoney(data.prevIncomeCents)} in, {formatMoney(data.prevExpenseCents)} out">
-	Last month ({data.prevLabel}): {formatMoney(data.prevIncomeCents)} in, {formatMoney(data.prevExpenseCents)} out
-</p>

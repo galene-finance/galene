@@ -5,21 +5,21 @@
  * which overrides these variables under html[data-theme='...'].
  */
 :root {
-	--background: #f8fafc;
+	--background: #f3f6fa;
 	--surface: #ffffff;
 	--surface-hover: #f1f5f9;
 	--muted: #f1f5f9;
 	--border: #e2e8f0;
 	--input: #cbd5e1;
-	--foreground: #1e293b;
-	--muted-foreground: #64748b;
-	--primary: #0d9488;
+	--foreground: #172b43;
+	--muted-foreground: #52647a;
+	--primary: #086c70;
 	--primary-foreground: #ffffff;
-	--success: #16a34a;
-	--destructive: #dc2626;
+	--success: #167046;
+	--destructive: #b91c1c;
 	--destructive-foreground: #ffffff;
-	--warning: #f59e0b;
-	--ring: #0d9488;
+	--warning: #946000;
+	--ring: #086c70;
 	--radius: 0.5rem;
 }
 
@@ -60,6 +60,45 @@ body {
 	overflow-x: hidden;
 	overflow-x: clip;
 	@apply bg-background text-foreground antialiased;
+}
+
+/* Read-only finance presentation. All colors inherit the chosen native theme. */
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.finance-card { border-color: var(--border); border-radius: 16px; box-shadow: 0 3px 16px #0f172a05; }
+.finance-card-heading { padding: 10px 16px; min-height: 49px; }
+.finance-card-heading h3 { font-weight: 650; letter-spacing: -.01em; }
+.finance-card-heading button { min-width: 32px; min-height: 32px; }
+.finance-card-body { padding: 16px; scrollbar-width: thin; }
+.finance-eyebrow { font-size: 11px; line-height: 1.5; font-weight: 650; text-transform: uppercase; letter-spacing: .09em; color: var(--muted-foreground); }
+.finance-caption { font-size: 12px; line-height: 1.55; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.finance-amount { font-size: clamp(1.35rem, 2.3vw, 1.85rem); line-height: 1.25; font-weight: 650; letter-spacing: -.035em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.finance-link { font-size: 12px; font-weight: 600; color: var(--primary); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.month-overview { display: grid; gap: 12px; }
+.month-net, .trend-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.comparison-row > div:first-child, .trend-bars li > div:first-child { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; line-height: 1.5; }
+.comparison-row strong, .trend-bars strong, .account-values dd { font-variant-numeric: tabular-nums; font-weight: 600; }
+.comparison-track { height: 7px; background: var(--muted); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+.comparison-track span { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
+.trend-bars { display: grid; gap: 13px; margin-top: 20px; }
+.account-section + .account-section { margin-top: 22px; }
+.account-count { margin-left: 5px; letter-spacing: 0; }
+.account-row { border-bottom: 1px solid var(--border); padding: 12px 0; }
+.account-name { display: flex; align-items: baseline; gap: 8px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.account-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.account-values { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 9px 0 6px; }
+.account-values dt { font-size: 11px; color: var(--muted-foreground); }
+.account-values dd { font-size: 14px; overflow-wrap: anywhere; }
+.balance-warning { display: flex; gap: 6px; font-size: 12px; line-height: 1.5; color: var(--warning); margin-top: 6px; }
+.balance-warning > span { font-weight: 800; }
+.finance-empty { padding: 12px 0; max-width: 38rem; }
+.finance-empty strong { display: block; font-size: 14px; margin-bottom: 6px; }
+.finance-empty p { font-size: 13px; color: var(--muted-foreground); line-height: 1.6; }
+.finance-empty a { color: var(--primary); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.finance-card :focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+@media (max-width: 48rem) {
+ .finance-card-body { overflow-y: visible; flex: none; }
+ .finance-card-heading button { min-height: 40px; min-width: 40px; }
+ .finance-amount { font-size: 1.75rem; }
 }
 
 /*

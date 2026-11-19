@@ -354,7 +354,7 @@ CREATE TABLE plaid_items (
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		expect(migrationCount()).toBe(36);
+		expect(migrationCount()).toBe(37);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -398,7 +398,7 @@ CREATE TABLE plaid_items (
 			db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_paid'`).get()
 		).toEqual({ o: 1 });
 		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
-		expect(migrationCount()).toBe(36);
+		expect(migrationCount()).toBe(37);
 		expect(counts()).toEqual(before);
 		expect(db.query('SELECT id, name FROM scheduled').get()).toEqual({ id: 7, name: 'Rent' });
 		expect(db.query('SELECT occurrence_date, display_date FROM scheduled_exceptions').get()).toEqual({
@@ -417,7 +417,7 @@ CREATE TABLE plaid_items (
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		expect(migrationCount()).toBe(36);
+		expect(migrationCount()).toBe(37);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -458,7 +458,7 @@ CREATE TABLE plaid_items (
 		expect(
 			db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_match_dismissed'`).get()
 		).toEqual({ o: 1 });
-		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(36);
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(37);
 		expect(counts()).toEqual(before);
 
 		db.query(
@@ -540,7 +540,7 @@ describe('migrate stored secrets (ADO-60)', () => {
 
 			migrate(db);
 
-			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(36);
+			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(37);
 			expect(plaintextSecretLocations(db)).toEqual([]);
 			const creds = (db.query('SELECT credentials FROM connections WHERE id = 7').get() as { credentials: string })
 				.credentials;
@@ -596,7 +596,7 @@ describe('migrate stored secrets (ADO-60)', () => {
 			expect((db.query('SELECT credentials FROM connections WHERE id = 7').get() as { credentials: string }).credentials).toBe(
 				plaintext
 			);
-			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(36);
+			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(37);
 		} finally {
 			db.close();
 			if (previous === undefined) delete process.env.GALENE_SECRET_KEY;
@@ -613,7 +613,8 @@ describe('reconcile migration', () => {
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
 		const index = migrationIndexContaining('reconcile sessions (ADO-8)');
-		expect(migrationCount()).toBe(index + 1);
+		expect(migrationIndexContaining('transactions.provider_merchant (ADO-76)')).toBe(index + 1);
+		expect(migrationCount()).toBe(index + 2);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -694,6 +695,73 @@ describe('reconcile migration', () => {
 			{ merchant: 'Pending', cleared: 0 },
 			{ merchant: 'Manual', cleared: 0 }
 		]);
+		db.close();
+	});
+});
+
+describe('provider merchant migration (ADO-76)', () => {
+	test('adds the bank payee column without copying merchant or dropping linked rows', () => {
+		const db = new Database(':memory:');
+		db.exec('PRAGMA foreign_keys = ON');
+		migrate(db);
+		const index = migrationIndexContaining('transactions.provider_merchant (ADO-76)');
+		expect(migrationCount()).toBe(index + 1);
+
+		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
+		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
+		db.query(
+			`INSERT INTO categories (id, user_id, name, type, is_transfer) VALUES (10, 1, 'Housing', 'expense', 0)`
+		).run();
+		db.query(
+			`INSERT INTO transactions (id, user_id, account_id, category_id, date, amount_cents, merchant, notes, provider, external_id)
+			 VALUES (100, 1, 1, 10, '2026-01-02', -500, 'Rent edited', 'keep me', 'demo', 'ext-100')`
+		).run();
+		db.query(`INSERT INTO transaction_splits (transaction_id, category_id, amount_cents) VALUES (100, 10, 500)`).run();
+		db.query(
+			`INSERT INTO categorization_rules (user_id, name, conditions, category_id, priority, enabled)
+			 VALUES (1, 'Rent rule', '[]', 10, 0, 1)`
+		).run();
+
+		const counts = () => ({
+			tx: (db.query('SELECT COUNT(*) AS n FROM transactions WHERE category_id IS NOT NULL').get() as { n: number }).n,
+			splits: (db.query('SELECT COUNT(*) AS n FROM transaction_splits').get() as { n: number }).n,
+			rules: (db.query('SELECT COUNT(*) AS n FROM categorization_rules').get() as { n: number }).n
+		});
+		const before = counts();
+		expect(before).toEqual({ tx: 1, splits: 1, rules: 1 });
+
+		db.exec('PRAGMA foreign_keys = OFF');
+		try {
+			db.exec('ALTER TABLE transactions DROP COLUMN provider_merchant');
+		} finally {
+			db.exec('PRAGMA foreign_keys = ON');
+		}
+		db.run(`PRAGMA user_version = ${index}`);
+		migrate(db);
+
+		const cols = db.query('PRAGMA table_info(transactions)').all() as { name: string }[];
+		expect(cols.some((col) => col.name === 'provider_merchant')).toBe(true);
+		expect(
+			db.query('SELECT merchant, notes, provider_merchant, category_id FROM transactions WHERE id = 100').get()
+		).toEqual({
+			merchant: 'Rent edited',
+			notes: 'keep me',
+			provider_merchant: null,
+			category_id: 10
+		});
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(37);
+		expect(counts()).toEqual(before);
+
+		db.run(`PRAGMA user_version = ${index}`);
+		expect(() => migrate(db)).not.toThrow();
+		expect(
+			db.query('SELECT merchant, notes, provider_merchant FROM transactions WHERE id = 100').get()
+		).toEqual({
+			merchant: 'Rent edited',
+			notes: 'keep me',
+			provider_merchant: null
+		});
+		expect(counts()).toEqual(before);
 		db.close();
 	});
 });

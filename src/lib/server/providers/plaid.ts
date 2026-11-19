@@ -776,13 +776,11 @@ export const plaidProvider: BankProvider = {
 	},
 	async listAccounts(ctx) {
 		const context = ctxOrThrow(ctx);
-		return (await syncPlaidItems(context)).accounts;
+		return (await syncPlaidItems(context, context.transactionsSince)).accounts;
 	},
 	async fetchTransactions(since, ctx) {
 		const context = ctxOrThrow(ctx);
-		// Default to the last 90 days when there is no cursor yet.
-		const start = since ?? new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
-		return (await syncPlaidItems(context, start)).transactions;
+		return (await syncPlaidItems(context, since ?? context.transactionsSince)).transactions;
 	}
 };
 
@@ -796,18 +794,30 @@ interface ItemSyncBundle {
 	syncedAccountExternalIds: string[];
 }
 
-const itemSyncCache = new WeakMap<ProviderContext, Promise<ItemSyncBundle>>();
+interface ItemSyncCacheEntry {
+	start: string;
+	pending: Promise<ItemSyncBundle>;
+}
+
+const itemSyncCache = new WeakMap<ProviderContext, ItemSyncCacheEntry>();
+
+/** YYYY-MM-DD about 90 days ago. First sync, when nothing is imported yet. */
+function plaidDefaultStart(): string {
+	return new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+}
 
 /**
  * Sync every linked item on its own. A failure is recorded on that item and
  * the loop continues, so one ITEM_LOGIN_REQUIRED bank cannot block the rest.
- * listAccounts and fetchTransactions share one pass per context object.
+ * listAccounts and fetchTransactions share one pass per context and start
+ * date. A cached pass for a different start date is not reused.
  */
 async function syncPlaidItems(ctx: ProviderContext, since?: string): Promise<ItemSyncBundle> {
+	const start = since ?? plaidDefaultStart();
 	const cached = itemSyncCache.get(ctx);
-	if (cached) return cached;
-	const pending = runItemSync(ctx, since);
-	itemSyncCache.set(ctx, pending);
+	if (cached?.start === start) return cached.pending;
+	const pending = runItemSync(ctx, start);
+	itemSyncCache.set(ctx, { start, pending });
 	return pending;
 }
 
@@ -823,7 +833,7 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 		throw new ProviderHttpError('That linked institution was not found.');
 	}
 	const connectionId = ctx.connectionId;
-	const start = since ?? new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+	const start = since ?? plaidDefaultStart();
 	const end = new Date().toISOString().slice(0, 10);
 	const accounts: ProviderAccount[] = [];
 	const transactions: ProviderTransaction[] = [];
@@ -951,14 +961,14 @@ async function runItemSync(ctx: ProviderContext, since?: string): Promise<ItemSy
 export async function plaidSyncHadPartialFailure(ctx: ProviderContext): Promise<boolean> {
 	const cached = itemSyncCache.get(ctx);
 	if (!cached) return false;
-	return (await cached).partialFailure;
+	return (await cached.pending).partialFailure;
 }
 
 /** Provider account ids that synced successfully in this context's Plaid pass. */
 export async function plaidSyncedAccountExternalIds(ctx: ProviderContext): Promise<string[]> {
 	const cached = itemSyncCache.get(ctx);
 	if (!cached) return [];
-	return (await cached).syncedAccountExternalIds;
+	return (await cached.pending).syncedAccountExternalIds;
 }
 
 /**

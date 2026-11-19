@@ -466,6 +466,13 @@ export interface ProviderContext {
 	 * Other linked items are left untouched for this run.
 	 */
 	onlyAccessTokens?: string[];
+	/**
+	 * Incremental transaction start (YYYY-MM-DD). The engine sets this before
+	 * listAccounts. Plaid runs one item sync for both calls and would otherwise
+	 * cache a default window that ignores the date passed to fetchTransactions.
+	 * Omit for the provider's default window (first sync, nothing imported yet).
+	 */
+	transactionsSince?: string;
 }
 
 /**
@@ -478,10 +485,10 @@ export interface ProviderContext {
  * stores whatever it returns instead of the original form values.
  *
  * `fetchTransactions(since)` supports incremental sync: when `since` is a
- * YYYY-MM-DD date, the provider returns only transactions dated on or after
- * it (the engine passes the newest date it has already imported, so re-syncs
- * fetch just the boundary day and anything newer). Omit `since` for a full
- * fetch.
+ * YYYY-MM-DD date, the provider returns transactions dated on or after it.
+ * The engine passes a short lookback before the newest imported date so a
+ * re-posted line is still inside the window. Omit `since` for the provider's
+ * default window.
  */
 export interface BankProvider {
 	id: string;

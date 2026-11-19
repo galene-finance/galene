@@ -1223,6 +1223,21 @@ ${reconcileTablesSql()}`,
 		}
 		seedBalanceAdjustmentCategories(database);
 	}
+},
+{
+	// ADO-76: last payee the bank sent, separate from the payee on the row.
+	// Payee edits already live only in merchant, so this column is not copied
+	// from merchant — a copy would look like the bank payee and the next sync
+	// would undo those edits. NULL means not observed yet. Additive ALTER
+	// only (no parent rebuild). afterFkOff so a replay that rewinds
+	// user_version still adds the column with foreign keys off.
+	sql: `-- transactions.provider_merchant (ADO-76)`,
+	afterFkOff(database) {
+		const cols = database.query('PRAGMA table_info(transactions)').all() as { name: string }[];
+		if (!cols.some((col) => col.name === 'provider_merchant')) {
+			database.exec('ALTER TABLE transactions ADD COLUMN provider_merchant TEXT');
+		}
+	}
 }
 ];
 

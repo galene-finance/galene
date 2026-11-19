@@ -536,8 +536,8 @@ describe('reconciled lock gaps', () => {
 		const accountId = account(userId, 'demo');
 		db()
 			.query(
-				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider, external_id, cleared, reconciled_at)
-				 VALUES (?, ?, '2026-11-10', -480, 'Cafe', 'demo', 'cafe-lock', 1, '2026-11-14 00:00:00')`
+				`INSERT INTO transactions (user_id, account_id, date, amount_cents, merchant, provider_merchant, provider, external_id, cleared, reconciled_at)
+				 VALUES (?, ?, '2026-11-10', -480, 'Cafe', 'Cafe', 'demo', 'cafe-lock', 1, '2026-11-14 00:00:00')`
 			)
 			.run(userId, accountId);
 		db()

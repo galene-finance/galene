@@ -4,7 +4,7 @@ import { getProvider } from './providers';
 import { applyCategorizationRules } from './finance';
 import { carryMatchLinks } from './scheduledMatch';
 import { notifySyncFailed, notifySyncRecovered } from './notifications';
-import type { Connection, LinkedAccount, PlaidAlreadyLinked, PlaidItemInfo, ProviderTransaction, SyncSummary } from '../types';
+import type { Connection, LinkedAccount, PlaidAlreadyLinked, PlaidItemInfo, ProviderContext, ProviderTransaction, SyncSummary } from '../types';
 import { isHeldProviderLine, releaseHeldProviderLine, touchHeldProviderLine } from './syncHeld';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
 import { openConnectionCredentials, sealConnectionCredentials } from './secrets';
@@ -200,7 +200,7 @@ export async function syncNow(
 	const provider = getProvider(providerId)!;
 	const providerLabel = provider.label;
 	const credentials = openConnectionCredentials(conn.credentials);
-	const ctx = {
+	const ctx: ProviderContext = {
 		userId,
 		credentials,
 		connectionId: conn.id,
@@ -211,6 +211,18 @@ export async function syncNow(
 	const wasInError = conn.status === 'error';
 	try {
 		await provider.connect(credentials, ctx);
+
+		// The window has to be known before listAccounts. Plaid fetches
+		// transactions inside that call and caches the response for
+		// fetchTransactions, so a start date passed only on the second call
+		// is ignored. The lookback is REPOST_FETCH_LOOKBACK_DAYS before the
+		// newest imported date so liveIds covers every orphan date we might
+		// merge. Undefined means the provider's default window (nothing imported yet).
+		const maxRow = db()
+			.query('SELECT MAX(date) AS m FROM transactions WHERE user_id = ? AND provider = ?')
+			.get(userId, providerId) as { m: string | null };
+		const since = maxRow?.m ? shiftDate(maxRow.m, -REPOST_FETCH_LOOKBACK_DAYS) : undefined;
+		if (since) ctx.transactionsSince = since;
 
 		const providerAccounts = await provider.listAccounts(ctx);
 		const accountMap = new Map<string, number>();
@@ -314,17 +326,6 @@ export async function syncNow(
 				accountMap.set(pa.external_id, Number(result.lastInsertRowid));
 			}
 		}
-
-		// Incremental sync: only ask the provider for transactions dated on or
-		// after the newest one we already imported (undefined = full fetch).
-		// The window reaches REPOST_FETCH_LOOKBACK_DAYS before the newest date
-		// so liveIds covers every orphan date we might merge (providers re-post
-		// under a new id up to REPOST_WINDOW_DAYS later; absence from liveIds
-		// then means the old id is truly gone, not merely outside the fetch).
-		const maxRow = db()
-			.query('SELECT MAX(date) AS m FROM transactions WHERE user_id = ? AND provider = ?')
-			.get(userId, providerId) as { m: string | null };
-		const since = maxRow?.m ? shiftDate(maxRow.m, -REPOST_FETCH_LOOKBACK_DAYS) : undefined;
 
 		const providerTransactions = await provider.fetchTransactions(since, ctx);
 		// The ids the provider reports right now. An imported row whose id is
@@ -446,11 +447,43 @@ interface OrphanCandidateScore {
 }
 
 /**
+ * Stored bank payee. Empty string means the bank was observed and sent none.
+ * NULL means this row has not been seen by a sync since the column existed,
+ * so the shown payee may already be a user edit and must not be replaced.
+ */
+function encodeBankPayee(payee: string | null): string {
+	return payee ?? '';
+}
+
+function recordedBankPayee(stored: string | null): { known: boolean; payee: string | null } {
+	if (stored == null) return { known: false, payee: null };
+	return { known: true, payee: stored === '' ? null : stored };
+}
+
+interface ExistingProviderRow {
+	id: number;
+	account_id: number;
+	date: string;
+	amount_cents: number;
+	merchant: string | null;
+	pending: number;
+	pending_transaction_id: string | null;
+	provider_merchant: string | null;
+	reconciled_at: string | null;
+	pending_last_seen_at: string | null;
+}
+
+/**
  * Insert or update one provider line.
  * A line the user deleted stays in sync_unimported ("held") and is not imported again.
- * New posted lines start cleared; pending lines start uncleared. An update
- * keeps a tick and a finished statement unless the bank's amount or date
- * changed, which demotes reconciled to cleared.
+ * New posted lines start cleared; pending lines start uncleared.
+ * Returns 'unchanged' when no bank-owned field differs. Recording the bank
+ * payee for the first time, and refreshing pending_last_seen_at, do not count
+ * and do not bump updated_at.
+ * The shown payee (merchant) follows the bank only while it still equals the
+ * last payee the bank sent. Notes are not written on update.
+ * An update keeps a tick and a finished statement unless the bank's amount or
+ * date changed, which demotes reconciled to cleared.
  */
 export function upsertProviderTransaction(
 	userId: number,
@@ -458,28 +491,67 @@ export function upsertProviderTransaction(
 	accountId: number,
 	pt: ProviderTransaction,
 	seenAt: string
-): 'inserted' | 'updated' | 'held' {
+): 'inserted' | 'updated' | 'held' | 'unchanged' {
 	const pendingFlag = pt.pending === true ? 1 : 0;
 	const pendingTxnId = pt.pending_transaction_id ?? null;
 	const pendingLastSeen = pendingFlag ? seenAt : null;
+	const incomingPayee = pt.merchant ?? null;
 	const existing = db()
 		.query(
-			`SELECT id, date, amount_cents, reconciled_at
+			`SELECT id, account_id, date, amount_cents, merchant, pending, pending_transaction_id,
+			        provider_merchant, reconciled_at, pending_last_seen_at
 			 FROM transactions WHERE user_id = ? AND provider = ? AND external_id = ?`
 		)
-		.get(userId, providerId, pt.external_id) as
-		| { id: number; date: string; amount_cents: number; reconciled_at: string | null }
-		| undefined;
+		.get(userId, providerId, pt.external_id) as ExistingProviderRow | undefined;
 	if (existing) {
-		// The bank's amount and date replace the ledger. A finished statement
-		// that no longer matches those values is cleared again, not left locked.
-		const demote =
-			existing.reconciled_at != null &&
-			(existing.date !== pt.date || existing.amount_cents !== pt.amount_cents);
+		const recorded = recordedBankPayee(existing.provider_merchant);
+		const payeeChanged = recorded.known && recorded.payee !== incomingPayee;
+		// Follow the bank only when the shown payee is still the one it last sent.
+		const nextMerchant =
+			recorded.known && payeeChanged && existing.merchant === recorded.payee
+				? incomingPayee
+				: existing.merchant;
+		const nextRecorded = encodeBankPayee(incomingPayee);
+		const dateChanged = existing.date !== pt.date;
+		const amountChanged = existing.amount_cents !== pt.amount_cents;
+		const bankChanged =
+			dateChanged ||
+			amountChanged ||
+			existing.account_id !== accountId ||
+			(existing.pending ?? 0) !== pendingFlag ||
+			(existing.pending_transaction_id ?? null) !== pendingTxnId ||
+			payeeChanged;
+		// Amount and date are what a finished statement locked. Other bank
+		// fields can change without clearing that lock.
+		const demote = existing.reconciled_at != null && (dateChanged || amountChanged);
+		if (!bankChanged) {
+			const recordBaseline = !recorded.known;
+			const refreshPending = pendingFlag === 1 && existing.pending_last_seen_at !== seenAt;
+			if (recordBaseline || refreshPending) {
+				db()
+					.query(
+						`UPDATE transactions
+						 SET provider_merchant = CASE WHEN ? = 1 THEN ? ELSE provider_merchant END,
+						     pending_last_seen_at = CASE WHEN ? = 1 THEN ? ELSE pending_last_seen_at END
+						 WHERE id = ? AND user_id = ?`
+					)
+					.run(
+						recordBaseline ? 1 : 0,
+						nextRecorded,
+						refreshPending ? 1 : 0,
+						seenAt,
+						existing.id,
+						userId
+					);
+			}
+			releaseHeldProviderLine(userId, providerId, pt.external_id);
+			return 'unchanged';
+		}
 		db()
 			.query(
 				`UPDATE transactions
-				 SET account_id = ?, date = ?, amount_cents = ?, merchant = ?, notes = ?,
+				 SET account_id = ?, date = ?, amount_cents = ?, merchant = ?,
+				     provider_merchant = ?,
 				     pending = ?, pending_transaction_id = ?,
 				     pending_last_seen_at = CASE WHEN ? = 1 THEN ? ELSE pending_last_seen_at END,
 				     cleared = CASE WHEN ? = 1 THEN 1 ELSE cleared END,
@@ -491,8 +563,8 @@ export function upsertProviderTransaction(
 				accountId,
 				pt.date,
 				pt.amount_cents,
-				pt.merchant ?? null,
-				pt.notes ?? null,
+				nextMerchant,
+				nextRecorded,
 				pendingFlag,
 				pendingTxnId,
 				pendingFlag,
@@ -513,22 +585,23 @@ export function upsertProviderTransaction(
 		.query(
 			`INSERT INTO transactions (
 				user_id, account_id, date, amount_cents, merchant, notes, provider, external_id,
-				pending, pending_transaction_id, pending_last_seen_at, cleared
-			 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+				pending, pending_transaction_id, pending_last_seen_at, cleared, provider_merchant
+			 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		)
 		.run(
 			userId,
 			accountId,
 			pt.date,
 			pt.amount_cents,
-			pt.merchant ?? null,
+			incomingPayee,
 			pt.notes ?? null,
 			providerId,
 			pt.external_id,
 			pendingFlag,
 			pendingTxnId,
 			pendingLastSeen,
-			pendingFlag ? 0 : 1
+			pendingFlag ? 0 : 1,
+			encodeBankPayee(incomingPayee)
 		);
 	// Imported transactions start uncategorized; let the user's rules fill them in.
 	applyCategorizationRules(userId, Number(result.lastInsertRowid));

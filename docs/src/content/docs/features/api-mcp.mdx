@@ -11,7 +11,7 @@ Nine GET endpoints under `/api/v1` stay available to every token: summary, accou
 
 `GET /api/v1/accounts` returns each account’s `opening_balance_cents` and `opening_as_of` (null until set) plus ledger `balance_cents` computed as **opening + transactions on/after as-of** (opening is the balance *before* those transactions). After bank sync it may also include `provider_balance_cents` and `provider_balance_as_of` (null for manual accounts or until a sync reports a balance). `GET /api/v1/summary` `balanceCents` uses the ledger rule across all accounts. Summary income, expense, and `recent`, plus cashflow and `galene_summary`, omit **Balance adjustment** transactions (they still count in the ledger balance). `GET /api/v1/transactions` still returns them. Notifications are alerts, not a copy of the ledger.
 
-Tokens are per-user. Create, use, and revoke them on the [API tokens](/api-tokens/) page — the token is shown once, at creation.
+Tokens are per-user. Create, use, and revoke them on the [API tokens](/api-tokens/) page — the token is shown once, at creation. A bearer token is accepted on `/api/v1` (including nested paths) and on the exact path `/mcp`. Other routes ignore `Authorization`. On `/api/v1` and `/mcp`, an `Authorization` header that does not resolve gets `401`, even when a browser session cookie is also present. With no `Authorization` header, a session cookie on `/api/v1` still signs the request in.
 
 ```bash
 curl -H "Authorization: Bearer galene_…" http://localhost:3000/api/v1/summary

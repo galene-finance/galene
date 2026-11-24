@@ -98,3 +98,21 @@ export function resolveApiToken(token: string): ResolvedApiToken | null {
 export function getUserByApiToken(token: string): User | null {
 	return resolveApiToken(token)?.user ?? null;
 }
+
+export type AuthorizationState =
+	| { state: 'none' }
+	| { state: 'invalid' }
+	| { state: 'resolved'; token: ResolvedApiToken };
+
+/**
+ * Classify an Authorization header for routes that accept bearer tokens.
+ * A missing header is none. Any header that does not resolve is invalid.
+ */
+export function resolveAuthorization(header: string | null): AuthorizationState {
+	if (header == null) return { state: 'none' };
+	if (!header.startsWith('Bearer ')) return { state: 'invalid' };
+	const raw = header.slice('Bearer '.length).trim();
+	const token = raw ? resolveApiToken(raw) : null;
+	if (!token) return { state: 'invalid' };
+	return { state: 'resolved', token };
+}

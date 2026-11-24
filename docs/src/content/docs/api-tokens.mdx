@@ -22,11 +22,15 @@ Treat tokens like passwords. Never commit them to a repo, paste them into chat, 
 
 ## Using a token with the REST API
 
-Send the token as a bearer token on any `/api/v1` request:
+Send the token as a bearer token on `/api/v1` (including nested paths) or on the exact path `/mcp`:
 
 ```bash
 curl -H "Authorization: Bearer galene_…" http://localhost:3000/api/v1/summary
 ```
+
+Bearer tokens are not accepted on other routes. Those routes ignore `Authorization` and use the browser session cookie.
+
+On `/api/v1` and `/mcp`, if an `Authorization` header is present it has to resolve to a token. A header that does not resolve — unknown, revoked, empty, or a scheme other than `Bearer` — gets `401`, even when a browser session cookie is also present. When the header is absent, a session cookie on `/api/v1` still signs the request in.
 
 Unauthenticated requests get a JSON `401`: `Unauthorized. Authenticate with an API token (Authorization: Bearer <token>).`
 

@@ -7,7 +7,7 @@ Galene exposes its data two ways: a JSON REST API (reads for every token; writes
 
 ## REST API
 
-Nine GET endpoints under `/api/v1` stay available to every token: summary, accounts, transactions, categories, tags, budgets, scheduled, cashflow, and notifications. Writes are a separate, opt-in surface described below. All amounts are integer cents (negative = expense); dates are `YYYY-MM-DD`.
+Nine finance GET endpoints under `/api/v1` stay available to every token: summary, accounts, transactions, categories, tags, budgets, scheduled, cashflow, and notifications. Two token-only integration endpoints expose native dashboard and appearance settings, as described below. Finance writes are a separate, opt-in surface. All amounts are integer cents (negative = expense); dates are `YYYY-MM-DD`.
 
 `GET /api/v1/accounts` returns each account’s `opening_balance_cents` and `opening_as_of` (null until set) plus ledger `balance_cents` computed as **opening + transactions on/after as-of** (opening is the balance *before* those transactions). After bank sync it may also include `provider_balance_cents` and `provider_balance_as_of` (null for manual accounts or until a sync reports a balance). `GET /api/v1/summary` `balanceCents` uses the ledger rule across all accounts. Summary income, expense, and `recent`, plus cashflow and `galene_summary`, omit **Balance adjustment** transactions (they still count in the ledger balance). `GET /api/v1/transactions` still returns them. Notifications are alerts, not a copy of the ledger.
 
@@ -58,6 +58,47 @@ curl -X POST -H "Authorization: Bearer galene_…" -H "Content-Type: application
 | Demo mode | 403 |
 
 A 400, 403, or 404 changes nothing. Deleting a schedule never changes posted transactions.
+
+## Dashboard and appearance integration API
+
+Galene exposes its existing per-user dashboard layout and appearance settings through two bounded integration endpoints:
+
+- `GET /api/v1/integration/dashboard` and `PUT /api/v1/integration/dashboard`
+- `GET /api/v1/integration/appearance` and `PUT /api/v1/integration/appearance`
+
+These routes require an API token even when the request also has a valid browser session. An owner, viewer, or other session cookie is not a substitute for the bearer token. `GET` accepts a read or write token. `PUT` requires a write-scoped token, the write API enabled under Settings → API, and demo mode off.
+
+Each integration `GET` returns a deterministic SHA-256 `revision`. Send that exact value with the related `PUT`. Galene compares it again inside the write transaction; if another client changed the settings first, the request returns `409` and changes nothing. Read the current state and prepare the change again instead of retrying a stale body.
+
+### Dashboard layout
+
+`GET /api/v1/integration/dashboard` returns:
+
+- `layout`: the native, compacted 12-column layout;
+- `catalog`: the fixed stock-widget catalog and each widget type's supported filters; and
+- `revision`: the current layout revision.
+
+`PUT` accepts the exact `revision` plus a complete `layout`. A layout can contain at most 12 stock widgets. Widget ids must be unique; sizes, positions, and filters are strictly validated before Galene runs its native sanitizer and compactor. Account, category, and tag filter ids must exist and belong to the token's user.
+
+The API supports the same native widget types and filter dimensions as the dashboard UI. It does not return computed widget contents in this response; use the finance API for balances, transactions, budgets, schedules, cash flow, and notifications.
+
+### Appearance
+
+`GET /api/v1/integration/appearance` returns:
+
+- `appearance`: selected theme, app name, icon, favicon, and week-start preference;
+- `catalog`: built-in themes, the user's custom themes, and the fixed icon catalog; and
+- `revision`: the current appearance revision.
+
+`PUT` accepts the exact `revision` plus bounded `changes`. It can select a built-in or owned custom theme, create or update an owned custom theme, set the app name, choose an icon and favicon from Galene's catalog, and choose Sunday or Monday as the first day of the week. Custom colors are complete `#rrggbb` values and the card radius is limited to `0–2rem`.
+
+This endpoint does not accept arbitrary CSS, HTML, JavaScript, SVG/path data, file names, uploads, or external URLs. It cannot import, publish, or delete themes. Those remain separate owner UI operations.
+
+### Write result and retries
+
+Both `PUT` routes use native save functions and independently read the effective state back. An identical desired state returns `changed: false` without changing settings or adding an audit entry. A successful change adds one metadata-only API audit entry; the audit records which bounded fields changed and the before/after revisions, not the layout, theme values, or financial data. Integration writes do not emit finance webhooks and do not call bank sync or any remote provider.
+
+Validation and authorization failures occur before mutation. A timeout, connection loss, or server error after a `PUT` may have an uncertain outcome: do not automatically retry it. `GET` the endpoint again and compare its revision and effective state first.
 
 ## Webhooks
 

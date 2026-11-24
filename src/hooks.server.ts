@@ -1,6 +1,5 @@
 import { redirect } from '@sveltejs/kit';
 import { getUserByToken, isSecureCookie } from '$lib/server/auth';
-import { resolveApiToken } from '$lib/server/apiTokens';
 import { getViewerByToken } from '$lib/server/advisor';
 import { forbidViewerMutation, guardViewerPage } from '$lib/server/viewerGuard';
 import { startSyncScheduler } from '$lib/server/scheduler';
@@ -10,6 +9,7 @@ import { ensureDemoBootstrap, isDemoMode } from '$lib/server/demoMode';
 import { guardDemoMode } from '$lib/server/demoGuard';
 import { backfillPlaidInstitutionIds } from '$lib/server/providers/plaid';
 import type { Handle } from '@sveltejs/kit';
+import { resolveApiBearer } from '$lib/server/api';
 
 // Fail fast (before serving) if the data directory isn't on a persistent volume.
 assertDataDirOnVolume();
@@ -70,16 +70,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 		});
 	}
 	// API clients (curl, scripts, the MCP server) authenticate with a
-	// bearer token instead of the session cookie. Tokens are owner-scoped.
+	// bearer token instead of the session cookie. Tokens are owner-scoped and
+	// deliberately ignored outside the API/MCP transports. A valid bearer
+	// identity wins over a simultaneously supplied browser cookie so API routes
+	// can require locals.apiToken without accepting the cookie as a substitute.
 	// Demo mode locks API tokens — do not accept Bearer auth.
-	if (!user && !demo) {
-		const auth = event.request.headers.get('authorization');
-		if (auth?.startsWith('Bearer ')) {
-			const resolved = resolveApiToken(auth.slice('Bearer '.length).trim());
-			if (resolved) {
-				user = { ...resolved.user, role: 'owner' as const };
-				event.locals.apiToken = { id: resolved.tokenId, scope: resolved.scope };
-			}
+	if (!demo) {
+		const resolved = resolveApiBearer(event.url.pathname, event.request.headers.get('authorization'));
+		if (resolved) {
+			user = { ...resolved.user, role: 'owner' as const };
+			event.locals.apiToken = { id: resolved.tokenId, scope: resolved.scope };
+			event.locals.viewer = null;
 		}
 	}
 	event.locals.user = user;

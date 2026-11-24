@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { getUserByToken, isSecureCookie } from '$lib/server/auth';
-import { resolveApiToken } from '$lib/server/apiTokens';
+import { resolveAuthorization } from '$lib/server/apiTokens';
 import { getViewerByToken } from '$lib/server/advisor';
 import { forbidViewerMutation, guardViewerPage } from '$lib/server/viewerGuard';
 import { startSyncScheduler } from '$lib/server/scheduler';
@@ -28,6 +28,11 @@ if (!isDemoMode()) {
 	// background so a duplicate Link is caught before that first sync. Never
 	// awaited here — a Plaid failure must not block the first request.
 	backfillPlaidInstitutionIds();
+}
+
+/** Bearer auth is limited to the REST API and the exact MCP path. */
+function acceptsBearer(pathname: string): boolean {
+	return pathname === '/mcp' || pathname === '/api/v1' || pathname.startsWith('/api/v1/');
 }
 
 /** SvelteKit calls this from server init, which runs before the adapter listens. */
@@ -69,17 +74,20 @@ export const handle: Handle = async ({ event, resolve }) => {
 			secure: isSecureCookie()
 		});
 	}
-	// API clients (curl, scripts, the MCP server) authenticate with a
-	// bearer token instead of the session cookie. Tokens are owner-scoped.
-	// Demo mode locks API tokens — do not accept Bearer auth.
-	if (!user && !demo) {
-		const auth = event.request.headers.get('authorization');
-		if (auth?.startsWith('Bearer ')) {
-			const resolved = resolveApiToken(auth.slice('Bearer '.length).trim());
-			if (resolved) {
-				user = { ...resolved.user, role: 'owner' as const };
-				event.locals.apiToken = { id: resolved.tokenId, scope: resolved.scope };
-			}
+	// Bearer tokens authenticate /api/v1 and /mcp only. Every other route
+	// ignores Authorization and keeps the session cookie. Demo mode does
+	// not accept bearer tokens. On a bearer route, a header that does not
+	// resolve leaves the request anonymous.
+	if (!demo && acceptsBearer(event.url.pathname)) {
+		const auth = resolveAuthorization(event.request.headers.get('authorization'));
+		if (auth.state === 'resolved') {
+			user = { ...auth.token.user, role: 'owner' as const };
+			event.locals.apiToken = { id: auth.token.tokenId, scope: auth.token.scope };
+			event.locals.viewer = null;
+		} else if (auth.state === 'invalid') {
+			user = null;
+			event.locals.viewer = null;
+			event.locals.apiToken = null;
 		}
 	}
 	event.locals.user = user;

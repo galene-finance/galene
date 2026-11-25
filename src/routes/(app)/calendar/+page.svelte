@@ -680,6 +680,8 @@
 	watchFormToast(() => form);
 </script>
 
+<svelte:window onkeydown={(event) => { if (event.key === 'Escape') hidePillPopup(); }} />
+
 <Title title="Calendar" />
 
 <div class="mx-auto flex max-w-6xl flex-col gap-4 2xl:max-w-7xl">
@@ -841,7 +843,7 @@
 			</div>
 
 			<!-- 2) Week strip -->
-			<div class="flex gap-1.5" role="tablist" aria-label="Week days">
+			<div class="flex gap-1.5" role="group" aria-label="Week days">
 				{#each weekCells as cell (cell.iso)}
 					{@const hasTx = dayHasBooked(cell.transactions, data.hideActuals)}
 					{@const hasSched = dayHasScheduled(cell.occurrences)}
@@ -849,8 +851,7 @@
 					{@const selected = cell.iso === selectedCell.iso}
 					<button
 						type="button"
-						role="tab"
-						aria-selected={selected}
+						aria-pressed={selected}
 						aria-label="{dowShort(cell.iso)} {cell.day}"
 						class="flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg border px-1 py-2 {selected
 							? 'border-primary/50 bg-primary/15 text-primary'

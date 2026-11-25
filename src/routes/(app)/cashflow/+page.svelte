@@ -1,5 +1,6 @@
 <script lang="ts">
  import Overview from '$lib/components/CashflowOverview.svelte';
+ import Badge from '$lib/components/FinancialBadge.svelte';
  import {activityParts} from '$lib/activity';
 	import { untrack } from 'svelte';
 	import { browser } from '$app/environment';
@@ -263,6 +264,9 @@
 		scroll horizontally. The background must be opaque so scrolling cells
 		don't show through; tinted rows use color-mix to match their
 		semi-transparent row color over the surface. */
+	.cf-detail-name { display:flex; flex:1; min-width:0; flex-direction:column; gap:4px; overflow-wrap:anywhere; }
+	.cf-drill { min-height:44px; min-width:44px; border-radius:8px; }
+	.cf-drill:focus-visible { outline:2px solid var(--color-primary); outline-offset:2px; }
 	.cf-sticky {
 		position: sticky;
 		left: 0;
@@ -440,7 +444,7 @@
 											{#if c.forecastCents !== 0}
 												<button
 													type="button"
-													class="hover:underline"
+													class="cf-drill hover:underline"
 													onclick={() => openDrill(section, r, i, 'forecast')}
 												>
 													{formatMoney(c.forecastCents)}
@@ -453,7 +457,7 @@
 											{#if c.actualCents !== 0}
 												<button
 													type="button"
-													class="hover:underline"
+													class="cf-drill hover:underline"
 													onclick={() => openDrill(section, r, i, 'actual')}
 												>
 													{formatMoney(c.actualCents)}
@@ -467,7 +471,7 @@
 										{#if r.totalForecastCents !== 0}
 											<button
 												type="button"
-												class="hover:underline"
+												class="cf-drill hover:underline"
 												onclick={() => openDrill(section, r, null, 'forecast')}
 											>
 												{formatMoney(r.totalForecastCents)}
@@ -480,7 +484,7 @@
 										{#if r.totalActualCents !== 0}
 											<button
 												type="button"
-												class="hover:underline"
+												class="cf-drill hover:underline"
 												onclick={() => openDrill(section, r, null, 'actual')}
 											>
 												{formatMoney(r.totalActualCents)}
@@ -540,16 +544,11 @@
 					<ul class="divide-y divide-border rounded-md border border-border">
 						{#each drillForecast as o (o.id + o.date)}
 							<li class="flex items-center gap-3 px-3 py-2 text-sm">
-								<span class="w-20 shrink-0 text-muted-foreground">
-									{new Date(o.date + 'T12:00:00').toLocaleDateString('en-US', {
-										month: 'short',
-										day: 'numeric'
-									})}
-								</span>
-								<a class="min-w-0 flex-1 truncate product-link" href={`/scheduled?edit=${o.id}`}>{o.name}</a>
-								<span class="shrink-0 font-medium {drillSign === 1 ? 'text-success' : ''}">
-									{occurrenceAmount(o)}
-								</span>
+								<div class="cf-detail-name">
+									<a class="product-link" href={`/scheduled?edit=${o.id}`}>{o.name}</a>
+									<time datetime={o.date} class="text-xs text-muted-foreground">{new Date(o.date + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}</time>
+								</div>
+								<Badge value={occurrenceAmount(o)} label="Scheduled expectation" tone="neutral"/>
 							</li>
 						{/each}
 						<li class="flex items-center justify-between px-3 py-2 text-sm font-medium">
@@ -565,16 +564,11 @@
 					<ul class="divide-y divide-border rounded-md border border-border">
 						{#each drillActual as a (a.id)}
 							<li class="flex items-center gap-3 px-3 py-2 text-sm">
-								<span class="w-20 shrink-0 text-muted-foreground">
-									{new Date(a.date + 'T12:00:00').toLocaleDateString('en-US', {
-										month: 'short',
-										day: 'numeric'
-									})}
-								</span>
-								<a class="min-w-0 flex-1 truncate product-link" href={`/transactions/${a.id.split('-')[0]}`}>{a.label}</a>
-								<span class="shrink-0 font-medium {a.amountCents > 0 ? 'text-success' : ''}">
-									{formatMoney(a.amountCents)}
-								</span>
+								<div class="cf-detail-name">
+									<a class="product-link" href={`/transactions/${a.id.split('-')[0]}`}>{a.label}</a>
+									<time datetime={a.date} class="text-xs text-muted-foreground">{new Date(a.date + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}</time>
+								</div>
+								<Badge value={formatMoney(a.amountCents)} label={drill.sectionType === 'expense' ? (a.amountCents > 0 ? 'Included refund' : 'Included spending') : (a.amountCents < 0 ? 'Income reversal' : 'Included income')} tone={a.amountCents > 0 ? 'positive' : a.amountCents < 0 ? 'negative' : 'neutral'} symbol={a.amountCents > 0 ? '+' : a.amountCents < 0 ? '−' : '•'}/>
 							</li>
 						{/each}
 						<li class="flex items-center justify-between px-3 py-2 text-sm font-medium">

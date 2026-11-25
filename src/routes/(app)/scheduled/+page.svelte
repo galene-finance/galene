@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import AddScheduledDialog from '$lib/components/AddScheduledDialog.svelte';
+	import ScheduleAmount from '$lib/components/ScheduleAmount.svelte';
 	import Title from '$lib/components/Title.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import { formatRepeat } from '$lib/calendarPillPopup';
@@ -13,7 +14,8 @@
 		type ScheduleListFilter
 	} from '$lib/scheduleFilter';
 	import { formatMonthDay, type ScheduleFocus } from '$lib/scheduledPaid';
-	import { formatDate, formatMoney, todayISO } from '$lib/utils';
+	import { scheduleKind } from '$lib/activity';
+	import { formatDate, todayISO } from '$lib/utils';
 	import type { Account, Category, Scheduled, Tag } from '$lib/types';
 
 	let { form, data }: {
@@ -222,7 +224,13 @@
 							<span class="min-w-0 truncate text-[0.95rem] font-semibold tracking-tight">
 								{row.scheduled.name}
 							</span>
-							<span class="shrink-0 text-sm font-medium">{formatMoney(row.scheduled.amount_cents)}</span>
+							<ScheduleAmount
+								amount={row.scheduled.amount_cents}
+								kind={scheduleKind(
+									row.scheduled.amount_cents,
+									data.categories.find((category) => category.id === row.scheduled.category_id)?.type
+								)}
+							/>
 						</div>
 						<dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 							<div class="min-w-0">

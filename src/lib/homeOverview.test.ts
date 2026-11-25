@@ -5,7 +5,7 @@ import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 import { fixture } from '../../ui-preview/product-fixtures';
 import { formatMoney } from './utils';
-plugin({name:'home-view-ssr',setup(build){build.onLoad({filter:/(HomeOverview|TransactionAmount|AccountBalance|ProductTransactions|FinancialBadge|PeriodPicker|ReflectionOverview|ReflectTabs|ContributionList)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
+plugin({name:'home-view-ssr',setup(build){build.onLoad({filter:/(HomeOverview|CategoryOverview|ScheduleAmount|TransactionAmount|AccountBalance|ProductTransactions|FinancialBadge|PeriodPicker|ReflectionOverview|ReflectTabs|ContributionList)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
 test('transaction and balance badges keep state explicit',async()=>{
  expect(existsSync(new URL('./components/TransactionAmount.svelte',import.meta.url))).toBe(true);
  expect(existsSync(new URL('./components/AccountBalance.svelte',import.meta.url))).toBe(true);
@@ -21,6 +21,34 @@ test('transaction and balance badges keep state explicit',async()=>{
  expect(overdraft).toContain('Negative balance');expect(overdraft).toContain('data-tone="attention"');
  const credit=render(Balance,{props:{account:{type:'credit',displayCents:100}}}).body;
  expect(credit).toContain('Balance');expect(credit).not.toContain('Owed');
+});
+test('Home recent activity is newest first with ID tie-break, limited to six without mutating input',async()=>{
+ const {default:Home}=await import('./components/HomeOverview.svelte');
+ const data=fixture(new URL('http://test.invalid/'));
+ data.transactions=Array.from({length:8},(_,i)=>({...data.transactions[0],id:101+i,merchant:`Order sample ${101+i}`,date:i>=6?'2026-11-08':`2026-11-0${i+1}`}));
+ const original=data.transactions.map(t=>t.id);
+ const html=render(Home,{props:{data:data as any}}).body;
+ const labels=[...html.matchAll(/Order sample (\d+)/g)].map(m=>Number(m[1]));
+ expect(labels).toEqual([108,107,106,105,104,103]);
+ expect(data.transactions.map(t=>t.id)).toEqual(original);
+});
+test('category drilldowns retain account scope and identify movement without earnings',async()=>{
+ expect(existsSync(new URL('./components/CategoryOverview.svelte',import.meta.url))).toBe(true);
+ const {default:View}=await import('./components/CategoryOverview.svelte');
+ const base=fixture(new URL('http://test.invalid/'));
+ const data={...base,accountId:7,category:{id:3,name:'Sample payment',type:'transfer'},totalCents:-1000,contributions:[{transaction:base.transactions[0],contributionCents:-1000}]};
+ const html=render(View,{props:{data:data as any}}).body;
+ expect(html).toContain('account=7');expect(html).toContain('name="account"');expect(html).toContain('value="7"');
+ expect(html).toContain('Net movement');expect(html).toContain('Movement');expect(html).not.toContain('Included income');
+});
+test('scheduled amount badges describe expectations rather than received income',async()=>{
+ expect(existsSync(new URL('./components/ScheduleAmount.svelte',import.meta.url))).toBe(true);
+ const {default:Amount}=await import('./components/ScheduleAmount.svelte');
+ const html=render(Amount,{props:{amount:50000,kind:'Income'}}).body;
+ expect(html).toContain('Expected income');expect(html).toContain('$500.00');expect(html).toContain('data-tone="neutral"');
+ expect(html).not.toContain('Received');expect(html).not.toContain('data-tone="positive"');
+ const transfer=render(Amount,{props:{amount:-50000,kind:'Transfer'}}).body;
+ expect(transfer).toContain('Expected transfer');expect(transfer).toContain('data-tone="movement"');
 });
 test('month navigation retains the selected account',async()=>{
  const {default:Picker}=await import('./components/PeriodPicker.svelte');

@@ -216,7 +216,7 @@
       "source": "(app)/categories/[id]/+page.svelte",
       "job": "Category contribution drilldown",
       "layout": "product",
-      "coverage": "pending",
+      "coverage": "partial_synthetic_category_recurring; full states and authenticated acceptance pending",
       "viewports": [
         390,
         768,
@@ -226,7 +226,18 @@
         "graphite",
         "ocean",
         "dark"
-      ]
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "evidence": "product-v3-category-recurring/checks.json"
     },
     {
       "route": "/customize",
@@ -346,7 +357,7 @@
       "source": "(app)/scheduled/+page.svelte",
       "job": "Scheduled expectations and native edits",
       "layout": "product",
-      "coverage": "pending",
+      "coverage": "partial_synthetic_category_recurring; full states and authenticated acceptance pending",
       "viewports": [
         390,
         768,
@@ -356,7 +367,18 @@
         "graphite",
         "ocean",
         "dark"
-      ]
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "evidence": "product-v3-category-recurring/checks.json"
     },
     {
       "route": "/settings",

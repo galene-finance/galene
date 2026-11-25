@@ -2,6 +2,7 @@ import {error,fail} from '@sveltejs/kit';
 import {db} from './db';import {BudgetEngine} from './budgetEngine/service';import {productOwner} from './productAccess';
 import {getScheduled,expandScheduled,getCategories} from './finance';
 import type {Target} from '$lib/budget/types';
+import {readRegister,type TransferPair} from './budgetEngine/register';
 import {parseAmountToCents,todayISO} from '$lib/utils';import {civil,monthEnd} from '$lib/budget/validation';
 import type {User} from '$lib/types';
 export function budgetDate(url:URL){const date=url.searchParams.get('date')??(url.searchParams.get('month')?`${url.searchParams.get('month')}-01`:todayISO());try{civil(date);}catch{error(400,'Choose a valid date.');}return date;}
@@ -9,6 +10,24 @@ export function budgetFunding(userId:number,selectedDate:string){
  const month=selectedDate.slice(0,7),today=todayISO(),asOfDate=month===today.slice(0,7)?today:monthEnd(month);
  const obligations=getScheduled(userId).flatMap(s=>expandScheduled(s,`${month}-01`,monthEnd(month))).filter(o=>o.scheduled.amount_cents<0).map(o=>({id:`schedule:${o.scheduled.id}:${o.date}`,categoryId:o.scheduled.category_id,amountCents:-o.scheduled.amount_cents}));
  return db().transaction(()=>{const engine=new BudgetEngine(db(),userId);return {funding:engine.dashboard(month,obligations,asOfDate),targetSpecs:engine.targets(month),fundingDate:asOfDate,commandKey:crypto.randomUUID()};}).deferred();
+}
+/** Read only explicit persisted matches; never infer new pairings or drop invalid ones. */
+export function transferPairCatalog(ownerId:number,through:string):{status:'none'|'verified'|'needs_review';pairs:TransferPair[]}{
+ const row=db().query('SELECT register_json FROM budget_engine_state WHERE owner_id=?').get(ownerId) as {register_json:string|null}|null;
+ if(!row?.register_json)return {status:'none',pairs:[]};
+ try{
+  const saved=JSON.parse(row.register_json);
+  if(!saved||!Array.isArray(saved.pairs))return {status:'needs_review',pairs:[]};
+  const pairs=saved.pairs as TransferPair[];
+  if(pairs.some(p=>!p||![p.outflowId,p.inflowId,...(p.categoryId===undefined?[]:[p.categoryId])].every(id=>Number.isSafeInteger(id)&&id>0)))return {status:'needs_review',pairs:[]};
+  if(!pairs.length)return {status:'none',pairs};
+  const categories=getCategories(ownerId);
+  const invalidCategory=pairs.some(p=>p.categoryId!==undefined&&!categories.some(c=>c.id===p.categoryId));
+  const current=readRegister(db(),ownerId,saved.from,through,pairs);
+  const accounts=new Set((db().query('SELECT id FROM accounts WHERE user_id=?').all(ownerId) as {id:number}[]).map(a=>a.id));
+  const foreignAccount=current.events.some(e=>e.kind==='transfer'&&(!accounts.has(e.fromAccountId)||!accounts.has(e.toAccountId)));
+  return {status:invalidCategory||foreignAccount||current.issues.some(i=>i.reason==='invalid_transfer_pair')?'needs_review':'verified',pairs};
+ }catch{return {status:'needs_review',pairs:[]};}
 }
 async function boundedForm(request:Request){
  const reader=request.body?.getReader();if(!reader)throw new Error('Missing form');let size=0;const chunks:Uint8Array[]=[];
@@ -41,7 +60,10 @@ export async function budgetCommand(kind:'assign'|'refresh'|'target'|'target-arc
    const selectedThrough=selected.slice(0,7)===todayISO().slice(0,7)?todayISO():monthEnd(selected.slice(0,7));
    const previousThrough=engine.view(selected.slice(0,7),selectedThrough).activityThrough;
    const through=previousThrough&&previousThrough>selectedThrough?previousThrough:selectedThrough;if(through>todayISO())throw new Error('Future activity');
-   return {ok:true,...engine.refreshRegister(through,[],meta)};
+   return db().transaction(()=>{
+    const catalog=transferPairCatalog(owner,through);if(catalog.status==='needs_review')throw new Error('saved transfer review');
+    return {ok:true,...engine.refreshRegister(through,catalog.pairs,meta)};
+   }).immediate();
   }
   const date=String(form.get('date')??'');civil(date);if(date>todayISO()||date.slice(0,7)!==selected.slice(0,7))throw new Error('Invalid effective date');
   const rawCategory=String(form.get('category_id')??''),amount=parseAmountToCents(String(form.get('amount')??''));
@@ -49,6 +71,6 @@ export async function budgetCommand(kind:'assign'|'refresh'|'target'|'target-arc
   return {ok:true,...engine.allocate({id:`ui:${key}`,kind:'assign',date,categoryId:Number(rawCategory),amountCents:amount},meta)};
  }catch(cause){
   const message=cause instanceof Error?cause.message:'';
-  return fail(400,{error:message.includes('revision')?'The plan changed. Reload before trying again.':message.includes('stale')?'Posted activity changed. Refresh coverage before assigning.':kind==='target'||kind==='target-archive'?'Target change was not saved. Check its category, amount, dates and cadence, or reload if the plan changed.':'This change could not be applied. Check the date, category, coverage and available cash; no budget change was saved.'});
+  return fail(400,{error:message==='saved transfer review'?'Saved transfer matches need review before activity can be refreshed. No saved matches were removed.':message.includes('revision')?'The plan changed. Reload before trying again.':message.includes('stale')?'Posted activity changed. Refresh coverage before assigning.':kind==='target'||kind==='target-archive'?'Target change was not saved. Check its category, amount, dates and cadence, or reload if the plan changed.':'This change could not be applied. Check the date, category, coverage and available cash; no budget change was saved.'});
  }
 }

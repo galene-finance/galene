@@ -22,3 +22,11 @@ The fixture is a real disposable SQLite database with actual native loaders/acti
 
 ## Explicit remaining scope
 The target editor still uses legacy limits; actual cadence/due-date/version editing and legacy-draft adoption remain to be wired. Reallocation and card-reserve controls, source-backed net-worth history and captures, full register drilldowns in the fixture, all-screen polish/states, audit/upstream correction, final integrated review, encrypted rollback/migrations, private activation and exact-origin authenticated acceptance remain open. No all-features completion or release approval is implied by this slice.
+
+
+## Retained transfer-match integration follow-up
+W11 native refresh now reads the owner-scoped persisted register match catalog instead of passing an empty array. The original defect rejected a refresh containing already-confirmed transfer rows; it did not erase the stored matches or mutate the source transactions. No new matching heuristic or schema is introduced.
+
+`transferPairCatalog(ownerId, through)` in the shared budgetIntegration adapter returns status `none`, `verified`, or `needs_review`, with retained explicit pairs. It reuses the reviewed register normalizer and checks ownership of referenced accounts/categories. Only verified/empty catalogs may refresh; invalid pairs are not filtered away. Validation and refresh are enclosed in one write transaction. Missing legs, amount edits, pending rows, foreign accounts/categories, malformed catalog and duplicates fail closed. Unrelated unclassified transactions remain subject to the engine's normal refresh refusal.
+
+Native regression reproduces RED on the prior implementation, then verifies refresh/readback, earlier-month maximum horizon retention, SQLite close/reopen, owner isolation, amount/pending/account/category changes and a deleted leg. Stored matches and revision remain unchanged when invalid-match refresh is rejected; stale funding stays unknown. This shared-adapter seam does not complete the future explicit pair-review controls, account baseline setup, or source-specific history capture.

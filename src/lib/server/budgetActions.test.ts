@@ -85,3 +85,25 @@ test('native refill and balance edits preserve cash and reject conflicting targe
  const denied=await (actions as any).target(event({...command,category_id:'2',revision:String(balance.funding.view.revision),key:'foreign-target'}));expect(denied.status).toBe(400);expect(page().funding.view.revision).toBe(balance.funding.view.revision);
  const tooLarge=await (actions as any).target(event({...command,target_id:'x'.repeat(17000),revision:String(balance.funding.view.revision),key:'oversize-target'}));expect(tooLarge.status).toBe(400);expect(page().funding.view.revision).toBe(balance.funding.view.revision);
 });
+
+test('native refresh retains explicit persisted transfer matches and refuses changed matches',async()=>{
+ let d=db();d.exec("INSERT INTO users(id,name,email,password_hash) VALUES(3,'Pair owner','pair@example.test','unused');INSERT INTO accounts(id,user_id,name,type) VALUES(31,3,'Cash one','bank'),(32,3,'Cash two','bank');INSERT INTO categories(id,user_id,name,type,is_transfer) VALUES(31,3,'Transfers','expense',1);");
+ let e=new BudgetEngine(d,3);e.activate({currency:'USD',asOfDate:'2023-12-31',accounts:[{id:31,currency:'USD',scope:'cash',balanceCents:100000},{id:32,currency:'USD',scope:'cash',balanceCents:0}],evidence:'Synthetic paired-transfer baseline'},{expectedRevision:0,idempotencyKey:'pair-base'});
+ d.exec("INSERT INTO transactions(id,user_id,account_id,category_id,date,amount_cents) VALUES(31,3,31,31,'2024-01-02',-10000),(32,3,32,31,'2024-01-02',10000)");
+ const pairs=[{outflowId:31,inflowId:32}];e.refreshRegister('2024-02-29',pairs,{expectedRevision:e.view('2024-01').revision,idempotencyKey:'explicit-pair'});
+ const prior=e.view('2024-01');const refreshEvent=()=>{const v=event({revision:String(e.view('2024-01').revision),key:'retain-pair'});v.locals.user={...user,id:3};return v;};
+ const result=await (actions as any).refresh(refreshEvent());expect(result.ok).toBe(true);expect(e.view('2024-01').ledger).toEqual(prior.ledger);
+ const stored=()=>String((d.query('SELECT register_json FROM budget_engine_state WHERE owner_id=3').get() as any).register_json);
+ expect(JSON.parse(stored()).pairs).toEqual(pairs);expect(e.view('2024-01').activityThrough).toBe('2024-02-29');
+ const {transferPairCatalog}=await import('./budgetIntegration');expect(transferPairCatalog(3,'2024-02-29')).toMatchObject({status:'verified',pairs});expect(transferPairCatalog(1,'2024-02-29').pairs).toEqual([]);
+ closeDbForTests();d=db();e=new BudgetEngine(d,3);expect(transferPairCatalog(3,'2024-02-29')).toMatchObject({status:'verified',pairs});expect(e.view('2024-01').ledger).toEqual(prior.ledger);
+ d.exec('UPDATE transactions SET amount_cents=9000 WHERE id=32');const before=stored(),revision=e.view('2024-01').revision;expect(transferPairCatalog(3,'2024-02-29').status).toBe('needs_review');
+ const bad=refreshEvent();bad.request=new Request(bad.url,{method:'POST',headers:{origin:bad.url.origin},body:new URLSearchParams({revision:String(revision),key:'reject-changed-pair'})});
+ const refused=await (actions as any).refresh(bad);expect(refused.status).toBe(400);expect(refused.data.error).toContain('transfer matches need review');expect(stored()).toBe(before);expect(e.view('2024-01').revision).toBe(revision);expect(e.view('2024-01').ledger).toBeNull();
+ d.exec('UPDATE transactions SET amount_cents=10000 WHERE id=32');expect(transferPairCatalog(3,'2024-02-29').status).toBe('verified');
+ d.exec('UPDATE transactions SET pending=1 WHERE id=32');expect(transferPairCatalog(3,'2024-02-29').status).toBe('needs_review');
+ d.exec('UPDATE transactions SET pending=0,account_id=1 WHERE id=32');expect(transferPairCatalog(3,'2024-02-29').status).toBe('needs_review');
+ d.exec('UPDATE transactions SET account_id=32 WHERE id=32');expect(transferPairCatalog(3,'2024-02-29').status).toBe('verified');
+ const corrupt={...JSON.parse(stored()),pairs:[{outflowId:31,inflowId:32,categoryId:1}]};d.query('UPDATE budget_engine_state SET register_json=? WHERE owner_id=3').run(JSON.stringify(corrupt));expect(transferPairCatalog(3,'2024-02-29').status).toBe('needs_review');
+ d.query('UPDATE budget_engine_state SET register_json=? WHERE owner_id=3').run(before);d.exec('DELETE FROM transactions WHERE id=32');expect(transferPairCatalog(3,'2024-02-29').status).toBe('needs_review');
+});

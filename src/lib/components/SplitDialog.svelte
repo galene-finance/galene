@@ -93,10 +93,13 @@
 	}
 
 	let saving = $state(false);
+	let submissionError = $state<string|null>(null);
+	$effect(()=>{if(open)submissionError=null;});
 
 	const handleSubmit: SubmitFunction = withPending(
 		(v) => (saving = v),
 		({ formData }) => {
+		submissionError=null;
 		if (!transaction) return;
 		formData.set('id', String(transaction.id));
 		formData.set('type', isExpense ? 'expense' : 'income');
@@ -110,6 +113,11 @@
 			formData.append('amount', r.amount);
 		}
 		return async ({ result, update }) => {
+   if(result.type==='error') {submissionError='Could not confirm the save. Check Activity before trying again.';return;}
+   if(result.type==='failure'||(result.type==='success'&&result.data?.error)){
+    submissionError=typeof result.data?.error==='string'?result.data.error:'Could not save. Check the fields and try again.';
+    return;
+   }
 			await update();
 			// 'success' also covers actions that return an error object — only close when there is none.
 			if (result.type === 'redirect' || (result.type === 'success' && !result.data?.error)) {
@@ -192,8 +200,8 @@
 			</div>
 		{/if}
 
-		{#if showError && form?.error}
-			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
+		{#if submissionError || (showError && form?.error)}
+			<p role="alert" class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{submissionError ?? form?.error}</p>
 		{/if}
 
 		</fieldset>

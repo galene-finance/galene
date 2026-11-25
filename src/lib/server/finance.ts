@@ -1135,6 +1135,30 @@ export function transactionInputFromForm(userId: number, form: FormData): { inpu
 
 export class TransactionEditError extends Error {}
 
+/** Synchronous native form mutations include any eagerly created related records. */
+export function atomicFormMutation<T extends object>(action:()=>T):T{
+ const d=db();d.exec('SAVEPOINT form_mutation');
+ try{
+  const result=action();
+  if('error' in result)d.exec('ROLLBACK TO SAVEPOINT form_mutation');
+  d.exec('RELEASE SAVEPOINT form_mutation');return result;
+ }catch(error){
+  d.exec('ROLLBACK TO SAVEPOINT form_mutation');d.exec('RELEASE SAVEPOINT form_mutation');throw error;
+ }
+}
+
+export function saveTransactionFromForm(userId:number,form:FormData):{ok:true}|{error:string}{
+ return atomicFormMutation(()=>{
+  const {input,error}=transactionInputFromForm(userId,form);
+  if(error||!input)return {error:error??'Invalid transaction.'};
+  try{saveTransaction(userId,input);}catch(error){
+   if(error instanceof TransactionEditError)return {error:error.message};
+   throw error;
+  }
+  return {ok:true as const};
+ });
+}
+
 export function saveTransaction(userId: number, input: TransactionInput) {
 	assertOwnedAccount(userId, input.account);
 	assertOwnedCategory(userId, input.category);

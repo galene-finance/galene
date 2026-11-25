@@ -1,4 +1,6 @@
 import {
+	atomicFormMutation,
+	saveTransactionFromForm,
 	backfillCategorizationRules,
 	bulkAddTags,
 	bulkDeleteTransactions,
@@ -17,11 +19,9 @@ import {
 	getTransactionForRemember,
 	rememberPayeeRule,
 	saveScheduled,
-	saveTransaction,
 	saveTransactionSplits,
 	setSetting,
 	scheduledInputFromForm,
-	transactionInputFromForm
 } from '$lib/server/finance';
 import { parseAmountToCents } from '$lib/utils';
 import { parseTransactionFilters } from '$lib/server/transactionFilters';
@@ -52,14 +52,7 @@ export const actions = {
 	save: async ({ request, locals }) => {
 		const userId = locals.user!.id;
 		const form = await request.formData();
-		const { input, error } = transactionInputFromForm(userId, form);
-		if (error || !input) return { error };
-		try {
-			saveTransaction(userId, input);
-		} catch (e) {
-			return { error: e instanceof Error ? e.message : 'Could not save.' };
-		}
-		return { ok: true };
+		return saveTransactionFromForm(userId, form);
 	},
 
 	delete: async ({ request, locals }) => {
@@ -126,6 +119,7 @@ export const actions = {
 	split: async ({ request, locals }) => {
 		const userId = locals.user!.id;
 		const form = await request.formData();
+		return atomicFormMutation(()=>{
 		const id = parseInt(String(form.get('id') ?? ''), 10);
 		if (!Number.isFinite(id)) return { error: 'Invalid transaction.' };
 		if (form.get('unsplit') === '1') {
@@ -158,6 +152,7 @@ export const actions = {
 			return { error: e instanceof Error ? e.message : 'Could not save splits.' };
 		}
 		return { ok: true };
+		});
 	},
 
 	'save-scheduled': async ({ request, locals }) => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {activityParts} from '$lib/activity';
 	import { untrack } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
@@ -195,33 +196,16 @@
 			.sort((a, b) => a.date.localeCompare(b.date));
 	});
 
+	const cashflowCategories=$derived(new Map(data.categories.map(c=>[c.id,c])));
 	const drillActual = $derived.by(() => {
-		const d = drill;
-		if (!d || d.kind !== 'actual') return [];
-		return data.transactions
-			.flatMap<DrillItem>((t) => {
-				if (!d.months.includes(t.date.slice(0, 7))) return [];
-				if (t.splits && t.splits.length > 0) {
-					return t.splits
-						.filter((s) => s.category_id === d.categoryId)
-						.map((s) => ({
-							id: `${t.id}-${s.category_id}`,
-							date: t.date,
-							label: t.merchant ?? t.account_name ?? 'Transaction',
-							amountCents: s.amount_cents * Math.sign(t.amount_cents)
-						}));
-				}
-				return t.category_id === d.categoryId
-					? [{
-						id: String(t.id),
-						date: t.date,
-						label: t.merchant ?? t.account_name ?? 'Transaction',
-						amountCents: t.amount_cents
-					}]
-					: [];
-			})
-			.sort((a, b) => a.date.localeCompare(b.date));
-	});
+  const d=drill;if(!d||d.kind!=='actual')return [];
+  return data.transactions.flatMap<DrillItem>(t=>{
+   if(t.pending||!d.months.includes(t.date.slice(0,7)))return [];
+   return activityParts(t,cashflowCategories).flatMap((part,index)=>
+    part.categoryId===d.categoryId&&part.type===d.sectionType
+     ?[{id:`${t.id}-${index}`,date:t.date,label:t.merchant??t.account_name??'Transaction',amountCents:part.cents}]:[]);
+  }).sort((a,b)=>a.date.localeCompare(b.date));
+ });
 
 	const drillForecastTotal = $derived(drillForecast.reduce((s, o) => s + o.amountCents, 0) * (drillSign ?? -1));
 	const drillActualTotal = $derived(drillActual.reduce((s, a) => s + a.amountCents, 0) * drillSign);

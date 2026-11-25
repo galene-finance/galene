@@ -8,6 +8,9 @@ import {computeDashboardData} from './dashboard';
 import {generateComputedAlerts,listNotifications} from './notifications';
 import {productPeriod} from './product';
 import {load as overviewLoad} from '../../routes/(app)/+page.server';
+import {actions as transactionActions} from '../../routes/(app)/transactions/+page.server';
+import {actions as calendarActions} from '../../routes/(app)/calendar/+page.server';
+import {load as cashflowLoad} from '../../routes/(app)/cashflow/+page.server';
 import {budgetPeriodSpend,getTransactions,saveTransaction,sanitizeCashflowFilters} from './finance';
 import {parseTransactionFilters} from './transactionFilters';
 const previousPath=process.env.GALENE_DB_PATH;
@@ -93,6 +96,44 @@ describe('one posted accounting definition across native pages',()=>{
  });
  test('cashflow filters exclude movement categories consistently',()=>{
   expect(sanitizeCashflowFilters(1,{accountIds:[account],categoryIds:[expense,transfer]})).toEqual({accountIds:[account],categoryIds:[expense]});
+ });
+ for(const [name,save] of [['activity',transactionActions.save],['calendar',calendarActions.save]] as const){
+ test(`${name} rejected split edits leave no newly created records`,async()=>{
+  const d=db();const counts=()=>['accounts','categories','tags'].map(table=>(d.query(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id=1`).get() as {n:number}).n);
+  const before=counts();d.exec('BEGIN');
+  try{
+   const form=new FormData();for(const [k,v]of Object.entries({id:String(splitId),type:'expense',amount:'120.00',date:start,account_new:'Rejected fixture account',category_new:'Rejected fixture category',tag_new:'Rejected fixture tag'}))form.set(k,v);
+   const result=await save({request:new Request('http://test.invalid/',{method:'POST',body:form}),locals:{user:{id:1}}} as Parameters<typeof transactionActions.save>[0] & Parameters<typeof calendarActions.save>[0]);
+   expect(result).toHaveProperty('error');expect(counts()).toEqual(before);
+  }finally{d.exec('ROLLBACK');}
+ });
+ }
+ test('rejected split allocations do not create a category',async()=>{
+  const d=db(),count=()=> (d.query('SELECT COUNT(*) AS n FROM categories WHERE user_id=1').get() as {n:number}).n;
+  const before=count();d.exec('BEGIN');
+  try{
+   const form=new FormData();form.set('id',String(splitId));form.set('type','expense');
+   form.append('cat_id','');form.append('cat_new','Rejected split category');form.append('amount','1.00');
+   form.append('cat_id',String(expense));form.append('cat_new','');form.append('amount','1.00');
+   const result=await transactionActions.split({request:new Request('http://test.invalid/',{method:'POST',body:form}),locals:{user:{id:1}}} as Parameters<typeof transactionActions.split>[0]);
+   expect(result).toHaveProperty('error');expect(count()).toBe(before);
+  }finally{d.exec('ROLLBACK');}
+ });
+ test('monthly cashflow returns canonical bounds for a legacy day-range request',()=>{
+  const data=cashflowLoad({locals:{user:{id:1}},url:new URL(`http://test.invalid/cashflow?from=${month}-15&to=${month}-20`)} as Parameters<typeof cashflowLoad>[0]);
+  expect(data.from).toBe(start);
+  expect(data.to).toBe(new Date(Date.parse(end+'T00:00:00Z')-86400000).toISOString().slice(0,10));
+  expect(data.monthList).toEqual([month]);
+ });
+ test('spread monthly forecast equals its occurrence detail without rounding loss',()=>{
+  const d=db();d.exec('BEGIN');
+  try{
+   d.query("INSERT INTO scheduled(user_id,name,account_id,category_id,amount_cents,start_date,forecast_behavior) VALUES(1,'Fixture spread',?,?,-10001,?,'spread')").run(account,expense,start);
+   const data=cashflowLoad({locals:{user:{id:1}},url:new URL(`http://test.invalid/cashflow?from=${start}&to=${month}-20`)} as Parameters<typeof cashflowLoad>[0]);
+   const row=data.sections.expense.rows.find(r=>r.categoryId===expense)!;
+   expect(row.totalForecastCents).toBe(-10001);
+   expect(data.occurrences.filter(o=>o.categoryId===expense).reduce((sum,o)=>sum+o.amountCents,0)).toBe(row.totalForecastCents);
+  }finally{d.exec('ROLLBACK');}
  });
  test('transaction detail never crosses owner scope',()=>{expect(getProductTransaction(1,foreignId)).toBeNull();});
 });

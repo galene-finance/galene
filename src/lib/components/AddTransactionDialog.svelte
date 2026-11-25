@@ -59,6 +59,8 @@
 	const tagCreate = $derived(tagValues.includes(CREATE_VALUE));
 
 	let saving = $state(false);
+	let submissionError = $state<string|null>(null);
+	$effect(()=>{if(open)submissionError=null;});
 
 	const accountItems = $derived(accounts.map((a) => ({ value: String(a.id), label: a.name })));
 	const categoryItems = $derived(categoryPickerItems(categories));
@@ -118,6 +120,7 @@
 	const handleSubmit: SubmitFunction = withPending(
 		(v) => (saving = v),
 		({ formData }) => {
+		submissionError=null;
 		formData.set('id', editing ? String(editing.id) : '');
 		formData.set('type', type);
 		formData.set('amount', amount);
@@ -147,6 +150,11 @@
 		// closed (search cleared) — prefer the live text, fall back to the captured one.
 		formData.set('tag_new', tagCreate ? tagSearch.trim() || tagNewName : '');
 		return async ({ result, update }) => {
+   if(result.type==='error') {submissionError='Could not confirm the save. Check Activity before trying again.';return;}
+   if(result.type==='failure'||(result.type==='success'&&result.data?.error)){
+    submissionError=typeof result.data?.error==='string'?result.data.error:'Could not save. Check the fields and try again.';
+    return;
+   }
 			await update();
 			// 'success' also covers actions that return an error object — only close when there is none.
 			if (result.type === 'redirect' || (result.type === 'success' && !result.data?.error)) {
@@ -258,8 +266,8 @@
 			</Field>
 		</div>
 
-		{#if form?.error}
-			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</p>
+		{#if submissionError || form?.error}
+			<p role="alert" class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{submissionError ?? form?.error}</p>
 		{/if}
 
 		</fieldset>

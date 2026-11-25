@@ -1,5 +1,55 @@
 # Galene product system — W11
 
+## V3 active contract — 2026-11-25 owner revision
+
+The functioning v2 baseline is retained; its aesthetics/visual acceptance are superseded. Chris approved heavy YNAB inspiration, not a literal clone. Current source research and screenshot observations: YNAB-RESEARCH.md. Same writer/task, no ledger/importer replacement. All older financial safety requirements remain active.
+
+### Routes and shared layouts
+
+- Home `/`: current monthly plan (Cost to be me), recorded actuals, source-aware cash/debt summaries, review attention and next outgoing obligations. No prominent expected-wage metric. A plan target is not money available.
+- Plan `/budget`: grouped current targets/limits, classified actuals and clearly labeled remaining-to-limit/over-limit states. Show categories without a target; grouped totals must not be added again to their children. Native create/edit/delete remains functional. Historical actuals must not imply stored historical target versions.
+- Activity `/transactions` and detail `/transactions/[id]`: grouped native register, filters/search/sort, split/native edits and visible error recovery; shared row anatomy with date beneath description/category.
+- Reflect `/reflect`: reporting entry with segmented Breakdown, Trends and Income vs Spending views. Reuse shared actuals/contributions. Existing `/spending`, `/income` and contribution/category routes retain meaningful navigation and back/filter scope; no unsupported net-worth history.
+- Accounts `/accounts`, `/accounts/[id]`: shared grouped surfaces, exact source/as-of distinctions, related activity. Balances are not automatically spendable cash.
+- Planning `/scheduled`, `/recurring`, `/calendar`, `/cashflow`: retained valid schedules/history/discovery and native editors; positive expectations stay explicitly forecast and out of actuals. Cash-flow expectations belong here, not in actual-only Reflect totals.
+- Native `/settings/*`, `/customize`, authentication and remaining utilities: same tokens, headers, forms, dialogs, statuses and responsive spacing. Do not remove a native operation merely to simplify the navigation.
+
+Primary navigation is consistently Home, Plan, Activity, Reflect, Accounts (desktop sidebar; five labeled compact tabs). Scheduled/Calendar/Settings and retained utilities are secondary destinations. Segment controls switch real views, not decoration; URL state/back works. Sidebars/inspectors become sheets or stacked detail on compact layouts without hiding necessary values.
+
+### Component inventory and state budget
+
+- Buttons: primary / secondary / quiet / danger / icon (5 variants); 44px touch target, named icon controls.
+- Navigation: primary destination / secondary destination (2); segmented view control (1 component), all with semantic current/selected state.
+- Surface: page / grouped section / inset detail / dialog (4); rounded grouped sections are intentional repeated product structure, not a decorative marketing-card grid.
+- Field: input / select / textarea (3); one consistent label, help/error, focus and disabled recipe.
+- Ledger row: normal / selectable (2); category/source/status tokens shared with all list/detail surfaces. Date always under identifying content, never tucked under amount.
+- Amount/category pill: neutral / positive or received / attention or pending / exceeded or deficit / movement (5 semantic variants). Filled background, visible state text or icon, adequate contrast; no arbitrary rainbow categories. Within-limit status does not mean funded.
+- Chart: shared chart frame, legend, empty/error/partial state and linked textual contribution list. Report types share period/filter controls and signed arithmetic.
+
+Every interactive variant has default, hover (hover-capable devices only), focus-visible, pressed, disabled-with-reason, in-place loading, selected/current, empty-next-action and local error/retry states as applicable. Partial data stays visible with source/as-of context. Preserve native dialog focus/Escape restoration and server validation feedback. No animated counters or invented values.
+
+### Visual commitment
+
+Graphite leads/default: preserve its existing neutral charcoal family (page #111315, panel #1a1d20, inset #23272b) and restrained warm action accent. Ocean keeps its blue-black character; Dark remains a distinct polished alternative. Existing nonselected/custom themes are not deleted or silently overwritten. Default selection, persisted owner preference and signed-out fallback must be tested separately.
+
+Use local platform system sans, tabular amounts, 12/14/16/20/28px roles. Section radii around 18–22px; fields/buttons around 10–12px; true pill radii for status. Layering comes from meaningful surface contrast and grouping, not gradients/glass/glow. Layout is an asymmetric working pane with an optional inspector, never a generic tile grid. Motion budget: no scroll choreography, only brief 120–180ms state transitions and reduced-motion support.
+
+Moment of care: tap a surprising number or badge and reach the explanation/contributing records without losing context. Deliberately retain Graphite dark/amber because Chris selected it, not as an automatic aesthetic reflex (auteur-allow: selected dark palette/action accent). Reject mono service labels, huge hero metrics, glow, generic fintech gradients and decorative empty cards. Native grouped rows and meaningful color-filled pills are a deliberate owner requirement, not decorative repeated cards.
+
+### Planning arithmetic contract
+
+Cost to be me totals each valid current monthly planning target once; income targets are not a cost. It is unaffected by spending, refunds, current balances, forecast wages or funding fields. Monthly movement/payment targets can express planned commitments without becoming spending. Separate nonmonthly cadence unless a documented native rule can produce its current-month requirement; do not silently annualize or invent due dates. Do not blindly add schedules to limits: obligations may already overlap targets, including mixed fee/principal payments. Show schedules separately with scope, preserving all history. Missing/invalid targets are explicit, not invented zero-cost or funded amounts.
+
+Received-income actuals use posted income contributions, not schedules. Preserve refund/reversal signs, pending/movement exclusion and partial-history signals. No spendable metric unless its actual source semantics support it. Existing working MMI/Apple values remain clearly sourced, never forced into agreement with incomplete ledger history.
+
+### Acceptance
+
+Inventory every route/component/state before broad implementation. Follow failing-first pure planning/theme/state tests, existing accounting regressions, native actions, build and exact-source independent review. Inspect Graphite/Ocean/Dark at 390/768/1440 (plus narrow reflow); keyboard/contrast/dialog/scroll and persistence checks. Private activation only with verified rollback and exact artifact identity. Saved exact-origin Bitwarden login exists, but authoritative readiness is still a hard gate: no secret handling/bypass or repeated enrollment request. Synthetic previews are not authenticated acceptance.
+
+## Retained v2 notes — historical visual specification
+
+The following source/research/financial notes are preserved for provenance. The V3 route, navigation and visual contract above supersedes conflicting visual choices below.
+
 Decision date: 2026-11-24. Full product redesign authorized. This is an implementation contract, not the delivered result. Existing live release remains available until replacement passes gates.
 
 ## Product principles

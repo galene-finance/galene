@@ -1,5 +1,6 @@
 <script lang="ts">
  import {onMount} from 'svelte';
+ import {fixtureBudgetUrl} from './native-navigation';
  import Calendar from '../src/routes/(app)/calendar/+page.svelte';
  import Settings from '../src/routes/(app)/settings/+page.svelte';
  import Appearance from '../src/routes/(app)/settings/appearance/+page.svelte';
@@ -20,18 +21,18 @@
  import native from './native-fixture.json';
  import '../src/lib/product.css';
  const url=new URL(location.href),path=url.pathname,base=fixture(url),id=Number(path.split('/').at(-1));
- const integrated=url.searchParams.has('integration');
+ const integrated=import.meta.env.VITE_NATIVE_BUDGET_QA==='1'||url.searchParams.has('integration');
  let budgetData=$state<any>(null),budgetForm=$state<any>(undefined),budgetError=$state(''),budgetBusy=$state(false);
  async function budgetRequest(action?:string,body?:FormData){
   budgetBusy=true;budgetError='';
-  try{const response=await fetch(path==='/reflect'?`/__qa/reflect${url.search}`:path==='/'?`/__qa/home${url.search}`:path.startsWith('/categories/')?`/__qa/category${url.search}`:`/__qa/budget?month=${url.searchParams.get('month')??'2024-01'}${action?'&action='+action:''}`,action?{method:'POST',body}:undefined);const reply=await response.json();if(!response.ok||!reply.fixture||!reply.data)throw new Error('Fixture request failed');budgetData=reply.data;budgetForm=reply.form;return reply.form?.ok===true;}
+  try{const response=await fetch(path==='/reflect'?`/__qa/reflect${url.search}`:path==='/'?`/__qa/home${url.search}`:path.startsWith('/categories/')?`/__qa/category${url.search}`:fixtureBudgetUrl(url.search,action),action?{method:'POST',body}:undefined);const reply=await response.json();if(!response.ok||!reply.fixture||!reply.data)throw new Error('Fixture request failed');budgetData=reply.data;budgetForm=reply.form;return reply.form?.ok===true;}
   catch{budgetError='Synthetic fixture request failed; do not treat this as a successful save.';}
   finally{budgetBusy=false;}
  }
  onMount(()=>{if(!integrated)return;void budgetRequest();const submit=(event:SubmitEvent)=>{const form=event.target;if(!(form instanceof HTMLFormElement))return;const action=form.dataset.budgetCommand??(form.dataset.featureForm==='move'?'moveMoney':form.dataset.featureForm==='reserve'?'cardReserve':null);if(!action)return;event.preventDefault();if(!budgetBusy)void budgetRequest(action,new FormData(form)).then(ok=>{if(ok)form.reset();});};const link=(event:MouseEvent)=>{const a=(event.target as Element)?.closest('a');if(!a)return;const target=new URL(a.href,location.href);if(target.origin===location.origin&&(target.pathname==='/budget'||target.pathname==='/reflect'||target.pathname.startsWith('/categories/'))){target.searchParams.set('integration','1');target.searchParams.set('theme',themeSlug);a.href=target.href;}};document.addEventListener('click',link,true);document.addEventListener('submit',submit,true);return()=>{document.removeEventListener('submit',submit,true);document.removeEventListener('click',link,true);};});
- let open=$state(false);let themeSlug=$state(url.searchParams.get('theme')??'graphite');
+ let open=$state(false);let themeSlug=$state(url.searchParams.get('theme')??sessionStorage.getItem('galene-fixture-theme')??'graphite');
  const theme=$derived(DEFAULT_THEMES.find(t=>t.slug===themeSlug)??DEFAULT_THEMES.find(t=>t.slug==='graphite')!);
- $effect(()=>applyThemeNow(theme));
+ $effect(()=>{applyThemeNow(theme);sessionStorage.setItem('galene-fixture-theme',themeSlug);});
  const q=url.searchParams.get('q')??'',status=url.searchParams.get('status')??'all',sort=url.searchParams.get('sort')??'newest';
  const items=transactions.filter(t=>(t.merchant??'').toLowerCase().includes(q.toLowerCase())).filter(t=>status==='all'||(status==='posted'?!t.pending:t.pending)).toSorted((a,b)=>sort==='oldest'?a.date.localeCompare(b.date):sort==='amount'?Math.abs(b.amount_cents)-Math.abs(a.amount_cents):b.date.localeCompare(a.date));
  const register:any={data:{items,total:items.length,pages:1},filters:{accountIds:[],categoryIds:[],tagIds:[],emptyFields:[],amountOp:'',amountFrom:null,amountTo:null,dateFrom:'',dateTo:'',q,page:1,pageSize:50,status,sort},accounts,categories,tags:[]};

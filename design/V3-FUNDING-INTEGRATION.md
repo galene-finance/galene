@@ -48,3 +48,11 @@ Native Plan now offers a progressively disclosed, native-POST transfer review. I
 Native regression verifies wrong-owner reference rejection, explicit confirmation, saved match readback, retry idempotency, stale refusal, SQLite reopen, unchanged aggregate cash and zero duplicate expense. Browser source insertion→unknown coverage→explicit pairing→known coverage→full reload passed in disposable SQLite. This is not live-session/physical-touch evidence.
 
 Bounded limits are explicit: up to200 posted transfer rows; every unresolved transfer in the coverage window must be resolved for atomic save. Engine rules require equal opposite amounts, same posted day and different accounts. Different-day/in-transit transfers are not fabricated into supported matches. Larger windows or source rows that do not meet this contract remain unresolved. The UI does not auto-classify transactions. Trusted history capture and baseline/account setup remain separate implementation gaps; same W16 owns QA-M01.
+
+
+## QA-H01 and M01 integration
+Exact owned M01 fix653f859 integrated as63f7535, installed bytes verified. W11 did not duplicate that correction; same W17 retests.
+
+Reproduced QA-H01 using the actual History native GET: it retained view/account/dates but lost the integration marker and incorrectly selected static fixture content. The dedicated synthetic server now explicitly sets VITE_NATIVE_BUDGET_QA for its frontend. main.ts only bypasses the static mock for real fixture endpoints when that exact mode is active. No production query fields were changed. The native Plan GET now retains the submitted full date rather than forcing January/month-start; mutations retain date scope and replace duplicate action parameters. Fixture theme is retained in fixture-origin sessionStorage. Unit transport regressions and actual native GET browser RED→GREEN: History card scope, one day,-30000; Plan2024-02-15,February controls retained; no integration flag needed after either GET.
+
+Auth remains a separate BLOCKED_DEPENDENCY per coordinator's live readiness read: Bitwarden current_readiness_is_authoritative=false, historical Nov16 evidence only, no owner setup recommended. Saved login exists; no re-entry request, registry edits, credential fill or bypass. Synthetic injection is NOT authenticated acceptance.

@@ -9,7 +9,7 @@ const {productOverview}=await import('../src/lib/server/product');
 const {load:reflectLoad}=await import('../src/routes/(app)/reflect/+page.server');
 const {load:categoryLoad}=await import('../src/routes/(app)/categories/[id]/+page.server');
 const origin=process.env.ATLAS_QA_ORIGIN??'http://127.0.0.1:24863';
-if(!['http://127.0.0.1:24863','http://127.0.0.1:24865','http://127.0.0.1:24911','http://127.0.0.1:24912'].includes(origin))throw new Error('Unsupported synthetic origin');
+if(!['http://127.0.0.1:24863','http://127.0.0.1:24865','http://127.0.0.1:24911','http://127.0.0.1:24912','http://127.0.0.1:24913'].includes(origin))throw new Error('Unsupported synthetic origin');
 const user={id:1,name:'Synthetic owner',email:'fixture@example.test',is_admin:1,role:'owner' as const};
 const d=db();
 if(!d.query('SELECT id FROM users WHERE id=1').get()){
@@ -20,12 +20,12 @@ if(!d.query('SELECT id FROM users WHERE id=1').get()){
  for(const [i,accountId,balanceCents,day] of [[0,1,100000,'01'],[1,2,-30000,'01'],[2,1,97000,'03'],[3,3,0,'01']] as const)engine.recordSnapshot(`synthetic-evidence:${i}`,{accountId,balanceCents,currency:'USD',asOf:`2024-01-${day}T23:59:00.000Z`,recordedAt:'2024-01-04T00:00:00.000Z',source:'actual',evidence:'Explicit synthetic dated fixture evidence'},{expectedRevision:3+i,idempotencyKey:`synthetic-snapshot:${i}`});
 }
 Bun.serve({hostname:'127.0.0.1',port:5174,async fetch(request){
- const incoming=new URL(request.url),month=incoming.searchParams.get('month')??'2024-01';
+ const incoming=new URL(request.url),month=incoming.searchParams.get('date')?.slice(0,7)??incoming.searchParams.get('month')??'2024-01';
  if(incoming.pathname==='/__qa/reflect'&&request.method==='GET')return Response.json({fixture:true,data:reflectLoad({locals:{user},url:new URL(`${origin}/reflect${incoming.search}`)} as any)});
  if(incoming.pathname==='/__qa/home'&&request.method==='GET')return Response.json({fixture:true,data:productOverview(1,new URL(`${origin}/${incoming.search}`))});
  if(incoming.pathname==='/__qa/category'&&request.method==='GET')return Response.json({fixture:true,data:categoryLoad({locals:{user},params:{id:'1'},url:new URL(`${origin}/categories/1${incoming.search}`)} as any)});
  if(incoming.pathname!=='/__qa/budget'||!/^2024-(0[1-9]|1[0-2])$/.test(month))return new Response('Not found',{status:404});
- const url=new URL(`${origin}/budget?month=${month}`),locals={user,viewer:null,apiToken:null};let form:unknown;
+ const url=new URL(`${origin}/budget${incoming.search}`);if(!url.searchParams.has('date')&&!url.searchParams.has('month'))url.searchParams.set('month',month);const locals={user,viewer:null,apiToken:null};let form:unknown;
  try{
   if(request.method==='POST'){
    if(request.headers.get('origin')!==origin)return new Response('Origin refused',{status:403});
@@ -42,6 +42,6 @@ Bun.serve({hostname:'127.0.0.1',port:5174,async fetch(request){
   return Response.json({fixture:true,authScope:'synthetic owner context, not production session acceptance',form,data:load({locals,url} as any)});
  }catch{return Response.json({fixture:true,error:'Synthetic integration request failed'},{status:500});}
 }});
-const child=Bun.spawn(['bun','run','node_modules/vite/bin/vite.js','--config','ui-preview/vite.config.ts','--host','0.0.0.0','--port','5173'],{stdout:'inherit',stderr:'inherit',env:process.env});
+const child=Bun.spawn(['bun','run','node_modules/vite/bin/vite.js','--config','ui-preview/vite.config.ts','--host','0.0.0.0','--port','5173'],{stdout:'inherit',stderr:'inherit',env:{...process.env,VITE_NATIVE_BUDGET_QA:'1'}});
 process.on('SIGTERM',()=>{child.kill();process.exit(0);});
 process.exit(await child.exited);

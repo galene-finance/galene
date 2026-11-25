@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import FundingOverview from '$lib/components/FundingOverview.svelte';
+	import CategoryPill from '$lib/components/CategoryPill.svelte';
+	import type {budgetFunding} from '$lib/server/budgetIntegration';
 	import Badge from '$lib/components/FinancialBadge.svelte';
 	import {monthlyPlanTotal} from '$lib/monthlyPlan';
 	import {planningGroups} from '$lib/planningGroups';
@@ -26,13 +29,15 @@
 
 	let { form, data }: {
 		form: { error?: string | null } | undefined;
-		data: { budgets: BudgetRow[]; categories: Category[]; selectedDate: string };
+		data: { budgets: BudgetRow[]; categories: Category[]; selectedDate: string } & Partial<ReturnType<typeof budgetFunding>>;
 	} = $props();
 
 	const kinds=$derived(new Map(data.categories.map(c=>[c.id,c.type])));
 	const plan=$derived(monthlyPlanTotal(data.budgets,kinds));
-	const groups=$derived(planningGroups(data.budgets,data.categories));
-	const withoutTarget=$derived(data.categories.filter(c=>c.type==='expense'&&!data.categories.some(child=>child.parent_id===c.id)&&!data.budgets.some(b=>b.category_id===c.id)));
+	const activeTargets=$derived(data.funding?.plan.lines.filter(t=>t.active)??[]);
+	const enginePlan=$derived(activeTargets.length?data.funding!.plan:null);
+	const groups=$derived(planningGroups(data.budgets.filter(b=>!activeTargets.some(t=>t.categoryId===b.category_id)),data.categories));
+	const withoutTarget=$derived(data.categories.filter(c=>c.type==='expense'&&!data.categories.some(child=>child.parent_id===c.id)&&!data.budgets.some(b=>b.category_id===c.id)&&!activeTargets.some(t=>t.categoryId===c.id)));
 	function addForCategory(c:Category){openAdd();categoryId=String(c.id);}
 	// --- Add / edit dialog ---
 	let dialogOpen = $state(false);
@@ -114,9 +119,11 @@
 <Title title="Plan" />
 <div class="product-page">
  <header class="product-heading plan-heading"><div><h1>Plan</h1></div><button class="product-button primary" onclick={openAdd}>Add a target</button></header>
- <section class="product-panel"><header class="product-panel-header"><div><h2>Cost to be me</h2><p class="product-row-caption">Current monthly targets</p></div>{#if plan.totalCents!==null}<Badge value={formatMoney(plan.totalCents)} label="Monthly plan"/>{:else}<Badge label={plan.needsReview?'Review targets':'No monthly targets'} tone={plan.needsReview?'attention':'neutral'}/>{/if}</header><footer class="product-details">{plan.targetIds.length} monthly targets · not money available.</footer></section>
+ <section class="product-panel"><header class="product-panel-header"><div><h2>Cost to be me</h2><p class="product-row-caption">{enginePlan?'Planned contribution this month':'Existing monthly target intent'}</p></div>{#if enginePlan?.totalCents!==null&&enginePlan?.totalCents!==undefined}<Badge value={formatMoney(enginePlan.totalCents)} label="Monthly plan"/>{:else if plan.totalCents!==null}<Badge value={formatMoney(plan.totalCents)} label="Existing monthly plan"/>{:else}<Badge label={plan.needsReview?'Review targets':'No monthly targets'} tone={plan.needsReview?'attention':'neutral'}/>{/if}</header><footer class="product-details">{enginePlan?activeTargets.length:plan.targetIds.length} targets · not money available.</footer></section>
  <form method="GET" class="product-toolbar"><label class="product-field" for="plan-date"><span>Compare activity as of</span><input id="plan-date" type="date" name="date" value={data.selectedDate} required/></label><button class="product-button">View</button></form>
- {#if !data.budgets.length}<section class="product-panel product-empty"><strong>Start with a category that matters</strong><p>Add a target you can adjust as the month unfolds.</p><button class="product-button" onclick={openAdd}>Add your first target</button></section>{/if}
+ {#if form?.error}<div class="product-attention" role="alert">{form.error}</div>{/if}
+ {#if data.funding&&data.fundingDate&&data.commandKey}<FundingOverview funding={data.funding} fundingDate={data.fundingDate} commandKey={data.commandKey} categories={data.categories}/>{/if}
+ {#if !data.budgets.length&&!activeTargets.length}<section class="product-panel product-empty"><strong>Start with a category that matters</strong><p>Add a target you can adjust as the month unfolds.</p><button class="product-button" onclick={openAdd}>Add your first target</button></section>{/if}
  {#each groups as group (group.key)}
   {@const groupPlan=monthlyPlanTotal(group.items,kinds)}
   <section class="product-panel"><header class="product-panel-header"><div><h2>{group.name}</h2><p class="product-row-caption">{group.period==='month'?'Monthly':group.period==='week'?'Weekly':'Yearly'} · {group.items.length} targets{group.income?' · separate from planned costs':''}</p></div>{#if groupPlan.totalCents!==null}<Badge value={formatMoney(groupPlan.totalCents)} label="Monthly targets"/>{/if}</header>
@@ -124,15 +131,15 @@
     {@const income=kinds.get(b.category_id)==='income'}
     {@const movement=kinds.get(b.category_id)==='transfer'}
     {@const over=b.spentCents>b.limit_cents}
-    {@const tone=movement?'movement':income?(b.spentCents>=b.limit_cents?'positive':'neutral'):(over?'negative':'positive')}
+    {@const tone=movement?'movement':income?(b.spentCents>=b.limit_cents?'positive':'neutral'):(over?'negative':'neutral')}
     <div class="budget-line">
-     <button type="button" class="budget-category" aria-label={`Edit ${b.category_name} target`} onclick={()=>openEdit(b)} disabled={movement} title={movement?'Movement targets are not editable in this form':undefined}><span class="budget-category-title"><Badge label={b.category_name} {tone}/><span class="budget-edit-hint">{movement?'Movement':'Edit'}</span></span><span class="product-row-caption">{periodLabel(b.period,b.from,b.to)}</span>{#if !movement}<span class="product-row-caption">{income?'Posted income':'Recorded spending'} {formatMoney(b.spentCents)} · {formatMoney(b.limit_cents)} {income?'goal':'limit'}</span>{/if}</button>
+     <button type="button" class="budget-category" aria-label={`Edit ${b.category_name} target`} onclick={()=>openEdit(b)} disabled={movement} title={movement?'Movement targets are not editable in this form':undefined}><span class="budget-category-title"><CategoryPill id={b.category_id} name={b.category_name} color={b.category_color}/><span class="budget-edit-hint">{movement?'Movement':'Edit'}</span></span><span class="product-row-caption">{periodLabel(b.period,b.from,b.to)}</span>{#if !movement}<span class="product-row-caption">{income?'Posted income':'Recorded spending'} {formatMoney(b.spentCents)} · {formatMoney(b.limit_cents)} {income?'goal':'limit'}</span>{/if}</button>
      <a class="budget-difference" href={`/categories/${b.category_id}?date_from=${b.from}&date_to=${inclusiveEnd(b.to)}`} aria-label={`View ${b.category_name} activity`}><Badge value={formatMoney(movement?b.limit_cents:Math.abs(b.limit_cents-b.spentCents))} label={movement?'Planned movement':income?(over?'Above goal':b.spentCents===b.limit_cents?'Goal reached':'To income goal'):(over?'Over limit':'Left to limit')} {tone}/></a>
     </div>
    {/each}
   </section>
  {/each}
- {#if withoutTarget.length}<details class="product-panel product-details"><summary>Categories without a target ({withoutTarget.length})</summary><p>A category without a target is not proof of spending or of money available.</p><ul class="product-list">{#each withoutTarget as c}<li class="product-row"><Badge label={c.name}/><button class="product-button" onclick={()=>addForCategory(c)}>Add target</button></li>{/each}</ul></details>{/if}
+ {#if withoutTarget.length}<details class="product-panel product-details"><summary>Categories without a target ({withoutTarget.length})</summary><p>A category without a target is not proof of spending or of money available.</p><ul class="product-list">{#each withoutTarget as c}<li class="product-row"><CategoryPill id={c.id} name={c.name} color={c.color}/><button class="product-button" onclick={()=>addForCategory(c)}>Add target</button></li>{/each}</ul></details>{/if}
  <details class="product-panel product-details"><summary>How the plan works</summary><p>Targets are current; changing the comparison date does not restore past targets. The comparison uses posted, categorized activity. Income goals and other cadences are separate from Cost to be me. Refunds reduce spending in their category. Transfers and card payments are not new spending. Each target retains its own week, month or year period. Changing a target changes the plan; it does not move money or reserve an account balance. Category groups collect their individual targets without adding the group total a second time.</p></details>
 </div>
 

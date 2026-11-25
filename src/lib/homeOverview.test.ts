@@ -5,7 +5,7 @@ import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 import { fixture } from '../../ui-preview/product-fixtures';
 import { formatMoney } from './utils';
-plugin({name:'home-view-ssr',setup(build){build.onLoad({filter:/(HomeOverview|CategoryPill|CashflowOverview|SettingsOverview|CategoryOverview|ScheduleAmount|TransactionAmount|AccountBalance|ProductTransactions|FinancialBadge|PeriodPicker|ReflectionOverview|ReflectTabs|ContributionList)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
+plugin({name:'home-view-ssr',setup(build){build.onLoad({filter:/(FundingOverview|FundingAmount|HomeOverview|CategoryPill|CashflowOverview|SettingsOverview|CategoryOverview|ScheduleAmount|TransactionAmount|AccountBalance|ProductTransactions|FinancialBadge|PeriodPicker|ReflectionOverview|ReflectTabs|ContributionList)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
 test('transaction and balance badges keep state explicit',async()=>{
  expect(existsSync(new URL('./components/TransactionAmount.svelte',import.meta.url))).toBe(true);
  expect(existsSync(new URL('./components/AccountBalance.svelte',import.meta.url))).toBe(true);

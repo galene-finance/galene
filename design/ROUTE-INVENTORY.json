@@ -195,7 +195,9 @@
           "theme": "dark",
           "width": 390
         }
-      ]
+      ],
+      "latest_visual_evidence": "product-v3-funding-acceptance/checks.json",
+      "bubble_acceptance": "native loader/actions/service plus custom synthetic HTTP adapter; assignment/reload/spend/refund/rollover/scoped category checks; production auth/full scope pending"
     },
     {
       "route": "/calendar",
@@ -277,7 +279,9 @@
           "width": 1440
         }
       ],
-      "evidence": "product-v3-category-recurring/checks.json"
+      "evidence": "product-v3-category-recurring/checks.json",
+      "latest_visual_evidence": "product-v3-funding-acceptance/checks.json",
+      "bubble_acceptance": "native loader/actions/service plus custom synthetic HTTP adapter; assignment/reload/spend/refund/rollover/scoped category checks; production auth/full scope pending"
     },
     {
       "route": "/customize",

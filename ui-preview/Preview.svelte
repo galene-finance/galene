@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {onMount} from 'svelte';
  import Calendar from '../src/routes/(app)/calendar/+page.svelte';
  import Settings from '../src/routes/(app)/settings/+page.svelte';
  import Appearance from '../src/routes/(app)/settings/appearance/+page.svelte';
@@ -19,6 +20,15 @@
  import native from './native-fixture.json';
  import '../src/lib/product.css';
  const url=new URL(location.href),path=url.pathname,base=fixture(url),id=Number(path.split('/').at(-1));
+ const integrated=url.searchParams.has('integration');
+ let budgetData=$state<any>(null),budgetForm=$state<any>(undefined),budgetError=$state(''),budgetBusy=$state(false);
+ async function budgetRequest(action?:string,body?:FormData){
+  budgetBusy=true;budgetError='';
+  try{const response=await fetch(path.startsWith('/categories/')?`/__qa/category${url.search}`:`/__qa/budget?month=${url.searchParams.get('month')??'2024-01'}${action?'&action='+action:''}`,action?{method:'POST',body}:undefined);const reply=await response.json();if(!response.ok||!reply.fixture||!reply.data)throw new Error('Fixture request failed');budgetData=reply.data;budgetForm=reply.form;return reply.form?.ok===true;}
+  catch{budgetError='Synthetic fixture request failed; do not treat this as a successful save.';}
+  finally{budgetBusy=false;}
+ }
+ onMount(()=>{if(!integrated)return;void budgetRequest();const submit=(event:SubmitEvent)=>{const form=event.target;if(!(form instanceof HTMLFormElement)||!form.dataset.budgetCommand)return;event.preventDefault();if(!budgetBusy)void budgetRequest(form.dataset.budgetCommand,new FormData(form)).then(ok=>{if(ok)form.reset();});};const link=(event:MouseEvent)=>{const a=(event.target as Element)?.closest('a');if(!a)return;const target=new URL(a.href,location.href);if(target.origin===location.origin&&(target.pathname==='/budget'||target.pathname.startsWith('/categories/'))){target.searchParams.set('integration','1');target.searchParams.set('theme',themeSlug);a.href=target.href;}};document.addEventListener('click',link,true);document.addEventListener('submit',submit,true);return()=>{document.removeEventListener('submit',submit,true);document.removeEventListener('click',link,true);};});
  let open=$state(false);let themeSlug=$state(url.searchParams.get('theme')??'graphite');
  const theme=$derived(DEFAULT_THEMES.find(t=>t.slug===themeSlug)??DEFAULT_THEMES.find(t=>t.slug==='graphite')!);
  $effect(()=>applyThemeNow(theme));
@@ -28,7 +38,7 @@
  const cashflow:any={from:'2026-11-01',to:'2026-11-30',currentMonth:'2026-11',monthList:['2026-11'],monthLabels:["NOV '26"],accounts,categories,filters:{accountIds:[],categoryIds:[]},filtersActive:false,...native.cashflow,transactions:[...native.transactions.filter(t=>!t.pending&&categories.find(c=>c.id===t.category_id)?.type!=='transfer'&&t.category_id!==null),...(url.searchParams.has('invalid_split')?[{...native.transactions.find(t=>t.category_id===2)!,id:9999,amount_cents:-10000,splits:[{category_id:2,amount_cents:9000}]}]:[])],occurrences:native.plannedDrill.map(o=>({...o,accountId:scheduled.find(s=>s.id===o.id)?.account_id??null}))};
 </script>
 <svelte:head>{@html `<style>${themeToCss(theme)}</style>`}</svelte:head>
-<div class="preview-banner"><strong>SYNTHETIC COMPONENT PREVIEW — NO LIVE ACCOUNTS; SAVES DISABLED</strong><select aria-label="Preview theme" bind:value={themeSlug}><option value="graphite">Graphite</option><option value="ocean">Ocean</option><option value="dark">Dark</option></select></div>
+<div class="preview-banner"><strong>{integrated?'SYNTHETIC OWNER CONTEXT — EDITS ONLY TEMPORARY TEST DATABASE':'SYNTHETIC COMPONENT PREVIEW — NO LIVE ACCOUNTS; SAVES DISABLED'}</strong><select aria-label="Preview theme" bind:value={themeSlug}><option value="graphite">Graphite</option><option value="ocean">Ocean</option><option value="dark">Dark</option></select></div>
 <div class="galene-shell" style:padding-top="32px"><ProductNav bind:open user={{id:1,name:'Sample owner',email:'sample@example.invalid',is_admin:1}} branding={{name:'Galene',icon:'emblem'}} themes={DEFAULT_THEMES} selectedTheme={theme.slug}/>
 <main id="main-content" class="product-main" inert={open||undefined}>
  {#if path==='/'}<Overview data={base as any}/>
@@ -39,9 +49,9 @@
  {:else if path.startsWith('/accounts/')}<Account data={{...base,account:accounts.find(a=>a.id===id),transactions:transactions.filter(t=>t.account_id===id)} as any}/>
  {:else if path==='/transactions'}<Activity data={register}/>
  {:else if path.startsWith('/transactions/')}<Transaction data={{transaction:id===9?{...transactions[1],id:9,amount_cents:url.searchParams.has('invalid_split')?-9999:-10000,splits:[{category_id:2,category_name:'Sample groceries',amount_cents:6000},{category_id:3,category_name:'Sample card payment',amount_cents:4000}]}:transactions.find(t=>t.id===id),accounts,categories,tags:[]} as any}/>
- {:else if path.startsWith('/categories/')}<Category data={category(url,id) as any}/>
+ {:else if path.startsWith('/categories/')}{#if integrated}{#if budgetData}<Category data={budgetData}/>{:else}<p role={budgetError?'alert':'status'}>{budgetError||'Loading fixture category…'}</p>{/if}{:else}<Category data={category(url,id) as any}/>{/if}
  {:else if path==='/spending'||path==='/income'}<Insights data={insight(url,path==='/income'?'income':'expense') as any}/>
- {:else if path==='/budget'}<Budget data={{budgets,categories,selectedDate:'2026-11-24'}}/>
+ {:else if path==='/budget'}{#if integrated}<aside class="product-panel product-panel-body"><strong>Disposable integration fixture</strong><p>Native Plan actions and real temporary SQLite. This does not test production authentication.</p><div class="product-toolbar"><button class="product-button" disabled={budgetBusy} onclick={()=>budgetRequest('purchase')}>Record fixture purchase</button><button class="product-button" disabled={budgetBusy} onclick={()=>budgetRequest('refund')}>Record fixture refund</button><a class="product-button" href={`/budget?integration=1&month=2024-01&theme=${themeSlug}`}>January fixture</a><a class="product-button" href={`/budget?integration=1&month=2024-02&theme=${themeSlug}`}>February fixture</a></div>{#if budgetError}<p role="alert">{budgetError}</p>{/if}{#if budgetBusy}<p role="status">Loading fixture…</p>{/if}</aside>{#if budgetData}<Budget data={budgetData} form={budgetForm}/>{/if}{:else}<Budget data={{budgets,categories,selectedDate:'2026-11-24'}}/>{/if}
  {:else if path==='/scheduled'}<Scheduled data={{rows:[...scheduled,...(url.searchParams.has('qa')?[{...scheduled[0],id:3,name:'Sample refund',amount_cents:1000,category_id:2},{...scheduled[0],id:4,name:'Sample income reversal',amount_cents:-1000,category_id:1},{...scheduled[0],id:5,name:'Sample transfer',amount_cents:-1000,category_id:3}]:[])].map(s=>({scheduled:s,nextDate:s.start_date})),accounts,categories,tags:[]}}/>
  {:else if path==='/calendar'}<Calendar form={undefined} data={{month:url.searchParams.get('month')??'2026-11',transactions,occurrences:base.upcoming,hideActuals:false,weekStartsOn:'monday',accounts,categories,tags:[]}}/>
  {:else if path==='/cashflow'}<Cashflow data={cashflow}/>

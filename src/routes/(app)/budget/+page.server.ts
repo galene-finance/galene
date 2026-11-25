@@ -6,21 +6,23 @@ import {
 	resolveCategoryFromForm,
 	saveBudget
 } from '$lib/server/finance';
-import { parseAmountToCents, todayISO } from '$lib/utils';
-import { error } from '@sveltejs/kit';
+import { parseAmountToCents } from '$lib/utils';
+import { productOwner } from '$lib/server/productAccess';
+import { budgetDate,budgetFunding,budgetCommand } from '$lib/server/budgetIntegration';
 import type { Budget } from '$lib/types';
 
 export function load({locals,url}) {
- const userId=locals.user!.id;
- const selectedDate=url.searchParams.get('date')??(url.searchParams.get('month')?`${url.searchParams.get('month')}-01`:todayISO());
+ const userId=productOwner(locals.user);
+ const selectedDate=budgetDate(url);
  const ref=new Date(`${selectedDate}T12:00:00Z`);
- if(!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)||!Number.isFinite(ref.getTime())||ref.toISOString().slice(0,10)!==selectedDate)error(400,'Choose a valid date.');
  const categories=getCategories(userId);
  const budgets=getBudgets(userId).map(b=>({...b,...budgetPeriodSpend(userId,b.category_id,b.period,ref)}));
- return {budgets,categories,selectedDate};
+ return {budgets,categories,selectedDate,...budgetFunding(userId,selectedDate)};
 }
 
 export const actions = {
+ allocate: (event)=>budgetCommand('assign',event),
+ refresh: (event)=>budgetCommand('refresh',event),
 	save: async ({ request, locals }) => {
 		const userId = locals.user!.id;
 		const form = await request.formData();

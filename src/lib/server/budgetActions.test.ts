@@ -62,3 +62,26 @@ test('native target versions support annual dates, weekly boundaries, archive an
  expect((await (actions as any).target(event({target_id:'weekly-ui',category_id:'2',amount:'10.00',cadence:'weekly',behavior:'set_aside',start_date:'2024-01-19',weekday:'1',effective_month:'2024-01',revision:String(otherPage().funding.view.revision),key:'weekly'},other))).ok).toBe(true);
  expect(otherPage().funding.plan.totalCents).toBe(2000);expect(otherPage().funding.view.baseline).toBeNull();expect(otherPage().funding.view.ledger).toBeNull();
 });
+
+test('target editor explains refill and balance progress without calling either assigned cash',async()=>{
+ const {default:Editor}=await import('../components/TargetEditor.svelte');
+ const common={categories:page().categories,month:'2024-01',revision:page().funding.view.revision,commandKey:'explain',target:{id:'food',categoryId:1,amountCents:10000,cadence:'monthly' as const,startDate:'2024-01-01'}};
+ const refill=render(Editor,{props:{...common,target:{...common.target,behavior:'refill'}}}).body;
+ expect(refill).toContain('missing at the start of the cycle');expect(refill).toContain('Spending within that cycle does not create a new refill requirement');
+ const balance=render(Editor,{props:{...common,target:{...common.target,behavior:'balance'}}}).body;
+ expect(balance).toContain('current category balance');expect(balance).toContain('Spending can increase what is needed');
+});
+
+test('native refill and balance edits preserve cash and reject conflicting target retries',async()=>{
+ const before=page().funding.view.ledger;expect(before).not.toBeNull();
+ const command={target_id:'food',category_id:'1',amount:'100.00',cadence:'monthly',behavior:'refill',start_date:'2024-01-01',effective_month:'2024-01',revision:String(page().funding.view.revision),key:'refill-behavior'};
+ const saved=await (actions as any).target(event(command));expect(saved.ok).toBe(true);
+ const refill=page();expect(refill.funding.categoryStates.find((c:any)=>c.categoryId===1)).toMatchObject({targetStatus:'met',availableCents:5000,neededThisMonthCents:0});expect(refill.funding.view.ledger).toEqual(before);
+ expect(await (actions as any).target(event(command))).toEqual(saved);expect(page().funding.view.revision).toBe(refill.funding.view.revision);
+ expect((await (actions as any).target(event({...command,amount:'101.00'}))).status).toBe(400);expect(page().funding.view.revision).toBe(refill.funding.view.revision);
+ expect((await (actions as any).target(event({...command,key:'stale-target'}))).status).toBe(400);expect(page().funding.view.revision).toBe(refill.funding.view.revision);
+ expect((await (actions as any).target(event({...command,behavior:'balance',revision:String(refill.funding.view.revision),key:'balance-behavior'}))).ok).toBe(true);
+ const balance=page();expect(balance.funding.categoryStates.find((c:any)=>c.categoryId===1)).toMatchObject({targetStatus:'needs_funding',availableCents:5000,neededThisMonthCents:5000});expect(balance.funding.view.ledger).toEqual(before);
+ const denied=await (actions as any).target(event({...command,category_id:'2',revision:String(balance.funding.view.revision),key:'foreign-target'}));expect(denied.status).toBe(400);expect(page().funding.view.revision).toBe(balance.funding.view.revision);
+ const tooLarge=await (actions as any).target(event({...command,target_id:'x'.repeat(17000),revision:String(balance.funding.view.revision),key:'oversize-target'}));expect(tooLarge.status).toBe(400);expect(page().funding.view.revision).toBe(balance.funding.view.revision);
+});

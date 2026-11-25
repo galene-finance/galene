@@ -20,3 +20,12 @@ Fixture scope is still synthetic owner-context transport, not production session
 
 ## Still open
 Independent exact-source review of this slice; broader behavior/cadence/adoption/conflict keyboard/touch cases and saved theme persistence; reallocation/card-reserve controls and reliable pair review; accepted baseline/account-scope workflow; approved source-specific history capture and history UI; remaining all-screen states/audit/upstream work; recovery-preserving release and real authenticated acceptance. Do not call this a completed app or deploy it under the earlier scoped approval.
+
+
+## Target behavior follow-up (extends frozen 839a5d1)
+- Behavior-specific help explains refill cycle-start shortfall, current-balance goals, and new contribution goals. Text is tied to the actual selected native control, not a generic funding claim.
+- Native regressions prove refill can be met while only 5000 cents remains; switching the same 10000-cent goal to balance requires 5000 more. Cash ledger is identical before/after both target edits.
+- Replay returns the original receipt without a revision increment; changed payload under the same key, stale revision, foreign category, and oversized form are rejected without mutations.
+- SSR explanation regression failed first, then passed after implementation. Full follow-up gates:393 tests/0 failures/1673 expectations, compiler0 errors/0 warnings, build exit0 (see exact execution receipt; no release approval inferred).
+- Actual browser selection checked all three behavior explanations. Four layout cases: Graphite/Ocean/Dark at390px and Graphite1440px; no horizontal overflow and all target controls at least44px high. Artifacts:product-v3-target-behavior/{help-checks,layouts}.json and named screenshots.
+- Dedicated mutable synthetic integration fixture is bound to127.0.0.1:24911, with an explicit test-only origin allowlist entry. Frozen funding24863 and target24865 copies are untouched. No production authentication or live financial acceptance claimed.

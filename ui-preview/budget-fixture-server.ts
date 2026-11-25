@@ -8,7 +8,7 @@ const {load,actions}=await import('../src/routes/(app)/budget/+page.server');
 const {productOverview}=await import('../src/lib/server/product');
 const {load:categoryLoad}=await import('../src/routes/(app)/categories/[id]/+page.server');
 const origin=process.env.ATLAS_QA_ORIGIN??'http://127.0.0.1:24863';
-if(!['http://127.0.0.1:24863','http://127.0.0.1:24865'].includes(origin))throw new Error('Unsupported synthetic origin');
+if(!['http://127.0.0.1:24863','http://127.0.0.1:24865','http://127.0.0.1:24911'].includes(origin))throw new Error('Unsupported synthetic origin');
 const user={id:1,name:'Synthetic owner',email:'fixture@example.test',is_admin:1,role:'owner' as const};
 const d=db();
 if(!d.query('SELECT id FROM users WHERE id=1').get()){

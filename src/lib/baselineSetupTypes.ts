@@ -1,0 +1,6 @@
+export type BaselineScope='cash'|'credit'|'tracking';
+/** Server-approved immutable evidence, not browser-entered balance claims. */
+export type BaselineEvidence={reference:string;ownerId:number;accountId:number;currency:string;balanceCents:number;asOfDate:string;timeZone:string;cutoff:'end_of_day';source:'actual'|'accepted_estimate';description:string;recordedAt:string};
+export type BaselineSetupModel={phase:'setup'|'active';revision:number;date:string;timeZone:string;lastClosedDate:string;rosterFingerprint:string;providerAvailable:boolean;accounts:{id:number;name:string;type:string;offers:BaselineEvidence[];issue:string|null}[];active:{date:string;currency:string;accounts:{id:number;name:string;scope:BaselineScope;balanceCents:number}[]}|null};
+export type BaselineReview={date:string;timeZone:string;currency:string;revision:number;rosterFingerprint:string;key:string;fingerprint:string;readyToAssignCents:number;cashCents:number;rows:{id:number;name:string;scope:BaselineScope;evidence:BaselineEvidence}[]};
+export type BaselineSetupResult={feature:'baselineSetup';ok:false;status:number;error:string}|{feature:'baselineSetup';ok:true;phase:'review';review:BaselineReview}|{feature:'baselineSetup';ok:true;phase:'active';revision:number;notice:string};

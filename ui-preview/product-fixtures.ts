@@ -1,5 +1,6 @@
 // Entirely synthetic component fixtures. Never used by the app or as live-data evidence.
 import {summarizeActivity,activityParts} from '../src/lib/activity';
+import {monthlyPlanTotal} from '../src/lib/monthlyPlan';
 import type {Transaction,Category,Scheduled} from '../src/lib/types';
 export const categories:Category[]=[{id:1,name:'Sample salary',type:'income',parent_id:null,color:null},{id:2,name:'Sample groceries',type:'expense',parent_id:null,color:null},{id:3,name:'Sample card payment',type:'transfer',parent_id:null,color:null},{id:4,name:'Sample fees',type:'expense',parent_id:null,color:null},{id:5,name:'Sample housing',type:'expense',parent_id:null,color:null}];
 export const accounts=[{id:1,name:'Sample checking',type:'bank' as const,color:null,provider:'fixture',provider_balance_cents:125000,provider_balance_as_of:'2026-11-24 12:00:00',opening_balance_cents:null,opening_as_of:null,displayCents:125000,ledgerCents:110000,source:'Bank reported',asOf:'2026-11-24',earliestDate:'2026-10-15'}, {id:2,name:'Sample card',type:'credit' as const,color:null,provider:'fixture',provider_balance_cents:-25000,provider_balance_as_of:'2026-11-24 12:00:00',opening_balance_cents:null,opening_as_of:null,displayCents:-25000,ledgerCents:-25000,source:'Bank reported',asOf:'2026-11-24',earliestDate:'2026-10-01'}];
@@ -10,7 +11,7 @@ export function fixture(url:URL){
  const month=url.searchParams.get('month')??'2026-11';const from=`${month}-01`,to=month==='2026-11'?'2026-12-01':`${month}-29`,dateTo=month==='2026-11'?'2026-11-30':`${month}-28`;
  const period={month,from,to,dateTo,previous:'2026-10',next:'2026-12',custom:false,query:`month=${month}`};
  const scoped=transactions.filter(t=>t.date.startsWith(month));const summary=summarizeActivity(scoped,categories);
- return {period,categories,accounts,transactions:scoped,summary,upcoming:scheduled.map(s=>({date:s.start_date,scheduled:s})),history:[{month,incomeCents:summary.incomeCents,spendingCents:summary.spendingCents,uncategorizedCount:summary.uncategorizedCount,postedCount:summary.postedCount}]};
+ return {period,categories,accounts,transactions:scoped,summary,plan:monthlyPlanTotal(budgets,new Map(categories.map(c=>[c.id,c.type]))),upcoming:scheduled.map(s=>({date:s.start_date,scheduled:s})),history:[{month,incomeCents:summary.incomeCents,spendingCents:summary.spendingCents,uncategorizedCount:summary.uncategorizedCount,postedCount:summary.postedCount}]};
 }
 export function insight(url:URL,type:'income'|'expense'){
  const base=fixture(url),parts=base.summary.parts.filter(p=>p.type===type);return {...base,type,categoryRows:base.summary.categories.filter(c=>c.type===type),contributions:parts.map(p=>({transaction:p.transaction,contributionCents:p.cents})),history:[{month:base.period.month,cents:type==='income'?base.summary.incomeCents:base.summary.spendingCents,postedCount:base.summary.postedCount,uncategorizedCount:base.summary.uncategorizedCount}]};

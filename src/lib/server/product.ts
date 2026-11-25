@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
-import { summarizeActivity } from '$lib/activity';
-import { getAccounts,getAccountBalances,getAccountTxnAnchors,getCategories,getTransactionsInPeriod,getScheduled,expandScheduled,monthBounds,shiftMonth } from './finance';
+import {summarizeActivity} from '$lib/activity';
+import {monthlyPlanTotal} from '$lib/monthlyPlan';
+import { getAccounts,getBudgets,getAccountBalances,getAccountTxnAnchors,getCategories,getTransactionsInPeriod,getScheduled,expandScheduled,monthBounds,shiftMonth } from './finance';
 import { todayISO } from '$lib/utils';
 
 export function productPeriod(url:URL){
@@ -49,5 +50,5 @@ export function productOverview(userId:number,url:URL){
   const {from,to}=monthBounds(month);const s=summarizeActivity(getTransactionsInPeriod(userId,from,to),data.categories);
   return {month,incomeCents:s.incomeCents,spendingCents:s.spendingCents,uncategorizedCount:s.uncategorizedCount,postedCount:s.postedCount};
  });
- return {...data,upcoming,history};
+ return {...data,plan:monthlyPlanTotal(getBudgets(userId),new Map(data.categories.map(c=>[c.id,c.type]))),upcoming,history};
 }

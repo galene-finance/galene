@@ -1,7 +1,7 @@
 import type { Theme, ThemeColors } from './types';
 
 /** Slug of the built-in theme used when a user has no saved choice. */
-export const DEFAULT_THEME_SLUG = 'light';
+export const DEFAULT_THEME_SLUG = 'graphite';
 
 const light: ThemeColors = {
 	background: '#f3f6fa',
@@ -133,8 +133,17 @@ export function getDefaultTheme(slug: string): Theme | null {
  * to the data-theme attribute value, so it beats the :root defaults in
  * app.css regardless of stylesheet order.
  */
+function readableInk(hex: string): string {
+	const rgb = [1, 3, 5].map(i => parseInt(hex.trim().slice(i, i + 2), 16) / 255)
+		.map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+	const light = rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+	return (light + 0.05) / 0.05 >= 1.05 / (light + 0.05) ? '#000000' : '#ffffff';
+}
+
 export function themeToCss(theme: Theme): string {
 	const c = theme.colors;
+	const tones = { neutral: c.border, positive: c.success, attention: c.warning, negative: c.destructive, movement: isDarkHex(c.background) ? '#a6c8ec' : '#dbeafe' };
+	const pills = Object.entries(tones).map(([state, fill]) => `--pill-${state}-fill: ${fill};\n--pill-${state}-ink: ${readableInk(fill)};`).join('\n');
 	return `html[data-theme='${theme.slug}'] {
 	--background: ${c.background};
 	--surface: ${c.surface};
@@ -152,12 +161,13 @@ export function themeToCss(theme: Theme): string {
 	--warning: ${c.warning};
 	--ring: ${c.primary};
 	--radius: ${c.radius};
+${pills}
 }`;
 }
 
-/** Short hash of the theme's colors, used to bust the /theme.css cache. */
+/** Hash emitted CSS so derived-token changes also invalidate /theme.css caches. */
 export function themeCssHash(theme: Theme): string {
-	const s = JSON.stringify(theme.colors);
+	const s = themeToCss(theme);
 	let h = 0;
 	for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
 	return Math.abs(h).toString(36);
@@ -214,7 +224,7 @@ export function themeBootstrapScript(): string {
 		'var s=localStorage.getItem(' +
 		JSON.stringify(THEME_SLUG_STORAGE_KEY) +
 		');' +
-		'var slug=(t&&css[t])?t:((s&&css[s])?s:null);' +
+		'var slug=(t&&css[t])?t:((s&&css[s])?s:' + JSON.stringify(DEFAULT_THEME_SLUG) + ');' +
 		'if(!slug)return;' +
 		'document.documentElement.dataset.theme=slug;' +
 		'var st=document.createElement("style");' +

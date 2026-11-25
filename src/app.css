@@ -1,26 +1,33 @@
 @import 'tailwindcss';
 
-/*
- * Default (Light) theme values. Named themes are applied by /theme.css,
- * which overrides these variables under html[data-theme='...'].
- */
+/* Graphite fallback before scripts run; saved native themes override it. */
 :root {
-	--background: #f3f6fa;
-	--surface: #ffffff;
-	--surface-hover: #f1f5f9;
-	--muted: #f1f5f9;
-	--border: #e2e8f0;
-	--input: #cbd5e1;
-	--foreground: #172b43;
-	--muted-foreground: #52647a;
-	--primary: #265bb5;
-	--primary-foreground: #ffffff;
-	--success: #167046;
-	--destructive: #b91c1c;
-	--destructive-foreground: #ffffff;
-	--warning: #946000;
-	--ring: #265bb5;
+	--background: #111315;
+	--surface: #1a1d20;
+	--surface-hover: #23272b;
+	--muted: #23272b;
+	--border: #2c3136;
+	--input: #3a4046;
+	--foreground: #e5e7ea;
+	--muted-foreground: #9aa1a9;
+	--primary: #f59e0b;
+	--primary-foreground: #1a1205;
+	--success: #4ade80;
+	--destructive: #f87171;
+	--destructive-foreground: #000000;
+	--warning: #fbbf24;
+	--ring: #f59e0b;
 	--radius: 0.5rem;
+	--pill-neutral-fill: #2c3136;
+	--pill-neutral-ink: #ffffff;
+	--pill-positive-fill: #4ade80;
+	--pill-positive-ink: #000000;
+	--pill-attention-fill: #fbbf24;
+	--pill-attention-ink: #000000;
+	--pill-negative-fill: #f87171;
+	--pill-negative-ink: #000000;
+	--pill-movement-fill: #a6c8ec;
+	--pill-movement-ink: #000000;
 }
 
 @theme inline {

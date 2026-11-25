@@ -33,6 +33,19 @@ beforeAll(()=>{
 });
 afterAll(()=>{closeDbForTests();if(previousPath===undefined)delete process.env.GALENE_DB_PATH;else process.env.GALENE_DB_PATH=previousPath;if(previousEphemeral===undefined)delete process.env.GALENE_ALLOW_EPHEMERAL_DATA;else process.env.GALENE_ALLOW_EPHEMERAL_DATA=previousEphemeral;rmSync(dir,{recursive:true,force:true});});
 describe('one posted accounting definition across native pages',()=>{
+ test('home loads only owner monthly targets and never treats expected wages as cash',()=>{
+  const d=db();d.exec('SAVEPOINT monthly_plan_probe');
+  try {
+   d.query("INSERT INTO budgets(user_id,category_id,period,limit_cents) VALUES(1,?,'month',18000),(1,?,'month',900000),(1,?,'month',1000),(1,?,'week',99999)").run(expense,income,transfer,expense);
+   const otherCategory=Number(d.query("INSERT INTO categories(user_id,name,type) VALUES(2,'Other target','expense')").run().lastInsertRowid);
+   d.query("INSERT INTO budgets(user_id,category_id,period,limit_cents) VALUES(2,?,'month',70000)").run(otherCategory);
+   d.query("INSERT INTO scheduled(user_id,name,account_id,category_id,amount_cents,start_date,forecast_behavior) VALUES(1,'Future expected pay',?,?,999999,?,'bill')").run(account,income,end);
+   const result=overviewLoad({locals:{user:{id:1,role:'user'}},url:new URL(`http://test.invalid/?month=${month}`),depends:()=>{}} as any);
+   expect(result.plan?.totalCents).toBe(19000);
+   expect(result.plan?.otherCadenceCount).toBe(1);
+   expect(result.summary.incomeCents).toBe(90000);
+  } finally {d.exec('ROLLBACK TO monthly_plan_probe; RELEASE monthly_plan_probe');}
+ });
  test('API summary agrees with category and trends amounts',()=>{
   const s=getHomeSummary(1);expect(s.monthIncomeCents).toBe(90000);expect(s.monthExpenseCents).toBe(21000);
   expect(categoryAmountInPeriod(1,expense,start,end)).toBe(-21000);

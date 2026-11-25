@@ -1,4 +1,5 @@
 <script lang="ts">
+ import Balance from './AccountBalance.svelte';
  import Badge from './FinancialBadge.svelte';
  import { formatMoney, formatDate, monthLabel } from '$lib/utils';
  import type { productOverview } from '$lib/server/product';
@@ -38,7 +39,7 @@
    <footer class="product-details">All accounts · next 45 days. Scheduled expectations, not completed payments.</footer>
   </section>
   <section class="product-panel"><header class="product-panel-header"><h2>Accounts</h2><a href="/accounts">View all</a></header>
-   {#if data.accounts.length}<ul class="product-list">{#each data.accounts.slice(0,5) as a}<li><a class="product-row" href={`/accounts/${a.id}`}><div class="product-row-main"><strong class="product-row-title">{a.name}</strong><span class="product-row-caption">{a.asOf?formatDate(a.asOf.slice(0,10)):'Date unavailable'} · {a.source}</span></div><Badge value={a.displayCents===null?undefined:formatMoney(a.displayCents)} label={a.displayCents===null?'Unavailable':'Balance'} tone={a.displayCents===null?'attention':'neutral'}/></a></li>{/each}</ul>{:else}<div class="product-empty"><strong>No accounts here yet</strong><a class="product-link" href="/accounts">Manage accounts</a></div>{/if}
+   {#if data.accounts.length}<ul class="product-list">{#each data.accounts.slice(0,5) as a}<li><a class="product-row" href={`/accounts/${a.id}`}><div class="product-row-main"><strong class="product-row-title">{a.name}</strong><span class="product-row-caption">{a.asOf?formatDate(a.asOf.slice(0,10)):'Date unavailable'} · {a.source}</span></div><Balance account={a}/></a></li>{/each}</ul>{:else}<div class="product-empty"><strong>No accounts here yet</strong><a class="product-link" href="/accounts">Manage accounts</a></div>{/if}
    <footer class="product-details">Balances use the sources shown above. Working balances are estimates.</footer>
   </section>
  </div>

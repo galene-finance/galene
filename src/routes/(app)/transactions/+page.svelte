@@ -1,4 +1,5 @@
 <script lang="ts">
+ import Amount from '$lib/components/TransactionAmount.svelte';
 	import { flushSync, untrack } from 'svelte';
 	import { deserialize, enhance } from '$app/forms';
 	import { page } from '$app/state';
@@ -660,7 +661,6 @@
 							aria-label="Select all"
 						/>
 					</th>
-					<th class="px-3 py-2.5 font-medium">Date</th>
 					<th class="px-3 py-2.5 font-medium">Merchant</th>
 					<th class="px-3 py-2.5 font-medium">Category</th>
 					<th class="px-3 py-2.5 font-medium">Account</th>
@@ -679,7 +679,6 @@
 								aria-label="Select transaction"
 							/>
 						</td>
-						<td class="whitespace-nowrap px-3 py-2">{formatDate(tx.date)}</td>
 						<td class="max-w-52 px-3 py-2">
 							<div class="flex items-center gap-1">
 								<div class="min-w-0 flex-1 truncate" title={tx.merchant ?? undefined}>
@@ -722,6 +721,7 @@
 									</button>
 								{/if}
 							</div>
+							<span class="product-row-caption">{formatDate(tx.date)}</span>
 							{#if tx.notes}
 								<div class="truncate text-xs text-muted-foreground" title={tx.notes}>{tx.notes}</div>
 							{/if}
@@ -737,9 +737,7 @@
 								{/each}
 							</div>
 						</td>
-						<td class="whitespace-nowrap px-3 py-2 text-right font-medium {tx.amount_cents > 0 ? 'text-success' : ''}">
-							{formatMoney(tx.amount_cents)}
-						</td>
+						<td class="px-3 py-2 text-right"><Amount transaction={tx} categories={data.categories}/></td>
 						<td class="px-3 py-2">
 							{#if !viewer}
 							<form id="delete-form-{tx.id}" method="POST" action="?/delete" class="hidden">
@@ -769,7 +767,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td class="px-3 py-12 text-center text-muted-foreground" colspan="8">
+						<td class="px-3 py-12 text-center text-muted-foreground" colspan="7">
 							{data.accounts.length === 0
 								? 'No accounts yet. Create one in Settings, then add transactions here.'
 								: 'No transactions match your filters.'}
@@ -836,11 +834,7 @@
 									</svg>
 								</button>
 							{/if}
-							<span
-								class="shrink-0 text-[15px] font-medium tabular-nums {tx.amount_cents > 0 ? 'text-success' : ''}"
-							>
-								{formatMoney(tx.amount_cents)}
-							</span>
+							<Amount transaction={tx} categories={data.categories}/>
 						</div>
 						{#if tx.notes}
 							<div class="truncate text-xs text-muted-foreground" title={tx.notes}>{tx.notes}</div>

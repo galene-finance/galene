@@ -33,7 +33,7 @@
  {:else if path==='/accounts'}<Accounts data={{accounts} as any}/>
  {:else if path.startsWith('/accounts/')}<Account data={{...base,account:accounts.find(a=>a.id===id),transactions:transactions.filter(t=>t.account_id===id)} as any}/>
  {:else if path==='/transactions'}<Activity data={register}/>
- {:else if path.startsWith('/transactions/')}<Transaction data={{transaction:id===9?{...transactions[1],id:9,amount_cents:-10000,splits:[{category_id:2,category_name:'Sample groceries',amount_cents:6000},{category_id:3,category_name:'Sample card payment',amount_cents:4000}]}:transactions.find(t=>t.id===id),accounts,categories,tags:[]} as any}/>
+ {:else if path.startsWith('/transactions/')}<Transaction data={{transaction:id===9?{...transactions[1],id:9,amount_cents:url.searchParams.has('invalid_split')?-9999:-10000,splits:[{category_id:2,category_name:'Sample groceries',amount_cents:6000},{category_id:3,category_name:'Sample card payment',amount_cents:4000}]}:transactions.find(t=>t.id===id),accounts,categories,tags:[]} as any}/>
  {:else if path.startsWith('/categories/')}<Category data={category(url,id) as any}/>
  {:else if path==='/spending'||path==='/income'}<Insights data={insight(url,path==='/income'?'income':'expense') as any}/>
  {:else if path==='/budget'}<Budget data={{budgets,categories,selectedDate:'2026-11-24'}}/>

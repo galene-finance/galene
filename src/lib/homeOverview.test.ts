@@ -5,7 +5,23 @@ import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 import { fixture } from '../../ui-preview/product-fixtures';
 import { formatMoney } from './utils';
-plugin({name:'home-view-ssr',setup(build){build.onLoad({filter:/(HomeOverview|FinancialBadge|PeriodPicker|ReflectionOverview|ReflectTabs|ContributionList)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
+plugin({name:'home-view-ssr',setup(build){build.onLoad({filter:/(HomeOverview|TransactionAmount|AccountBalance|ProductTransactions|FinancialBadge|PeriodPicker|ReflectionOverview|ReflectTabs|ContributionList)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
+test('transaction and balance badges keep state explicit',async()=>{
+ expect(existsSync(new URL('./components/TransactionAmount.svelte',import.meta.url))).toBe(true);
+ expect(existsSync(new URL('./components/AccountBalance.svelte',import.meta.url))).toBe(true);
+ const {default:Amount}=await import('./components/TransactionAmount.svelte');
+ const {default:Balance}=await import('./components/AccountBalance.svelte');
+ const html=render(Amount,{props:{transaction:{amount_cents:500,category_id:2,pending:0,splits:[]} as any,categories:[{id:2,type:'expense'}] as any}}).body;
+ expect(html).toContain('Refund');expect(html).toContain('$5.00');
+ const unavailable=render(Balance,{props:{account:{type:'bank',displayCents:null}}}).body;
+ expect(unavailable).toContain('Unavailable');expect(unavailable).not.toContain('$0.00');
+ const owed=render(Balance,{props:{account:{type:'credit',displayCents:-10000}}}).body;
+ expect(owed).toContain('Owed');expect(owed).toContain('$100.00');
+ const overdraft=render(Balance,{props:{account:{type:'bank',displayCents:-100}}}).body;
+ expect(overdraft).toContain('Negative balance');expect(overdraft).toContain('data-tone="attention"');
+ const credit=render(Balance,{props:{account:{type:'credit',displayCents:100}}}).body;
+ expect(credit).toContain('Balance');expect(credit).not.toContain('Owed');
+});
 test('month navigation retains the selected account',async()=>{
  const {default:Picker}=await import('./components/PeriodPicker.svelte');
  const html=render(Picker,{props:{month:'2026-11',path:'/reflect',accountId:7} as any}).body;

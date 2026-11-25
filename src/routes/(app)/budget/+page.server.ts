@@ -6,20 +6,18 @@ import {
 	resolveCategoryFromForm,
 	saveBudget
 } from '$lib/server/finance';
-import { parseAmountToCents } from '$lib/utils';
+import { parseAmountToCents, todayISO } from '$lib/utils';
+import { error } from '@sveltejs/kit';
 import type { Budget } from '$lib/types';
 
-export function load({ locals }) {
-	const userId = locals.user!.id;
-	const categories = getCategories(userId);
-	const budgets = getBudgets(userId).map((b) => {
-		const { from, to, spentCents } = budgetPeriodSpend(userId, b.category_id, b.period);
-		return { ...b, spentCents, from, to };
-	});
-	return {
-		budgets,
-		categories
-	};
+export function load({locals,url}) {
+ const userId=locals.user!.id;
+ const selectedDate=url.searchParams.get('date')??(url.searchParams.get('month')?`${url.searchParams.get('month')}-01`:todayISO());
+ const ref=new Date(`${selectedDate}T12:00:00Z`);
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)||!Number.isFinite(ref.getTime())||ref.toISOString().slice(0,10)!==selectedDate)error(400,'Choose a valid date.');
+ const categories=getCategories(userId);
+ const budgets=getBudgets(userId).map(b=>({...b,...budgetPeriodSpend(userId,b.category_id,b.period,ref)}));
+ return {budgets,categories,selectedDate};
 }
 
 export const actions = {

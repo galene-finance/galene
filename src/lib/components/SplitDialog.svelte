@@ -24,13 +24,15 @@
 		transaction = null,
 		categories,
 		form,
-		onclose
+		onclose,
+		action = '?/split'
 	}: {
 		open?: boolean;
 		transaction?: Transaction | null;
 		categories: Category[];
 		form?: { error?: string | null };
 		onclose?: () => void;
+		action?: string;
 	} = $props();
 
 	let rows = $state<SplitRow[]>([]);
@@ -138,12 +140,12 @@
 	onOpenAutoFocus={handleOpenAutoFocus}
 >
 	{#if transaction}
-		<form id="split-unsplit-form" method="POST" action="?/split" class="hidden">
+		<form id="split-unsplit-form" method="POST" {action} class="hidden">
 			<input type="hidden" name="id" value={transaction.id} />
 			<input type="hidden" name="unsplit" value="1" />
 		</form>
 	{/if}
-	<form id="split-dialog-form" method="POST" action="?/split" use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
+	<form id="split-dialog-form" method="POST" {action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
 		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
 		{#if transaction}
 			<div class="flex flex-col gap-2">

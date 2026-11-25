@@ -123,7 +123,7 @@ describe('login load OIDC', () => {
 
 	test('an existing session still goes home', () => {
 		try {
-			load(event('', {}, { id: 1, email: 'ada@example.com', name: 'Ada', isAdmin: true, authMethod: 'password', idpLabel: '' }));
+			load(event('', {}, { id: 1, email: 'ada@example.com', name: 'Ada', is_admin: 1 }));
 			throw new Error('expected redirect');
 		} catch (error) {
 			expect(isRedirect(error)).toBe(true);

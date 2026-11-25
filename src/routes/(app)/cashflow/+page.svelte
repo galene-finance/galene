@@ -224,7 +224,7 @@
 	});
 
 	const drillForecastTotal = $derived(drillForecast.reduce((s, o) => s + o.amountCents, 0) * (drillSign ?? -1));
-	const drillActualTotal = $derived(drillActual.reduce((s, a) => s + a.amountCents, 0));
+	const drillActualTotal = $derived(drillActual.reduce((s, a) => s + a.amountCents, 0) * drillSign);
 
 	const drillTitle = $derived(
 		drill
@@ -251,6 +251,8 @@
 		if (d.categoryId != null) params.set('category', String(d.categoryId));
 		params.set('date_from', `${d.months[0]}-01`);
 		params.set('date_to', lastDayOfMonth(d.months[d.months.length - 1]));
+		params.set('status','posted');
+		for(const id of data.filters.accountIds)params.append('account',String(id));
 		return `/transactions?${params.toString()}`;
 	});
 
@@ -546,8 +548,7 @@
 		</div>
 
 		<p class="text-xs text-muted-foreground">
-			Forecast comes from scheduled expectations: “bill” books the full amount on its date, “spread”
-			divides it across the month. Click a value to see what makes up that number.
+			Plans come from recurring expectations; actuals use posted, categorized activity. Transfers and uncategorized activity are excluded. Open a value to see its details.
 		</p>
 	{/if}
 </div>
@@ -573,9 +574,9 @@
 										day: 'numeric'
 									})}
 								</span>
-								<span class="min-w-0 flex-1 truncate">{o.name}</span>
+								<a class="min-w-0 flex-1 truncate product-link" href={`/scheduled?edit=${o.id}`}>{o.name}</a>
 								<span class="shrink-0 font-medium {drillSign === 1 ? 'text-success' : ''}">
-									{drillSign === 1 ? '+' : '−'}{occurrenceAmount(o)}
+									{occurrenceAmount(o)}
 								</span>
 							</li>
 						{/each}
@@ -598,7 +599,7 @@
 										day: 'numeric'
 									})}
 								</span>
-								<span class="min-w-0 flex-1 truncate">{a.label}</span>
+								<a class="min-w-0 flex-1 truncate product-link" href={`/transactions/${a.id.split('-')[0]}`}>{a.label}</a>
 								<span class="shrink-0 font-medium {a.amountCents > 0 ? 'text-success' : ''}">
 									{formatMoney(a.amountCents)}
 								</span>
@@ -613,7 +614,7 @@
 			{/if}
 			{#if drillTransactionsHref}
 				<a class="text-sm text-primary hover:underline" href={drillTransactionsHref}>
-					View on Transactions
+					Open in activity
 				</a>
 			{/if}
 		</div>

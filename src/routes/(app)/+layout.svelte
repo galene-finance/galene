@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
-	import TopNav from '$lib/components/TopNav.svelte';
+	import TopNav from '$lib/components/ProductNav.svelte';
+	import { navigating } from '$app/state';
+	import '$lib/product.css';
 	import { DEFAULT_THEMES, applyThemeNow, rememberThemePreference, themeValue } from '$lib/themes';
 	import type { Account, AppNotification, Branding, Category, Tag, Theme, User } from '$lib/types';
 
@@ -54,7 +56,8 @@
 		bind:open={mobileNavOpen}
 	/>
 
-	<main class="min-w-0 max-w-full flex-1 overflow-x-clip p-4 md:p-6">
+	{#if navigating.to}<div class="product-loading" role="status"><span class="sr-only">Loading page</span></div>{/if}
+ <main id="main-content" tabindex="-1" class="product-main" class:viewer-main={data.viewer} inert={mobileNavOpen||undefined} aria-busy={navigating.to?'true':undefined}>
 		{#if data.demo}
 			<div
 				class="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-foreground"

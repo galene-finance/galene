@@ -1,35 +1,45 @@
 <script lang="ts">
- import Dashboard from '../src/routes/(app)/+page.svelte';
- import TopNav from '../src/lib/components/TopNav.svelte';
+ import Overview from '../src/routes/(app)/+page.svelte';
+ import Accounts from '../src/routes/(app)/accounts/+page.svelte';
+ import Account from '../src/routes/(app)/accounts/[id]/+page.svelte';
+ import Transaction from '../src/routes/(app)/transactions/[id]/+page.svelte';
+ import Activity from '../src/routes/(app)/transactions/+page.svelte';
+ import Category from '../src/routes/(app)/categories/[id]/+page.svelte';
+ import Insights from '../src/lib/components/ProductInsights.svelte';
+ import Budget from '../src/routes/(app)/budget/+page.svelte';
+ import Scheduled from '../src/routes/(app)/scheduled/+page.svelte';
+ import Cashflow from '../src/routes/(app)/cashflow/+page.svelte';
+ import ProductNav from '../src/lib/components/ProductNav.svelte';
  import {DEFAULT_THEMES,themeToCss} from '../src/lib/themes';
- import {WIDGET_CATALOG_LIST, DEFAULT_LAYOUT, compactLayout} from '../src/lib/dashboard';
- import type {DashboardWidget,DashboardWidgetData} from '../src/lib/types';
- let dark=$state(false);
+ import {fixture,insight,category,accounts,categories,transactions,scheduled,budgets} from './product-fixtures';
+ import native from './native-fixture.json';
+ import '../src/lib/product.css';
+ const url=new URL(location.href),path=url.pathname,base=fixture(url),id=Number(path.split('/').at(-1));
+ let open=$state(false);let dark=$state(false);
  const theme=$derived(DEFAULT_THEMES.find(t=>t.slug===(dark?'dark':'light'))!);
- $effect(()=>{document.documentElement.dataset.theme=theme.slug;});
- const layout=location.search.includes('native') ? DEFAULT_LAYOUT.map(w=>({...w,id:w.type})) : compactLayout([
-  {id:'month',type:'month',x:0,y:0,w:8,h:3,filters:{}},
-  {id:'balances',type:'balances',x:0,y:0,w:4,h:8,filters:{}},
-  {id:'trends',type:'trends',x:0,y:0,w:8,h:5,filters:{}},
-  {id:'budgets',type:'budgets',x:0,y:0,w:4,h:3,filters:{}},
-  {id:'upcoming',type:'upcoming',x:0,y:0,w:4,h:3,filters:{}},
-  {id:'recent',type:'recent',x:0,y:0,w:4,h:3,filters:{}},
-  {id:'notifications',type:'notifications',x:0,y:0,w:12,h:2,filters:{}}
- ] as DashboardWidget[]);
- const widgets:Record<string,DashboardWidgetData>={
- month:{kind:'month',label:'November 2026',prevLabel:'October',incomeCents:480000,expenseCents:325000,netCents:155000,prevIncomeCents:480000,prevExpenseCents:374000},
- balances:{kind:'balances',items:[
- {id:1,name:'Everyday checking',type:'bank',color:'#086c70',balanceCents:285000,bankCents:320000,bankAsOf:'2026-11-16 12:00:00'},
- {id:2,name:'Rainy day savings',type:'bank',color:'#52647a',balanceCents:800000,bankCents:800000,bankAsOf:'2026-11-16 12:00:00'},
- {id:3,name:'Rewards card',type:'credit',color:'#946000',balanceCents:-85000,bankCents:-82000,bankAsOf:'2026-11-15 12:00:00'},
- {id:4,name:'Vehicle loan',type:'bank',color:'#946000',balanceCents:0,bankCents:-1800000,bankAsOf:'2026-11-15 12:00:00'}],totalCents:1000000},
- trends:{kind:'trends',months:6,points:[{key:'2026-06',label:'Jun',spentCents:304000},{key:'2026-07',label:'Jul',spentCents:352000},{key:'2026-08',label:'Aug',spentCents:289000},{key:'2026-09',label:'Sep',spentCents:412000},{key:'2026-10',label:'Oct',spentCents:374000},{key:'2026-11',label:'Nov',spentCents:325000}]},
- budgets:{kind:'budgets',items:[]},upcoming:{kind:'upcoming',days:[],recurringSuggestionCount:0},
- recent:{kind:'recent',items:[{id:1,account_id:1,category_id:1,date:'2026-11-15',amount_cents:-4825,merchant:'Sample grocery',notes:null,color:null,account_name:'Everyday checking',category_name:'Groceries'}]},
- notifications:{kind:'notifications',items:[],unread:0}
- };
+ const q=url.searchParams.get('q')??'',status=url.searchParams.get('status')??'all',sort=url.searchParams.get('sort')??'newest';
+ const items=transactions.filter(t=>(t.merchant??'').toLowerCase().includes(q.toLowerCase())).filter(t=>status==='all'||(status==='posted'?!t.pending:t.pending)).toSorted((a,b)=>sort==='oldest'?a.date.localeCompare(b.date):sort==='amount'?Math.abs(b.amount_cents)-Math.abs(a.amount_cents):b.date.localeCompare(a.date));
+ const register:any={data:{items,total:items.length,pages:1},filters:{accountIds:[],categoryIds:[],tagIds:[],emptyFields:[],amountOp:'',amountFrom:null,amountTo:null,dateFrom:'',dateTo:'',q,page:1,pageSize:50,status,sort},accounts,categories,tags:[]};
+ const cashflow:any={from:'2026-11-01',to:'2026-11-30',currentMonth:'2026-11',monthList:['2026-11'],monthLabels:["NOV '26"],accounts,categories,filters:{accountIds:[],categoryIds:[]},filtersActive:false,...native.cashflow,transactions:native.transactions.filter(t=>!t.pending&&categories.find(c=>c.id===t.category_id)?.type!=='transfer'&&t.category_id!==null),occurrences:native.plannedDrill.map(o=>({...o,accountId:scheduled.find(s=>s.id===o.id)?.account_id??null}))};
 </script>
 <svelte:head>{@html `<style>${themeToCss(theme)}</style>`}</svelte:head>
-<div class="border-b border-border px-4 py-2 text-xs flex justify-between gap-4"><span>SYNTHETIC PREVIEW · No real accounts or connections</span><button class="underline" onclick={()=>dark=!dark}>Switch {dark?'light':'dark'}</button></div>
-<TopNav themes={DEFAULT_THEMES} selectedTheme={theme.slug} user={{id:1,name:'Sample owner',email:'sample@example.test',is_admin:1}} branding={{name:'Galene',icon:'emblem'}} />
-<main class="p-4 md:p-6"><Dashboard data={{layout,widgets,catalog:WIDGET_CATALOG_LIST,accounts:[],categories:[],tags:[]}} /></main>
+<div class="preview-banner"><strong>SYNTHETIC COMPONENT PREVIEW — NO LIVE ACCOUNTS; SAVES DISABLED</strong><button onclick={()=>dark=!dark}>Switch {dark?'light':'dark'}</button></div>
+<div class="galene-shell" style:padding-top="32px"><ProductNav bind:open user={{id:1,name:'Sample owner',email:'sample@example.invalid',is_admin:1}} branding={{name:'Galene',icon:'emblem'}} themes={DEFAULT_THEMES} selectedTheme={theme.slug}/>
+<main id="main-content" class="product-main" inert={open||undefined}>
+ {#if path==='/'}<Overview data={base as any}/>
+ {:else if path==='/accounts'}<Accounts data={{accounts} as any}/>
+ {:else if path.startsWith('/accounts/')}<Account data={{...base,account:accounts.find(a=>a.id===id),transactions:transactions.filter(t=>t.account_id===id)} as any}/>
+ {:else if path==='/transactions'}<Activity data={register}/>
+ {:else if path.startsWith('/transactions/')}<Transaction data={{transaction:id===9?{...transactions[1],id:9,amount_cents:-10000,splits:[{category_id:2,category_name:'Sample groceries',amount_cents:6000},{category_id:3,category_name:'Sample card payment',amount_cents:4000}]}:transactions.find(t=>t.id===id),accounts,categories,tags:[]} as any}/>
+ {:else if path.startsWith('/categories/')}<Category data={category(url,id) as any}/>
+ {:else if path==='/spending'||path==='/income'}<Insights data={insight(url,path==='/income'?'income':'expense') as any}/>
+ {:else if path==='/budget'}<Budget data={{budgets,categories,selectedDate:'2026-11-24'}}/>
+ {:else if path==='/scheduled'}<Scheduled data={{rows:[...scheduled,...(url.searchParams.has('qa')?[{...scheduled[0],id:3,name:'Sample refund',amount_cents:1000,category_id:2},{...scheduled[0],id:4,name:'Sample income reversal',amount_cents:-1000,category_id:1},{...scheduled[0],id:5,name:'Sample transfer',amount_cents:-1000,category_id:3}]:[])].map(s=>({scheduled:s,nextDate:s.start_date})),accounts,categories,tags:[]}}/>
+ {:else if path==='/cashflow'}<Cashflow data={cashflow}/>
+ {:else}<section class="product-panel product-empty"><h1>Outside this component preview</h1><p>This is not the live app. Authenticated acceptance is still required.</p><a class="product-link" href="/">Return to preview overview</a></section>{/if}
+</main></div>
+<style>
+ .preview-banner{position:fixed;inset:0 0 auto;height:32px;z-index:100;background:#fff4c7;color:#493800;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 12px;font-size:10px}.preview-banner button{text-decoration:underline;white-space:nowrap}
+ :global(.product-topbar){top:32px}:global(.product-sidebar){top:32px}
+ @media(max-width:767px){:global(.product-sidebar){top:98px}.preview-banner strong{font-size:8px}}
+</style>

@@ -65,13 +65,13 @@ export function load({ locals, url }) {
 		if (categoryId != null && adjustmentIds.has(categoryId)) return false;
 		if (categorySet) {
 			// Explicit list: only selected ids (transfers only if listed).
-			return categoryId != null && categorySet.has(categoryId);
+			return categoryId != null && categorySet.has(categoryId) && !transferIds.has(categoryId);
 		}
 		// Default: all non-transfer (uncategorized allowed).
-		return categoryId == null || !transferIds.has(categoryId);
+		return categoryId != null && !transferIds.has(categoryId);
 	}
 
-	let transactions = getTransactionsInPeriod(userId, rangeFrom, monthBounds(lastMonth).to);
+	let transactions = getTransactionsInPeriod(userId, rangeFrom, monthBounds(lastMonth).to).filter(t=>!t.pending);
 	if (accountSet) transactions = transactions.filter((t) => accountSet.has(t.account_id));
 	// Keep transactions that still contribute under the category filter (main
 	// category or any split). Full exclusion of transfers matches cashflow totals.

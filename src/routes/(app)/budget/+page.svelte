@@ -23,7 +23,7 @@
 
 	let { form, data }: {
 		form: { error?: string | null } | undefined;
-		data: { budgets: BudgetRow[]; categories: Category[] };
+		data: { budgets: BudgetRow[]; categories: Category[]; selectedDate: string };
 	} = $props();
 
 	// --- Add / edit dialog ---
@@ -99,199 +99,35 @@
 		};
 	};
 
-	function deleteBudget(b: BudgetRow) {
-		(document.getElementById(`budget-delete-${b.id}`) as HTMLFormElement | null)?.requestSubmit();
-	}
-
-	/** Transactions list for the same category and half-open period as Spent. date_to is inclusive. */
-	function spentTransactionsHref(b: BudgetRow): string {
-		const params = new URLSearchParams();
-		params.set('category', String(b.category_id));
-		params.set('date_from', b.from);
-		params.set('date_to', inclusiveEnd(b.to));
-		return `/transactions?${params.toString()}`;
-	}
-
-	/** Progress tone for narrow cards: amber near limit (≥90%), red over. */
-	function progressTone(spentCents: number, limitCents: number): 'ok' | 'near' | 'over' {
-		if (spentCents > limitCents) return 'over';
-		if (limitCents > 0 && spentCents / limitCents >= 0.9) return 'near';
-		return 'ok';
-	}
-
-	function progressPct(spentCents: number, limitCents: number): number {
-		return Math.min(100, Math.round((spentCents / Math.max(1, limitCents)) * 100));
-	}
-
-	function displayPct(spentCents: number, limitCents: number): number {
-		return Math.round((spentCents / Math.max(1, limitCents)) * 100);
-	}
-
 	// Toast the latest action result (replaces the old top-of-page status block).
 	watchFormToast(() => form);
 </script>
 
 <Title title="Budget" />
 
-<div class="mx-auto flex max-w-5xl flex-col gap-4 2xl:max-w-7xl">
-	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div>
-			<h1 class="text-2xl font-semibold tracking-tight">Budgets</h1>
-			<p class="text-sm text-muted-foreground">Limits per category, checked against what you actually spend.</p>
-		</div>
-		<Button type="button" onclick={openAdd}>+ Add budget</Button>
-	</div>
-
-	{#if data.budgets.length === 0}
-		<div class="rounded-lg border border-dashed border-border bg-surface p-10 text-center">
-			<p class="text-sm text-muted-foreground">
-				No budgets yet. Add one to set a weekly, monthly, or yearly limit for a category.
-			</p>
-		</div>
-	{:else}
-		<!-- Narrow: stacked cards (Brand lock Budgets A / #148). Desktop keeps the table. -->
-		<ul class="flex flex-col gap-3 md:hidden">
-			{#each data.budgets as b (b.id)}
-				{@const tone = progressTone(b.spentCents, b.limit_cents)}
-				{@const barPct = progressPct(b.spentCents, b.limit_cents)}
-				{@const labelPct = displayPct(b.spentCents, b.limit_cents)}
-				<li
-					class="rounded-xl border bg-surface p-4 {tone === 'near'
-						? 'border-warning/40 bg-gradient-to-b from-warning/15 to-surface'
-						: tone === 'over'
-							? 'border-destructive/40 bg-gradient-to-b from-destructive/10 to-surface'
-							: 'border-border'}"
-				>
-					<div class="mb-2.5 flex items-center justify-between gap-2">
-						<span class="flex min-w-0 items-center gap-2">
-							<span
-								class="size-2.5 shrink-0 rounded-full"
-								style="background: {b.category_color ?? 'transparent'}"
-							></span>
-							<span class="truncate text-[0.95rem] font-semibold tracking-tight">{b.category_name}</span>
-						</span>
-						<span
-							class="inline-flex shrink-0 items-center rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-primary"
-						>
-							{b.period}
-						</span>
-					</div>
-					<div class="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
-						<div
-							class="h-full rounded-full {tone === 'over'
-								? 'bg-destructive'
-								: tone === 'near'
-									? 'bg-warning'
-									: 'bg-primary'}"
-							style="width: {barPct}%"
-						></div>
-					</div>
-					<div class="flex items-baseline justify-between gap-2">
-						<div class="min-w-0">
-							<div class="text-sm font-medium">
-								<a
-									href={spentTransactionsHref(b)}
-									class="underline decoration-current/40 underline-offset-2 hover:decoration-current {tone === 'over'
-										? 'text-destructive'
-										: 'text-foreground hover:text-primary'}"
-									aria-label="Spent {formatMoney(b.spentCents)} transactions"
-								>
-									{formatMoney(b.spentCents)}
-								</a>
-								<span class="font-normal text-muted-foreground"> of {formatMoney(b.limit_cents)}</span>
-							</div>
-							<div class="mt-0.5 text-xs text-muted-foreground">{periodLabel(b.period, b.from, b.to)}</div>
-						</div>
-						<span
-							class="shrink-0 text-xs font-semibold {tone === 'near'
-								? 'text-warning'
-								: tone === 'over'
-									? 'text-destructive'
-									: 'text-muted-foreground'}"
-						>
-							{labelPct}%
-						</span>
-					</div>
-					<div class="mt-3 flex justify-end gap-3">
-						<button type="button" class="text-sm text-primary hover:underline" onclick={() => openEdit(b)}>
-							Edit
-						</button>
-						<form method="POST" action="?/delete" class="inline">
-							<input type="hidden" name="id" value={b.id} />
-							<button type="submit" class="text-sm text-destructive hover:underline">Delete</button>
-						</form>
-					</div>
-				</li>
-			{/each}
-		</ul>
-
-		<!-- Desktop / md+: existing table (unchanged behavior). -->
-		<div class="galene-scroll-x hidden min-w-0 max-w-full overflow-x-auto rounded-lg border border-border bg-surface md:block">
-			<table class="w-full min-w-[760px] text-sm">
-				<thead>
-					<tr class="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-						<th class="px-4 py-2.5 font-medium">Category</th>
-						<th class="px-3 py-2.5 font-medium">Period</th>
-						<th class="px-3 py-2.5 text-right font-medium">Limit</th>
-						<th class="px-3 py-2.5 text-right font-medium">Spent</th>
-						<th class="px-3 py-2.5 text-right font-medium">Remaining</th>
-						<th class="w-44 px-3 py-2.5 font-medium">Progress</th>
-						<th class="w-24 px-3 py-2.5"></th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each data.budgets as b (b.id)}
-						{@const over = b.spentCents > b.limit_cents}
-						{@const pct = Math.min(100, Math.round((b.spentCents / Math.max(1, b.limit_cents)) * 100))}
-						<tr class="border-b border-border last:border-0 hover:bg-muted/40">
-							<td class="px-4 py-2.5">
-								<span class="flex items-center gap-2">
-									<span
-										class="size-2.5 shrink-0 rounded-full"
-										style="background: {b.category_color ?? 'transparent'}"
-									></span>
-									<span class="font-medium">{b.category_name}</span>
-								</span>
-							</td>
-							<td class="whitespace-nowrap px-3 py-2.5 capitalize text-muted-foreground">{b.period}</td>
-							<td class="whitespace-nowrap px-3 py-2.5 text-right">{formatMoney(b.limit_cents)}</td>
-							<td class="whitespace-nowrap px-3 py-2.5 text-right">
-								<a
-									href={spentTransactionsHref(b)}
-									class="font-medium underline decoration-current/40 underline-offset-2 hover:decoration-current {over
-										? 'text-destructive'
-										: 'text-foreground hover:text-primary'}"
-									aria-label="Spent {formatMoney(b.spentCents)} transactions"
-								>
-									{formatMoney(b.spentCents)}
-								</a>
-								<span class="block text-xs text-muted-foreground">
-									{periodLabel(b.period, b.from, b.to)}
-								</span>
-							</td>
-							<td class="whitespace-nowrap px-3 py-2.5 text-right {over ? 'font-medium text-destructive' : 'text-muted-foreground'}">
-								{formatMoney(b.limit_cents - b.spentCents)}
-							</td>
-							<td class="px-3 py-2.5">
-								<div class="h-2 w-full overflow-hidden rounded-full bg-muted">
-									<div class="h-full rounded-full {over ? 'bg-destructive' : 'bg-primary'}" style="width: {pct}%"></div>
-								</div>
-							</td>
-							<td class="whitespace-nowrap px-3 py-2.5 text-right">
-								<button type="button" class="text-sm text-primary hover:underline" onclick={() => openEdit(b)}>
-									Edit
-								</button>
-								<form id="budget-delete-{b.id}" method="POST" action="?/delete" class="inline">
-									<input type="hidden" name="id" value={b.id} />
-									<button type="submit" class="ml-2 text-sm text-destructive hover:underline">Delete</button>
-								</form>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	{/if}
+<div class="product-page">
+ <header class="product-heading"><div><h1>Budget</h1><p>A spending plan, with room to make changes.</p></div><button class="product-button primary" onclick={openAdd}>Add a limit</button></header>
+ <form method="GET" class="product-toolbar"><label class="product-field">As of <input type="date" name="date" value={data.selectedDate} required/></label><button class="product-button">View budget</button><span class="product-muted">Limits compared with posted, categorized activity.</span></form>
+ <div class="product-attention"><span>These are spending limits, not money set aside. Uncategorized activity may still need review.</span><a class="product-link" href="/transactions?empty=category">Review activity</a></div>
+ {#if !data.budgets.length}<section class="product-panel product-empty"><strong>Give your money a simple plan</strong><p>Add a limit for a category you want to keep an eye on.</p><button class="product-button" onclick={openAdd}>Add your first limit</button></section>{/if}
+ {#each ['month','week','year'] as frequency}
+  {@const items=data.budgets.filter(b=>b.period===frequency)}
+  {#if items.length}
+  <section class="product-panel"><header class="product-panel-header"><h2>{frequency==='month'?'Monthly':frequency==='week'?'Weekly':'Yearly'} limits</h2><span class="product-muted">{items.length} categories</span></header>
+   {#each items as b}
+    {@const over=b.spentCents>b.limit_cents}
+    {@const income=data.categories.find(c=>c.id===b.category_id)?.type==='income'}
+    <div class="budget-line">
+     <a class="budget-category" href={`/categories/${b.category_id}?date_from=${b.from}&date_to=${inclusiveEnd(b.to)}`}><strong>{b.category_name}</strong><span class="product-row-caption">{periodLabel(b.period,b.from,b.to)}</span></a>
+     <div class="budget-progress"><div class="product-bar-caption"><span>{income?'Received':'Spent'} {formatMoney(b.spentCents)}</span><strong>{formatMoney(b.limit_cents)} {income?'target':'limit'}</strong></div><div class="product-bar-track" aria-hidden="true"><div class="product-bar-fill" style:width={`${Math.max(0,Math.min(100,b.spentCents/Math.max(1,b.limit_cents)*100))}%`} style:background={over&&!income?'var(--destructive)':'var(--primary)'}></div></div></div>
+     <span class="budget-difference">{formatMoney(Math.abs(b.limit_cents-b.spentCents))}<small>{income?(over?'above target':'to target'):(over?'over limit':'under limit')}</small></span>
+     <button class="product-button" aria-label={`Edit ${b.category_name} limit`} onclick={()=>openEdit(b)}>Edit</button>
+    </div>
+   {/each}
+  </section>
+  {/if}
+ {/each}
+ <details class="product-panel product-details"><summary>About your plan</summary><p>Refunds reduce spending in the original category. Transfers and card payments are not new spending. Week, month and year limits keep their own periods. Changing a limit changes the plan; it does not move money or change an account balance.</p></details>
 </div>
 
 <Dialog
@@ -359,9 +195,29 @@
 
 	</form>
 	{#snippet footer()}
-		<div class="flex justify-end gap-2">
+		<div class="flex items-center gap-2">
+			{#if editing}
+				<form
+					method="POST"
+					action="?/delete"
+					class="mr-auto"
+					onsubmit={(event) => {
+						if (!confirm('Remove this budget limit? Your transactions and account balances will not change.')) {
+							event.preventDefault();
+						}
+					}}
+				>
+					<input type="hidden" name="id" value={editing.id} />
+					<Button variant="destructive" type="submit">Remove limit</Button>
+				</form>
+			{/if}
 			<Button variant="secondary" type="button" onclick={() => (dialogOpen = false)}>Cancel</Button>
 			<Button type="submit" form="budget-dialog-form">{editing ? 'Save changes' : 'Add budget'}</Button>
 		</div>
 	{/snippet}
 </Dialog>
+<style>
+ .budget-line{display:grid;grid-template-columns:minmax(160px,1.1fr) minmax(200px,1.4fr) 100px auto;gap:24px;align-items:center;padding:20px 22px;border-bottom:1px solid var(--border)}
+ .budget-line:last-child{border-bottom:0}.budget-category{font-size:14px}.budget-category strong{font-weight:550}.budget-difference{text-align:right;font-variant-numeric:tabular-nums;font-size:14px}.budget-difference small{display:block;color:var(--muted-foreground);font-size:11px}
+ @media(max-width:1050px){.budget-line{grid-template-columns:1fr auto;gap:14px;padding:18px 16px}.budget-progress{grid-column:1/-1;grid-row:2}.budget-difference{grid-column:1;text-align:left}.budget-line>button{grid-column:2;grid-row:1}.budget-difference small{display:inline;margin-left:6px}}
+</style>

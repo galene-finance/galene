@@ -26,7 +26,8 @@ import {
 } from './finance';
 import { listNotifications, unreadCount } from './notifications';
 import { dayGroupLabel, monthLabel, todayISO } from '$lib/utils';
-import { db } from './db';
+import { activityParts } from '$lib/activity';
+import { getTransactionsInPeriod, budgetPeriodSpend } from './finance';
 import { detectRecurringSuggestions } from './recurringDetect';
 
 /** The user's saved layout, or the default one when nothing is stored yet. */
@@ -171,58 +172,30 @@ function budgetsData(userId: number, f: DashboardFilters): DashboardWidgetData {
 		})
 		.filter((b) => categories.find((c) => c.id === b.category_id)?.type !== 'transfer')
 		.map((b) => {
-			const cat = categories.find((c) => c.id === b.category_id);
-			const { from, to } = currentPeriodBounds(b.period);
-			const signed = categoryAmountInPeriod(userId, b.category_id, from, to);
-			const spent = Math.max(0, -signed); // #17: refunds reduce used
+			const { spentCents } = budgetPeriodSpend(userId, b.category_id, b.period);
 			return {
 				id: b.id,
 				categoryName: b.category_name,
 				categoryColor: b.category_color,
 				period: b.period,
 				limitCents: b.limit_cents,
-				spentCents: Math.max(0, Math.round(spent))
+				spentCents
 			};
 		});
 	return { kind: 'budgets', items };
 }
 
-/**
- * Raw (non-split-aware) income/expense sums for a date range, matching the
- * home summary's treatment of split transactions as their parent amount.
- */
+/** Split-aware, posted income/expense sums using the shared category classifier. */
 function monthSums(userId: number, from: string, to: string, f: DashboardFilters): { income: number; expense: number } {
-	const where: string[] = ['user_id = ?', 'date >= ?', 'date < ?'];
-	const params: (number | string)[] = [userId, from, to];
-	if (f.accountIds && f.accountIds.length) {
-		where.push(`account_id IN (${f.accountIds.map(() => '?').join(',')})`);
-		params.push(...f.accountIds);
-	}
-	if (f.categoryIds && f.categoryIds.length) {
-		where.push(`category_id IN (${f.categoryIds.map(() => '?').join(',')})`);
-		params.push(...f.categoryIds);
-	}
-	if (f.tagIds && f.tagIds.length) {
-		where.push(
-			`EXISTS (SELECT 1 FROM transaction_tags tt WHERE tt.transaction_id = transactions.id AND tt.tag_id IN (${f.tagIds
-				.map(() => '?')
-				.join(',')}))`
-		);
-		params.push(...f.tagIds);
-	}
-	// Transfer-categorized amounts are excluded from income/expense (issue #36).
-	where.push(
-		`(category_id IS NULL OR NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = transactions.category_id AND (c.is_transfer = 1 OR c.system_kind = 'balance_adjustment')))`
-	);
-	const row = db()
-		.query(
-			`SELECT COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0) AS income,
-			        COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) AS expense
-			 FROM transactions
-			 WHERE ${where.join(' AND ')}`
-		)
-		.get(...params) as { income: number; expense: number };
-	return { income: Math.round(row.income), expense: Math.round(row.expense) };
+ const categories=new Map(getCategories(userId).map(c=>[c.id,c]));
+ const rows=getTransactionsInPeriod(userId,from,to).filter(t=>!t.pending)
+  .filter(t=>!f.accountIds?.length||f.accountIds.includes(t.account_id))
+  .filter(t=>!f.tagIds?.length||t.tag_ids?.some(id=>f.tagIds!.includes(id)));
+ const parts=rows.flatMap(t=>activityParts(t,categories)).filter(p=>!f.categoryIds?.length||(p.categoryId!==null&&f.categoryIds.includes(p.categoryId)));
+ return {
+  income:parts.filter(p=>p.type==='income').reduce((n,p)=>n+p.cents,0),
+  expense:-parts.filter(p=>p.type==='expense').reduce((n,p)=>n+p.cents,0)
+ };
 }
 
 function monthData(userId: number, f: DashboardFilters): DashboardWidgetData {

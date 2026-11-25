@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit';
+import type { RequestEvent } from '@sveltejs/kit';
 import { createSession, setSessionCookie } from '$lib/server/auth';
 import { assertAllowed, recordFailure } from '$lib/server/loginThrottle';
 import {
@@ -32,7 +33,7 @@ function errorView(code: OidcCallbackError, detail?: string | null) {
 }
 
 /** Exchange the IdP code (when present). Success goes straight home. */
-export async function load(event) {
+export async function load(event: Pick<RequestEvent, 'url' | 'cookies' | 'getClientAddress' | 'locals'>) {
 	const { url, cookies } = event;
 	const params = url.searchParams;
 

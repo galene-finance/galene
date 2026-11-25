@@ -28,6 +28,8 @@ export function parseTransactionFilters(url: URL, defaultPageSize: number): Tran
 	const op = url.searchParams.get('amount_op') ?? '';
 	const pageSizeParam = num(url.searchParams.get('page_size'));
 	return {
+		status: url.searchParams.get('status')==='posted'?'posted':url.searchParams.get('status')==='pending'?'pending':'all',
+		sort: (['oldest','amount','merchant'].includes(url.searchParams.get('sort')??'')?url.searchParams.get('sort'):'newest') as TransactionFilters['sort'],
 		accountIds: url.searchParams.getAll('account').map(num).filter((n): n is number => n !== null),
 		categoryIds: url.searchParams.getAll('category').map(num).filter((n): n is number => n !== null),
 		tagIds: url.searchParams.getAll('tag').map(num).filter((n): n is number => n !== null),

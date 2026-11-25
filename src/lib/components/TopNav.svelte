@@ -17,6 +17,7 @@
 		notifications = [] as AppNotification[],
 		notificationsUnread = 0,
 		viewer = false,
+		utilitiesOnly = false,
 		open = $bindable(false)
 	}: {
 		user: User;
@@ -27,6 +28,7 @@
 		notifications?: AppNotification[];
 		notificationsUnread?: number;
 		viewer?: boolean;
+		utilitiesOnly?: boolean;
 		open?: boolean;
 	} = $props();
 
@@ -135,8 +137,9 @@
 	<div class="fixed inset-0 z-30 bg-black/50 lg:hidden" role="presentation" onclick={() => (open = false)}></div>
 {/if}
 
-<header class="sticky top-0 z-40 min-w-0 overflow-x-clip border-b border-border bg-surface">
+<header class:utility-header={utilitiesOnly} class="sticky top-0 z-40 min-w-0 overflow-x-clip border-b border-border bg-surface">
 	<div class="flex h-14 min-w-0 items-center gap-2 px-3 sm:px-4">
+		{#if !utilitiesOnly}
 		<button
 			type="button"
 			class="shrink-0 rounded-md p-2 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground lg:hidden"
@@ -165,6 +168,7 @@
 				</a>
 			{/each}
 		</nav>
+		{/if}
 
 		<div class="ml-auto flex min-w-0 shrink items-center gap-0.5 sm:gap-1.5">
 			{#if !viewer}

@@ -192,6 +192,7 @@
 	<div
 		class="flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border border-input bg-surface px-2 py-1 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30 {className}"
 		bind:this={container}
+		role="presentation"
 		onpointerdowncapture={(e) => {
 			const fromTrigger = !!(e.target as HTMLElement).closest('[data-combobox-trigger]');
 			focusFromTrigger = fromTrigger;

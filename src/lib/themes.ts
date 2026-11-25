@@ -9,7 +9,7 @@ const light: ThemeColors = {
 	surfaceHover: '#f1f5f9',
 	foreground: '#172b43',
 	mutedForeground: '#52647a',
-	primary: '#086c70',
+	primary: '#265bb5',
 	primaryForeground: '#ffffff',
 	success: '#167046',
 	destructive: '#b91c1c',

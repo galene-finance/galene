@@ -167,24 +167,26 @@
 >
 	<form id="transaction-dialog-form" method="POST" action={action} use:enhance={handleSubmit} class="flex flex-col gap-4" aria-busy={saving ? 'true' : undefined}>
 		<fieldset disabled={saving} class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
-		<div class="flex gap-2" role="radiogroup" aria-label="Transaction type">
+		<div class="flex gap-2" role="group" aria-label="Transaction type">
 			<button
 				type="button"
 				onclick={() => onTypeChange('expense')}
+				aria-pressed={type === 'expense'}
 				class="flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors {type === 'expense'
 					? 'border-primary bg-primary/10 text-primary'
 					: 'border-border text-muted-foreground hover:bg-muted'}"
 			>
-				Expense
+				Money out
 			</button>
 			<button
 				type="button"
 				onclick={() => onTypeChange('income')}
+				aria-pressed={type === 'income'}
 				class="flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors {type === 'income'
 					? 'border-primary bg-primary/10 text-primary'
 					: 'border-border text-muted-foreground hover:bg-muted'}"
 			>
-				Income
+				Money in
 			</button>
 		</div>
 

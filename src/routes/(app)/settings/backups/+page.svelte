@@ -40,7 +40,7 @@
 		data
 	}: {
 		form: { ok?: boolean; error?: string | null; message?: string } | undefined;
-		data: {
+		data: { demo?: boolean;
 			settings: BackupSettings;
 			backups: BackupFile[];
 			backupRoot: string;

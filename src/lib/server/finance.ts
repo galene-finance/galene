@@ -3,6 +3,7 @@ import { db, seedBalanceAdjustmentCategories } from './db';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
 import { isSecretSetting, openSecret, sealSecret } from './secrets';
 import { holdProviderTransactions } from './syncHeld';
+import { summarizeActivity } from '../activity';
 import { emitDataChange } from './webhookNotify';
 import { dropAccountExternalIdFromPlaidItems, ownedIds } from './plaidItems';
 import type { GrantScope } from './advisor';
@@ -865,6 +866,8 @@ export function getOrCreateAccount(userId: number, name: string, type: AccountTy
 export type EmptyFilterField = 'account' | 'category' | 'merchant' | 'tag';
 
 export interface TransactionFilters {
+	status?: 'all' | 'posted' | 'pending';
+	sort?: 'newest' | 'oldest' | 'amount' | 'merchant';
 	accountIds: number[];
 	categoryIds: number[];
 	tagIds: number[];
@@ -909,6 +912,9 @@ export function getTransactions(
 ): TransactionQueryResult {
 	const where: string[] = ['t.user_id = ?'];
 	const params: (number | string)[] = [userId];
+	if(f.status==='posted')where.push('COALESCE(t.pending,0)=0');
+	if(f.status==='pending')where.push('t.pending=1');
+	const order=f.sort==='oldest'?'t.date ASC,t.id ASC':f.sort==='amount'?'ABS(t.amount_cents) DESC,t.id DESC':f.sort==='merchant'?"lower(COALESCE(t.merchant,'')) ASC,t.id DESC":'t.date DESC,t.id DESC';
 
 	if (f.accountIds.length > 0) {
 		where.push(`t.account_id IN (${f.accountIds.map(() => '?').join(',')})`);
@@ -1013,7 +1019,7 @@ export function getTransactions(
 			 LEFT JOIN accounts a ON a.id = t.account_id
 			 LEFT JOIN categories c ON c.id = t.category_id
 			 WHERE ${whereSql}
-			 ORDER BY t.date DESC, t.id DESC
+			 ORDER BY ${order}
 			 LIMIT ? OFFSET ?`
 		)
 		.all(...params, f.pageSize, (f.page - 1) * f.pageSize) as (Transaction & {
@@ -1127,6 +1133,8 @@ export function transactionInputFromForm(userId: number, form: FormData): { inpu
 	};
 }
 
+export class TransactionEditError extends Error {}
+
 export function saveTransaction(userId: number, input: TransactionInput) {
 	assertOwnedAccount(userId, input.account);
 	assertOwnedCategory(userId, input.category);
@@ -1134,9 +1142,24 @@ export function saveTransaction(userId: number, input: TransactionInput) {
 	const created = input.id == null;
 	const amountCents = input.type === 'expense' ? -Math.abs(input.amountCents) : Math.abs(input.amountCents);
 	if (input.id) {
-		if (!ownsId('transactions', userId, input.id)) return;
-		assertUnlocked(userId, [input.id]);
-		db()
+		const d = db();
+		d.exec('SAVEPOINT transaction_edit');
+		try {
+			const previous = d
+				.query('SELECT amount_cents, category_id FROM transactions WHERE id = ? AND user_id = ?')
+				.get(input.id, userId) as { amount_cents: number; category_id: number | null } | null;
+			if (!previous) throw new TransactionEditError('Transaction not found.');
+			assertUnlocked(userId, [input.id]);
+			const split = d
+				.query('SELECT COUNT(*) AS n FROM transaction_splits WHERE transaction_id = ?')
+				.get(input.id) as { n: number };
+			if (split.n > 0 && (previous.amount_cents !== amountCents || previous.category_id !== input.category)) {
+				throw new TransactionEditError(
+					'Clear or update the split allocations before changing the total amount or main category.'
+				);
+			}
+
+			d
 			.query(
 				`UPDATE transactions
 				 SET account_id = ?, category_id = ?, date = ?, amount_cents = ?, merchant = ?, notes = ?, color = ?,
@@ -1154,7 +1177,13 @@ export function saveTransaction(userId: number, input: TransactionInput) {
 				input.id,
 				userId
 			);
-		setTransactionTags(userId, input.id, tagIds);
+			setTransactionTags(userId, input.id, tagIds);
+			d.exec('RELEASE SAVEPOINT transaction_edit');
+		} catch (error) {
+			d.exec('ROLLBACK TO SAVEPOINT transaction_edit');
+			d.exec('RELEASE SAVEPOINT transaction_edit');
+			throw error;
+		}
 	} else {
 		const result = db()
 			.query(
@@ -1224,7 +1253,7 @@ export function bulkSetCategory(userId: number, ids: number[], categoryId: numbe
 export function getTransactionsInPeriod(userId: number, from: string, to: string): Transaction[] {
 	const rows = db()
 		.query(
-			`SELECT t.id, t.account_id, t.category_id, t.date, t.amount_cents, t.merchant, t.notes, t.color,
+			`SELECT t.id, t.account_id, t.category_id, t.date, t.amount_cents, t.merchant, t.notes, t.color, t.pending, t.provider,
 			        a.name AS account_name, c.name AS category_name, c.color AS category_color,
 			        CASE WHEN c.id IS NULL THEN NULL WHEN c.is_transfer = 1 THEN 'transfer' ELSE c.type END AS category_type
 			 FROM transactions t
@@ -1246,6 +1275,15 @@ export function getTransactionsInPeriod(userId: number, from: string, to: string
 // Home summary
 // ---------------------------------------------------------------------------
 
+export function getProductTransaction(userId: number, id: number): Transaction | null {
+	const row = db().query(`SELECT t.id,t.account_id,t.category_id,t.date,t.amount_cents,t.merchant,t.notes,t.color,t.pending,t.provider,
+	 a.name AS account_name,c.name AS category_name,c.color AS category_color,
+	 CASE WHEN c.id IS NULL THEN NULL WHEN c.is_transfer=1 THEN 'transfer' ELSE c.type END AS category_type
+	 FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id
+	 WHERE t.user_id=? AND t.id=?`).get(userId,id) as Transaction | null;
+	return row ? attachSplits(userId,attachTags(userId,[row]))[0] : null;
+}
+
 export interface HomeSummary {
 	balanceCents: number;
 	monthIncomeCents: number;
@@ -1257,35 +1295,10 @@ export interface HomeSummary {
 
 export function getHomeSummary(userId: number): HomeSummary {
 	const now = new Date();
-	const year = now.getFullYear();
-	const month = now.getMonth() + 1;
-	const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
-	const nextMonth = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
-
-	// Total balance includes opening anchors (issue #44), not raw SUM(transactions).
-	const balanceCents = getTotalBalanceCents(userId);
-
-	const incomeRow = db()
-		.query(
-			`SELECT COALESCE(SUM(t.amount_cents), 0) AS s
-			 FROM transactions t
-			 LEFT JOIN categories c ON c.id = t.category_id
-			 WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND t.amount_cents > 0
-			   AND COALESCE(c.is_transfer, 0) = 0
-			   AND COALESCE(c.system_kind, '') != '${BALANCE_ADJUSTMENT_KIND}'`
-		)
-		.get(userId, monthStart, nextMonth) as { s: number };
-
-	const expenseRow = db()
-		.query(
-			`SELECT COALESCE(SUM(-t.amount_cents), 0) AS s
-			 FROM transactions t
-			 LEFT JOIN categories c ON c.id = t.category_id
-			 WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND t.amount_cents < 0
-			   AND COALESCE(c.is_transfer, 0) = 0
-			   AND COALESCE(c.system_kind, '') != '${BALANCE_ADJUSTMENT_KIND}'`
-		)
-		.get(userId, monthStart, nextMonth) as { s: number };
+	const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+	const { from, to } = monthBounds(month);
+	const categories = getCategories(userId);
+	const summary = summarizeActivity(getTransactionsInPeriod(userId, from, to), categories);
 
 	const recent = db()
 		.query(
@@ -1300,44 +1313,24 @@ export function getHomeSummary(userId: number): HomeSummary {
 			 ORDER BY t.date DESC, t.id DESC
 			 LIMIT 10`
 		)
-		.all(userId) as (Transaction & { account_name: string; category_name: string | null; category_color: string | null })[];
-
-	const topCategories = db()
-		.query(
-			`SELECT COALESCE(c.name, 'Uncategorized') AS name, c.color AS color, SUM(-amt) AS cents
-			 FROM (
-				  -- Split allocations are stored as positive; negate so -amt is a positive
-				  -- expense contribution, matching the unsplit branch below.
-				  SELECT s.category_id AS cat_id, -s.amount_cents AS amt
-				  FROM transaction_splits s
-				  JOIN transactions t ON t.id = s.transaction_id
-				  WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND t.amount_cents < 0
-				  UNION ALL
-				  SELECT t.category_id, t.amount_cents
-				  FROM transactions t
-				  WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND t.amount_cents < 0
-				    AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
-			 )
-			 LEFT JOIN categories c ON c.id = cat_id
-			 WHERE COALESCE(c.is_transfer, 0) = 0
-			   AND COALESCE(c.system_kind, '') != '${BALANCE_ADJUSTMENT_KIND}'
-			 GROUP BY c.id
-			 ORDER BY cents DESC
-			 LIMIT 5`
-		)
-		.all(userId, monthStart, nextMonth, userId, monthStart, nextMonth) as {
-		name: string;
-		color: string | null;
-		cents: number;
-	}[];
+			.all(userId) as (Transaction & { account_name: string; category_name: string | null; category_color: string | null })[];
 
 	return {
-		balanceCents,
-		monthIncomeCents: incomeRow.s,
-		monthExpenseCents: expenseRow.s,
-		monthLabel: monthLabel(monthStart),
+		// Total balance includes opening anchors (issue #44), not raw SUM(transactions).
+		balanceCents: getTotalBalanceCents(userId),
+		monthIncomeCents: summary.incomeCents,
+		monthExpenseCents: summary.spendingCents,
+		monthLabel: monthLabel(from),
 		recent: attachTags(userId, recent),
-		topCategories
+		topCategories: summary.categories
+			.filter((category) => category.type === 'expense')
+			.sort((a, b) => a.cents - b.cents)
+			.slice(0, 5)
+			.map((category) => ({
+				name: category.name,
+				color: categories.find((candidate) => candidate.id === category.id)?.color ?? null,
+				cents: -category.cents
+			}))
 	};
 }
 
@@ -1677,18 +1670,16 @@ export function currentPeriodBounds(period: Budget['period'], ref: Date = new Da
 }
 
 /**
- * Current-period spend for a budget row: refunds reduce used (#17), never below zero.
+ * Period activity for a budget row: refunds reduce spending, reversals reduce income.
  * `from` / `to` are the period bounds (to is exclusive).
  */
 export function budgetPeriodSpend(
-	userId: number,
-	categoryId: number,
-	period: Budget['period']
+ userId: number, categoryId: number, period: Budget['period'], ref: Date = new Date()
 ): { from: string; to: string; spentCents: number } {
-	const { from, to } = currentPeriodBounds(period);
-	const signed = categoryAmountInPeriod(userId, categoryId, from, to);
-	const spent = Math.max(0, -signed);
-	return { from, to, spentCents: Math.max(0, Math.round(spent)) };
+ const {from,to}=currentPeriodBounds(period,ref);
+ const signed=categoryAmountInPeriod(userId,categoryId,from,to);
+ const type=getCategories(userId).find(c=>c.id===categoryId)?.type;
+ return {from,to,spentCents:type==='income'?signed:-signed};
 }
 
 /**
@@ -1697,25 +1688,8 @@ export function budgetPeriodSpend(
  * Split amounts are stored positive, so the transaction's sign is applied here.
  */
 export function categoryAmountInPeriod(userId: number, categoryId: number, from: string, to: string): number {
-	const splitRow = db()
-		.query(
-			`SELECT COALESCE(SUM(s.amount_cents * SIGN(t.amount_cents)), 0) AS s
-			 FROM transaction_splits s
-			 JOIN transactions t ON t.id = s.transaction_id
-			 WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND s.category_id = ?
-			   AND ${excludeBalanceAdjustment('s.category_id')}`
-		)
-		.get(userId, from, to, categoryId) as { s: number };
-	const txRow = db()
-		.query(
-			`SELECT COALESCE(SUM(t.amount_cents), 0) AS s
-			 FROM transactions t
-			 WHERE t.user_id = ? AND t.date >= ? AND t.date < ? AND t.category_id = ?
-			   AND ${excludeBalanceAdjustment('t.category_id')}
-			   AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)`
-		)
-		.get(userId, from, to, categoryId) as { s: number };
-	return splitRow.s + txRow.s;
+ const summary=summarizeActivity(getTransactionsInPeriod(userId,from,to),getCategories(userId));
+ return summary.categories.find(c=>c.id===categoryId)?.cents??0;
 }
 
 // ---------------------------------------------------------------------------
@@ -2755,46 +2729,15 @@ export function categoryTotalsInPeriod(
 
 /** Per-category income (+) and expense (−) actuals for [from, to). Issue #17 dual cashflow sections. */
 export function categoryPartsInPeriod(
-	userId: number,
-	from: string,
-	to: string,
-	accountIds?: number[]
+ userId: number, from: string, to: string, accountIds?: number[]
 ): { categoryId: number | null; incomeCents: number; expenseCents: number }[] {
-	const accountFilter =
-		accountIds && accountIds.length > 0
-			? ` AND t.account_id IN (${accountIds.map(() => '?').join(',')})`
-			: '';
-	const accountParams = accountIds && accountIds.length > 0 ? accountIds : [];
-	const rows = db()
-		.query(
-			`SELECT cat_id,
-			        COALESCE(SUM(CASE WHEN amt > 0 THEN amt ELSE 0 END), 0) AS income_cents,
-			        COALESCE(SUM(CASE WHEN amt < 0 THEN amt ELSE 0 END), 0) AS expense_cents
-			 FROM (
-				  SELECT s.category_id AS cat_id, s.amount_cents * SIGN(t.amount_cents) AS amt
-				  FROM transaction_splits s
-				  JOIN transactions t ON t.id = s.transaction_id
-				  WHERE t.user_id = ? AND t.date >= ? AND t.date < ?${accountFilter}
-				    AND ${excludeBalanceAdjustment('s.category_id')}
-				  UNION ALL
-				  SELECT t.category_id, t.amount_cents
-				  FROM transactions t
-				  WHERE t.user_id = ? AND t.date >= ? AND t.date < ?
-				    AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)${accountFilter}
-				    AND ${excludeBalanceAdjustment('t.category_id')}
-			 )
-			 GROUP BY cat_id`
-		)
-		.all(userId, from, to, ...accountParams, userId, from, to, ...accountParams) as {
-			cat_id: number | null;
-			income_cents: number;
-			expense_cents: number;
-		}[];
-	return rows.map((r) => ({
-		categoryId: r.cat_id,
-		incomeCents: r.income_cents,
-		expenseCents: r.expense_cents
-	}));
+ const rows=getTransactionsInPeriod(userId,from,to).filter(t=>!accountIds?.length||accountIds.includes(t.account_id));
+ const summary=summarizeActivity(rows,getCategories(userId));
+ return summary.categories.map(c=>({
+  categoryId:c.id,
+  incomeCents:c.type==='income'?c.cents:0,
+  expenseCents:c.type==='expense'?c.cents:0
+ }));
 }
 
 /**
@@ -2831,8 +2774,9 @@ export function forecastPartsByCategory(
 	const includeTransferIds = opts?.includeTransferIds;
 	const bump = (id: number | null, amt: number) => {
 		const cur = out.get(id) ?? { incomeCents: 0, expenseCents: 0 };
-		if (amt > 0) cur.incomeCents += amt;
-		else if (amt < 0) cur.expenseCents += amt;
+		const type = id == null ? null : catById.get(id)?.type;
+		if (type === 'income') cur.incomeCents += amt;
+		else if (type === 'expense') cur.expenseCents += amt;
 		out.set(id, cur);
 	};
 	for (const s of getScheduled(userId)) {
@@ -2859,18 +2803,10 @@ export function forecastPartsByCategory(
  * exactly. categoryId null = all categories.
  */
 export function monthSpendingCents(userId: number, from: string, to: string, categoryId: number | null): number {
-	const transferIds = new Set(
-		getCategories(userId)
-			.filter((c) => c.type === 'transfer' || c.system_kind === BALANCE_ADJUSTMENT_KIND)
-			.map((c) => c.id)
-	);
-	let spending = 0;
-	for (const r of categoryTotalsInPeriod(userId, from, to)) {
-		if (categoryId != null && r.categoryId !== categoryId) continue;
-		if (r.categoryId != null && transferIds.has(r.categoryId)) continue;
-		if (r.signedCents < 0) spending += -r.signedCents;
-	}
-	return spending;
+ const summary=summarizeActivity(getTransactionsInPeriod(userId,from,to),getCategories(userId));
+ if(categoryId===null)return summary.spendingCents;
+ const category=summary.categories.find(c=>c.id===categoryId&&c.type==='expense');
+ return category ? -category.cents : 0;
 }
 
 /** All budgets (any period) for one category (null = all categories). */
@@ -2954,7 +2890,7 @@ export const DEFAULT_CASHFLOW_FILTERS: CashflowViewFilters = { accountIds: [], c
 /** Normalize unknown JSON into known account/category ids for this user. */
 export function sanitizeCashflowFilters(userId: number, raw: unknown): CashflowViewFilters {
 	const accountSet = new Set(getAccounts(userId).map((a) => a.id));
-	const categorySet = new Set(getCategories(userId).map((c) => c.id));
+	const categorySet = new Set(getCategories(userId).filter(c=>c.type!=='transfer').map((c) => c.id));
 	const parseIds = (v: unknown, allowed: Set<number>): number[] => {
 		if (!Array.isArray(v)) return [];
 		const ids = new Set<number>();

@@ -24,7 +24,7 @@
  let budgetData=$state<any>(null),budgetForm=$state<any>(undefined),budgetError=$state(''),budgetBusy=$state(false);
  async function budgetRequest(action?:string,body?:FormData){
   budgetBusy=true;budgetError='';
-  try{const response=await fetch(path.startsWith('/categories/')?`/__qa/category${url.search}`:`/__qa/budget?month=${url.searchParams.get('month')??'2024-01'}${action?'&action='+action:''}`,action?{method:'POST',body}:undefined);const reply=await response.json();if(!response.ok||!reply.fixture||!reply.data)throw new Error('Fixture request failed');budgetData=reply.data;budgetForm=reply.form;return reply.form?.ok===true;}
+  try{const response=await fetch(path==='/'?`/__qa/home${url.search}`:path.startsWith('/categories/')?`/__qa/category${url.search}`:`/__qa/budget?month=${url.searchParams.get('month')??'2024-01'}${action?'&action='+action:''}`,action?{method:'POST',body}:undefined);const reply=await response.json();if(!response.ok||!reply.fixture||!reply.data)throw new Error('Fixture request failed');budgetData=reply.data;budgetForm=reply.form;return reply.form?.ok===true;}
   catch{budgetError='Synthetic fixture request failed; do not treat this as a successful save.';}
   finally{budgetBusy=false;}
  }
@@ -41,7 +41,7 @@
 <div class="preview-banner"><strong>{integrated?'SYNTHETIC OWNER CONTEXT — EDITS ONLY TEMPORARY TEST DATABASE':'SYNTHETIC COMPONENT PREVIEW — NO LIVE ACCOUNTS; SAVES DISABLED'}</strong><select aria-label="Preview theme" bind:value={themeSlug}><option value="graphite">Graphite</option><option value="ocean">Ocean</option><option value="dark">Dark</option></select></div>
 <div class="galene-shell" style:padding-top="32px"><ProductNav bind:open user={{id:1,name:'Sample owner',email:'sample@example.invalid',is_admin:1}} branding={{name:'Galene',icon:'emblem'}} themes={DEFAULT_THEMES} selectedTheme={theme.slug}/>
 <main id="main-content" class="product-main" inert={open||undefined}>
- {#if path==='/'}<Overview data={base as any}/>
+ {#if path==='/'}{#if integrated}{#if budgetData}<Overview data={budgetData}/>{:else}<p role={budgetError?'alert':'status'}>{budgetError||'Loading fixture overview…'}</p>{/if}{:else}<Overview data={base as any}/>{/if}
  {:else if path==='/settings'}<Settings data={{isAdmin:!url.searchParams.has('nonadmin'),demo:url.searchParams.has('demo')}}/>
  {:else if path==='/settings/appearance'}<Appearance form={undefined} data={{themes:[],selected:themeSlug,appName:'Galene',icon:'emblem',favicon:'emblem',weekStartsOn:'monday',canPublishTheme:false}}/>
  {:else if path==='/reflect'}<Reflect data={{...base,view:url.searchParams.get('view')==='trends'?'trends':'summary'} as any}/>

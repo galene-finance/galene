@@ -1,8 +1,9 @@
 import {beforeAll,afterAll,test,expect} from 'bun:test';
 import {plugin} from 'bun';import {readFileSync} from 'node:fs';import {compile} from 'svelte/compiler';import {render} from 'svelte/server';
-plugin({name:'budget-ui-ssr',setup(build){build.onLoad({filter:/(FundingOverview|FundingAmount|FinancialBadge|CategoryPill)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
+plugin({name:'budget-ui-ssr',setup(build){build.onLoad({filter:/(TargetEditor|TargetSettings|FundingOverview|FundingAmount|FinancialBadge|CategoryPill)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {db,closeDbForTests} from './db';import {BudgetEngine} from './budgetEngine/service';
+import {productOverview} from './product';
 import {load,actions} from '../../routes/(app)/budget/+page.server';
 import {load as categoryLoad} from '../../routes/(app)/categories/[id]/+page.server';
 const user={id:1,name:'Synthetic owner',email:'owner@example.test',is_admin:1,role:'owner' as const};
@@ -41,4 +42,23 @@ test('native Plan assignment action, register correction and loader reload prese
  await expect((actions as any).allocate(event(fields,{...user,role:'viewer'}))).rejects.toMatchObject({status:403});
  await expect((actions as any).allocate(event(fields,null))).rejects.toMatchObject({status:303});
  expect((await (actions as any).allocate(event(fields,user,'https://wrong.invalid'))).status).toBe(403);
+});
+
+test('native target versions support annual dates, weekly boundaries, archive and no-baseline planning without assigning cash',async()=>{
+ expect(typeof (actions as any).target).toBe('function');
+ db().exec("INSERT INTO categories(id,user_id,name,type) VALUES(3,1,'Synthetic annual goal','expense')");
+ expect((await (actions as any).refresh(event({revision:String(page().funding.view.revision),key:'target-fixture-refresh'}))).ok).toBe(true);
+ const before=page().funding.view.ledger;expect(before).not.toBeNull();
+ const target={target_id:'annual-ui',category_id:'3',amount:'1200.00',cadence:'annual',behavior:'set_aside',start_date:'2024-01-01',due_date:'2024-12-31',effective_month:'2024-01',revision:String(page().funding.view.revision),key:'annual-create'};
+ expect((await (actions as any).target(event(target))).ok).toBe(true);expect(page().targetSpecs.find((t:any)=>t.id==='annual-ui')).toMatchObject({cadence:'annual',dueDate:'2024-12-31',amountCents:120000});expect(page().funding.view.ledger).toEqual(before);expect(page().funding.plan.lines.find((t:any)=>t.targetId==='annual-ui').plannedCents).toBe(10000);
+ const {default:Editor}=await import('../components/TargetEditor.svelte');const formHtml=render(Editor,{props:{target:page().targetSpecs.find((t:any)=>t.id==='annual-ui'),categories:page().categories,month:'2024-01',revision:page().funding.view.revision,commandKey:'synthetic'}}).body;expect(formHtml).toContain('name="due_date"');expect(formHtml).toContain('2024-12-31');expect(formHtml).toContain('?/target');expect(formHtml).toContain('Version effective month');
+ expect((productOverview(1,new URL('https://synthetic.invalid/?month=2024-01')) as any).configuredPlan.totalCents).toBe(page().funding.plan.totalCents);
+ const version={...target,amount:'2400.00',effective_month:'2024-02',revision:String(page().funding.view.revision),key:'annual-version'};expect((await (actions as any).target(event(version))).ok).toBe(true);
+ expect(page().targetSpecs.find((t:any)=>t.id==='annual-ui').amountCents).toBe(120000);
+ const feb=load({locals:{user},url:new URL('https://synthetic.invalid/budget?month=2024-02')} as any) as any;expect(feb.targetSpecs.find((t:any)=>t.id==='annual-ui').amountCents).toBe(240000);expect(feb.funding.view.ledger.readyToAssignCents).toBe(before.readyToAssignCents);
+ const invalid={...target,due_date:'2023-01-01',revision:String(page().funding.view.revision),key:'invalid-due'};const revision=page().funding.view.revision;expect((await (actions as any).target(event(invalid))).status).toBe(400);expect(page().funding.view.revision).toBe(revision);
+ expect((await (actions as any).archiveTarget(event({target_id:'annual-ui',effective_month:'2024-02',revision:String(revision),key:'archive'}))).ok).toBe(true);expect((load({locals:{user},url:new URL('https://synthetic.invalid/budget?month=2024-02')} as any) as any).targetSpecs.some((t:any)=>t.id==='annual-ui')).toBe(false);expect(page().targetSpecs.some((t:any)=>t.id==='annual-ui')).toBe(true);
+ const other={...user,id:2};const otherPage=()=>load({locals:{user:other},url} as any) as any;
+ expect((await (actions as any).target(event({target_id:'weekly-ui',category_id:'2',amount:'10.00',cadence:'weekly',behavior:'set_aside',start_date:'2024-01-19',weekday:'1',effective_month:'2024-01',revision:String(otherPage().funding.view.revision),key:'weekly'},other))).ok).toBe(true);
+ expect(otherPage().funding.plan.totalCents).toBe(2000);expect(otherPage().funding.view.baseline).toBeNull();expect(otherPage().funding.view.ledger).toBeNull();
 });

@@ -5,6 +5,9 @@
  import { formatMoney, formatDate, monthLabel } from '$lib/utils';
  import type { productOverview } from '$lib/server/product';
  let { data }: { data: ReturnType<typeof productOverview> } = $props();
+ const planAmount=$derived(data.configuredPlan?data.configuredPlan.totalCents:data.plan.totalCents);
+ const planCount=$derived(data.configuredPlan?data.configuredPlan.targetCount:data.plan.targetIds.length);
+ const planHref=$derived(data.configuredPlan?`/budget?month=${data.configuredPlan.month}`:'/budget');
  const query=$derived(data.scopeQuery??data.period.query);
  const account=$derived(data.accounts.find(a=>a.id===data.accountId));
  const periodText=$derived(data.period.custom?`${data.period.from} – ${data.period.dateTo}`:monthLabel(data.period.month));
@@ -18,9 +21,9 @@
 <div class="product-columns">
  <div>
   <section class="product-panel">
-   <header class="product-panel-header"><div><h2>Cost to be me</h2><p class="product-row-caption">Your current monthly targets · all accounts</p></div>{#if data.plan.totalCents!==null}<Badge value={formatMoney(data.plan.totalCents)} label="Monthly plan"/>{:else}<Badge label={data.plan.needsReview?'Review targets':'No monthly targets'} tone={data.plan.needsReview?'attention':'neutral'}/>{/if}</header>
-   <div class="product-panel-body"><p class="product-muted">Review your targets, then adjust what needs to change.</p><a class="product-button primary" href="/budget">{data.plan.targetIds.length?'Edit monthly plan':'Build your plan'}</a></div>
-   <footer class="product-details">{data.plan.targetIds.length} monthly targets. {#if data.plan.otherCadenceCount}{data.plan.otherCadenceCount} limits with other cadences are separate. {/if}This is a plan, not money available.</footer>
+   <header class="product-panel-header"><div><h2>Cost to be me</h2><p class="product-row-caption">{data.configuredPlan?`Target contributions · ${monthLabel(data.configuredPlan.month)}`:'Your current monthly targets'} · all accounts</p></div>{#if planAmount!==null}<Badge value={formatMoney(planAmount)} label="Monthly plan"/>{:else}<Badge label={data.plan.needsReview?'Review targets':'No monthly targets'} tone={data.plan.needsReview?'attention':'neutral'}/>{/if}</header>
+   <div class="product-panel-body"><p class="product-muted">Review your targets, then adjust what needs to change.</p><a class="product-button primary" href={planHref}>{planCount?'Edit monthly plan':'Build your plan'}</a></div>
+   <footer class="product-details">{planCount} {data.configuredPlan?'configured':'monthly'} targets. {#if !data.configuredPlan&&data.plan.otherCadenceCount}{data.plan.otherCadenceCount} limits with other cadences are separate. {/if}This is a plan, not money available.</footer>
   </section>
   <section class="product-panel">
    <header class="product-panel-header"><div><h2>Reflect</h2><p class="product-row-caption">{periodText} · {account?.name??'All accounts'} · posted activity</p></div><a href={`/reflect?${query}`}>Explore reports</a></header>

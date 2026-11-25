@@ -21,6 +21,8 @@ export function load({locals,url}) {
 }
 
 export const actions = {
+ target: (event)=>budgetCommand('target',event),
+ archiveTarget: (event)=>budgetCommand('target-archive',event),
  allocate: (event)=>budgetCommand('assign',event),
  refresh: (event)=>budgetCommand('refresh',event),
 	save: async ({ request, locals }) => {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import TargetSettings from '$lib/components/TargetSettings.svelte';
 	import FundingOverview from '$lib/components/FundingOverview.svelte';
 	import CategoryPill from '$lib/components/CategoryPill.svelte';
 	import type {budgetFunding} from '$lib/server/budgetIntegration';
@@ -28,7 +29,7 @@
 	};
 
 	let { form, data }: {
-		form: { error?: string | null } | undefined;
+		form: { error?: string | null; targetEffectiveMonth?: string; targetOperation?: string } | undefined;
 		data: { budgets: BudgetRow[]; categories: Category[]; selectedDate: string } & Partial<ReturnType<typeof budgetFunding>>;
 	} = $props();
 
@@ -38,7 +39,7 @@
 	const enginePlan=$derived(activeTargets.length?data.funding!.plan:null);
 	const groups=$derived(planningGroups(data.budgets.filter(b=>!activeTargets.some(t=>t.categoryId===b.category_id)),data.categories));
 	const withoutTarget=$derived(data.categories.filter(c=>c.type==='expense'&&!data.categories.some(child=>child.parent_id===c.id)&&!data.budgets.some(b=>b.category_id===c.id)&&!activeTargets.some(t=>t.categoryId===c.id)));
-	function addForCategory(c:Category){openAdd();categoryId=String(c.id);}
+	function addForCategory(c:Category){if(data.targetSpecs){openEngineTarget(c.id);return;}openAdd();categoryId=String(c.id);}
 	// --- Add / edit dialog ---
 	let dialogOpen = $state(false);
 	let editing = $state<BudgetRow | null>(null);
@@ -56,7 +57,14 @@
 			.map((c) => ({ value: String(c.id), label: c.name }))
 	);
 
+ function openEngineTarget(categoryChoice:number|null=null,legacyId?:number){
+  const panel=document.getElementById('target-settings') as HTMLDetailsElement|null;if(!panel)return;panel.open=true;
+  const detail=document.getElementById(legacyId===undefined?'new-target':`legacy-target-${legacyId}`) as HTMLDetailsElement|null;
+  if(detail){detail.open=true;detail.scrollIntoView({block:'center'});const field=detail.querySelector('select[name=category_id]') as HTMLSelectElement|null;if(field){if(categoryChoice!==null)field.value=String(categoryChoice);field.focus();}}
+  else panel.scrollIntoView({block:'start'});
+ }
 	function openAdd() {
+  if(data.targetSpecs){openEngineTarget();return;}
 		editing = null;
 		type = 'expense';
 		amount = '';
@@ -69,6 +77,7 @@
 	}
 
 	function openEdit(b: BudgetRow) {
+  if(data.targetSpecs&&data.categories.find(c=>c.id===b.category_id)?.type!=='income'){openEngineTarget(b.category_id,b.id);return;}
 		editing = b;
 		const cat = data.categories.find((c) => c.id === b.category_id);
 		type = cat?.type === 'income' ? 'income' : 'expense';
@@ -121,8 +130,10 @@
  <header class="product-heading plan-heading"><div><h1>Plan</h1></div><button class="product-button primary" onclick={openAdd}>Add a target</button></header>
  <section class="product-panel"><header class="product-panel-header"><div><h2>Cost to be me</h2><p class="product-row-caption">{enginePlan?'Planned contribution this month':'Existing monthly target intent'}</p></div>{#if enginePlan?.totalCents!==null&&enginePlan?.totalCents!==undefined}<Badge value={formatMoney(enginePlan.totalCents)} label="Monthly plan"/>{:else if plan.totalCents!==null}<Badge value={formatMoney(plan.totalCents)} label="Existing monthly plan"/>{:else}<Badge label={plan.needsReview?'Review targets':'No monthly targets'} tone={plan.needsReview?'attention':'neutral'}/>{/if}</header><footer class="product-details">{enginePlan?activeTargets.length:plan.targetIds.length} targets · not money available.</footer></section>
  <form method="GET" class="product-toolbar"><label class="product-field" for="plan-date"><span>Compare activity as of</span><input id="plan-date" type="date" name="date" value={data.selectedDate} required/></label><button class="product-button">View</button></form>
+ {#if form?.targetEffectiveMonth}<p class="product-details" role="status">Target version {form.targetOperation} effective {form.targetEffectiveMonth}. Earlier views are preserved.</p>{/if}
  {#if form?.error}<div class="product-attention" role="alert">{form.error}</div>{/if}
  {#if data.funding&&data.fundingDate&&data.commandKey}<FundingOverview funding={data.funding} fundingDate={data.fundingDate} commandKey={data.commandKey} categories={data.categories}/>{/if}
+ {#if data.targetSpecs&&data.funding&&data.commandKey}<TargetSettings targets={data.targetSpecs} categories={data.categories} budgets={data.budgets} month={data.selectedDate.slice(0,7)} revision={data.funding.view.revision} commandKey={data.commandKey}/>{/if}
  {#if !data.budgets.length&&!activeTargets.length}<section class="product-panel product-empty"><strong>Start with a category that matters</strong><p>Add a target you can adjust as the month unfolds.</p><button class="product-button" onclick={openAdd}>Add your first target</button></section>{/if}
  {#each groups as group (group.key)}
   {@const groupPlan=monthlyPlanTotal(group.items,kinds)}

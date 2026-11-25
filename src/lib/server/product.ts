@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import {summarizeActivity} from '$lib/activity';
+import {budgetFunding} from './budgetIntegration';
 import {monthlyPlanTotal} from '$lib/monthlyPlan';
 import { getAccounts,getBudgets,getAccountBalances,getAccountTxnAnchors,getCategories,getTransactionsInPeriod,getScheduled,expandScheduled,monthBounds,shiftMonth } from './finance';
 import { todayISO } from '$lib/utils';
@@ -53,5 +54,8 @@ export function productOverview(userId:number,url:URL){
  const end=new Date(`${today}T12:00:00Z`);end.setUTCDate(end.getUTCDate()+44);
  const upcoming=getScheduled(userId).flatMap(s=>expandScheduled(s,today,end.toISOString().slice(0,10))).sort((a,b)=>a.date.localeCompare(b.date));
  const history=productHistory(userId,data);
- return {...data,plan:monthlyPlanTotal(getBudgets(userId),new Map(data.categories.map(c=>[c.id,c.type]))),upcoming,history};
+ const planningMonth=data.period.dateTo.slice(0,7),funding=budgetFunding(userId,`${planningMonth}-01`).funding;
+ const activeTargets=funding.plan.lines.filter(t=>t.active);
+ const configuredPlan=activeTargets.length?{month:planningMonth,totalCents:funding.plan.totalCents,targetCount:activeTargets.length}:null;
+ return {...data,configuredPlan,plan:monthlyPlanTotal(getBudgets(userId),new Map(data.categories.map(c=>[c.id,c.type]))),upcoming,history};
 }

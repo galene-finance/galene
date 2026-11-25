@@ -5,7 +5,7 @@ import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 import { fixture } from '../../ui-preview/product-fixtures';
 import { formatMoney } from './utils';
-plugin({name:'home-view-ssr',setup(build){build.onLoad({filter:/(FundingOverview|FundingAmount|HomeOverview|CategoryPill|CashflowOverview|SettingsOverview|CategoryOverview|ScheduleAmount|TransactionAmount|AccountBalance|ProductTransactions|FinancialBadge|PeriodPicker|ReflectionOverview|ReflectTabs|ContributionList)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
+plugin({name:'home-view-ssr',setup(build){build.onLoad({filter:/(TargetEditor|TargetSettings|FundingOverview|FundingAmount|HomeOverview|CategoryPill|CashflowOverview|SettingsOverview|CategoryOverview|ScheduleAmount|TransactionAmount|AccountBalance|ProductTransactions|FinancialBadge|PeriodPicker|ReflectionOverview|ReflectTabs|ContributionList)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
 test('transaction and balance badges keep state explicit',async()=>{
  expect(existsSync(new URL('./components/TransactionAmount.svelte',import.meta.url))).toBe(true);
  expect(existsSync(new URL('./components/AccountBalance.svelte',import.meta.url))).toBe(true);
@@ -76,6 +76,11 @@ test('category identity pill is filled, named and not an amount-status badge',as
  const {default:View}=await import('./components/CategoryPill.svelte');
  const html=render(View,{props:{id:7,name:'Groceries',color:'#abc'}}).body;
  expect(html).toContain('Groceries');expect(html).toContain('#aabbcc');expect(html).toContain('data-category-id="7"');expect(html).not.toContain('data-tone=');
+});
+test('Home displays the authoritative selected-month plan instead of a different legacy total',async()=>{
+ const {default:View}=await import('./components/HomeOverview.svelte');const data=fixture(new URL('https://synthetic.invalid/?month=2024-01'));
+ const html=render(View,{props:{data:{...data,configuredPlan:{month:'2024-01',totalCents:30000,targetCount:2}} as any}}).body;
+ const section=html.split('Cost to be me')[1].split('</section>')[0];expect(section).toContain('$300.00');expect(section).toContain('2 configured targets');expect(section).toContain('/budget?month=2024-01');
 });
 test('QA-002 Home recent bubbles preserve refund, transfer and unclassified inflow labels',async()=>{
  const {default:View}=await import('./components/HomeOverview.svelte');

@@ -1,5 +1,7 @@
 # Native funding integration — first slice, not release approval
 
+**Later status:** W17 independently APPROVED frozen5fa12d9 (funding/Plan/category/HomeQA002,27 layouts and keyboard/emulated touch). V3-TARGET-WORKFLOWS.md describes the subsequent target-editor and Home/Plan integration; remaining-target statements below refer to the original first slice. Neither is whole-app/release approval.
+
 ## Source and ownership
 W11 integrated W16 contract/engine/native replay commits through corrected d12791cef49536acd1d3cb82790e47ee60e46c75. W17's independent backend-d12791c/REPORT.md closes B01/B02 only. W11 has not changed backend-owned implementation files. Production remains untouched; real finance reads/writes still require the supported boundaries.
 

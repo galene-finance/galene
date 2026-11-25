@@ -1259,18 +1259,24 @@ export function bulkDeleteTransactions(userId: number, ids: number[]) {
 
 export function bulkSetCategory(userId: number, ids: number[], categoryId: number | null) {
 	assertOwnedCategory(userId, categoryId);
-	const owned = ownedTransactionIds(userId, ids);
-	if (owned.length === 0) return;
+	if (ids.length === 0) return;
+	const unique = [...new Set(ids)];
+	const owned = ownedTransactionIds(userId, unique);
+	if (owned.length !== unique.length) throw new TransactionEditError('Transaction not found.');
 	assertUnlocked(userId, owned);
-	db()
-		.query(
-			`UPDATE transactions SET category_id = ?, updated_at = datetime('now') WHERE user_id = ? AND id IN (${owned.map(() => '?').join(',')})`
-		)
-		.run(categoryId, userId, ...owned);
-	// An explicit category choice makes the transaction single-category again.
-	db()
-		.query(`DELETE FROM transaction_splits WHERE transaction_id IN (${owned.map(() => '?').join(',')})`)
-		.run(...owned);
+	const slots = owned.map(() => '?').join(',');
+	atomicFormMutation(() => {
+		const d = db();
+		d.query(
+			`UPDATE transactions SET category_id = ?, updated_at = datetime('now') WHERE user_id = ? AND id IN (${slots})`
+		).run(categoryId, userId, ...owned);
+		// An explicit category choice makes the transaction single-category again.
+		d.query(
+			`DELETE FROM transaction_splits
+			 WHERE transaction_id IN (SELECT id FROM transactions WHERE user_id = ? AND id IN (${slots}))`
+		).run(userId, ...owned);
+		return { ok: true };
+	});
 }
 
 /** All transactions in [from, to) with tags and splits attached. */
@@ -2660,9 +2666,11 @@ export function saveTransactionSplits(
 
 export function clearTransactionSplits(userId: number, txId: number) {
 	const owned = ownedTransactionIds(userId, [txId]);
-	if (owned.length === 0) return;
+	if (owned.length === 0) throw new TransactionEditError('Transaction not found.');
 	assertUnlocked(userId, owned);
-	db().query('DELETE FROM transaction_splits WHERE transaction_id = ?').run(owned[0]);
+	db()
+		.query('DELETE FROM transaction_splits WHERE transaction_id IN (SELECT id FROM transactions WHERE user_id = ? AND id = ?)')
+		.run(userId, owned[0]);
 }
 
 function attachSplits(userId: number, rows: Transaction[]): Transaction[] {
@@ -3024,7 +3032,7 @@ export function cashflowForMonths(
 				};
 			})
 			.filter((r): r is CashflowSectionRow => r !== null)
-			.filter((r) => r.totalForecastCents !== 0 || r.totalActualCents !== 0)
+			.filter((r) => r.cells.some(c => c.forecastCents !== 0 || c.actualCents !== 0))
 			.sort((a, b) => a.categoryName.localeCompare(b.categoryName));
 
 		const monthTotals = monthList.map((_, i) => ({

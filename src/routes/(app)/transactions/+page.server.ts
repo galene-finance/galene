@@ -1,5 +1,6 @@
 import {
 	atomicFormMutation,
+	TransactionEditError,
 	saveTransactionFromForm,
 	backfillCategorizationRules,
 	bulkAddTags,
@@ -93,12 +94,11 @@ export const actions = {
 		const userId = locals.user!.id;
 		const form = await request.formData();
 		const type = form.get('type') === 'income' ? 'income' : 'expense';
-		try {
-			bulkSetCategory(userId, positiveIds(form, 'ids'), resolveCategoryFromForm(userId, form, type));
-		} catch (e) {
-			return { error: e instanceof Error ? e.message : 'Could not update the category.' };
-		}
-		return { ok: true };
+		return atomicFormMutation(()=>{
+   try{bulkSetCategory(userId,positiveIds(form,'ids'),resolveCategoryFromForm(userId,form,type));}
+   catch(error){if(error instanceof TransactionEditError)return {error:error.message};throw error;}
+   return {ok:true};
+  });
 	},
 
 	'bulk-tags': async ({ request, locals }) => {
@@ -123,7 +123,7 @@ export const actions = {
 		const id = parseInt(String(form.get('id') ?? ''), 10);
 		if (!Number.isFinite(id)) return { error: 'Invalid transaction.' };
 		if (form.get('unsplit') === '1') {
-			clearTransactionSplits(userId, id);
+			try{clearTransactionSplits(userId,id);}catch(error){if(error instanceof TransactionEditError)return {error:error.message};throw error;}
 			return { ok: true };
 		}
 		const type = form.get('type') === 'income' ? 'income' : 'expense';

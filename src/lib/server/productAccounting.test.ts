@@ -11,7 +11,7 @@ import {load as overviewLoad} from '../../routes/(app)/+page.server';
 import {actions as transactionActions} from '../../routes/(app)/transactions/+page.server';
 import {actions as calendarActions} from '../../routes/(app)/calendar/+page.server';
 import {load as cashflowLoad} from '../../routes/(app)/cashflow/+page.server';
-import {budgetPeriodSpend,getTransactions,saveTransaction,sanitizeCashflowFilters} from './finance';
+import {budgetPeriodSpend,getTransactions,saveTransaction,sanitizeCashflowFilters,bulkSetCategory} from './finance';
 import {parseTransactionFilters} from './transactionFilters';
 const previousPath=process.env.GALENE_DB_PATH;
 const previousEphemeral=process.env.GALENE_ALLOW_EPHEMERAL_DATA;
@@ -135,5 +135,65 @@ describe('one posted accounting definition across native pages',()=>{
    expect(data.occurrences.filter(o=>o.categoryId===expense).reduce((sum,o)=>sum+o.amountCents,0)).toBe(row.totalForecastCents);
   }finally{d.exec('ROLLBACK');}
  });
+ for(const type of ['expense','income'] as const){
+ test(`${type} cashflow keeps monthly contributions when the range nets to zero`,()=>{
+  const d=db();d.exec('BEGIN');
+  try{
+   const cat=Number(d.query('INSERT INTO categories(user_id,name,type) VALUES(1,?,?)').run('Cancelling fixture',type).lastInsertRowid);
+   const amounts=type==='expense'?[-10000,10000]:[10000,-10000];
+   for(const [i,date]of ['2030-01-15','2030-02-15'].entries())d.query('INSERT INTO transactions(user_id,account_id,category_id,date,amount_cents) VALUES(1,?,?,?,?)').run(account,cat,date,amounts[i]);
+   const section=cashflowForMonths(1,['2030-01','2030-02']).sections[type];
+   const row=section.rows.find(r=>r.categoryId===cat);
+   expect(row?.cells.map(c=>c.actualCents)).toEqual(amounts);
+   expect(section.monthTotals.map(c=>c.actualCents)).toEqual(amounts);
+   expect(section.totalActualCents).toBe(0);
+  }finally{d.exec('ROLLBACK');}
+ });
+ }
+ test('unsplit action rejects another owner transaction without deleting allocations',async()=>{
+  const d=db();d.exec('BEGIN');
+  try{
+   d.query('INSERT INTO transaction_splits(transaction_id,category_id,amount_cents) VALUES(?,?,55555)').run(foreignId,income);
+   const before=getProductTransaction(2,foreignId);
+   const form=new FormData();form.set('id',String(foreignId));form.set('unsplit','1');
+   const result=await transactionActions.split({request:new Request('http://test.invalid/',{method:'POST',body:form}),locals:{user:{id:1}}} as Parameters<typeof transactionActions.split>[0]);
+   expect(result).toHaveProperty('error');expect(getProductTransaction(2,foreignId)).toEqual(before);
+  }finally{d.exec('ROLLBACK');}
+ });
+ test('mixed-owner bulk categorization rejects the whole batch before any mutation',()=>{
+  const d=db();d.exec('BEGIN');
+  try{
+   d.query('INSERT INTO transaction_splits(transaction_id,category_id,amount_cents) VALUES(?,?,55555)').run(foreignId,income);
+   const ownBefore=getProductTransaction(1,splitId),otherBefore=getProductTransaction(2,foreignId);
+   expect(()=>bulkSetCategory(1,[splitId,foreignId],transfer)).toThrow('Transaction not found');
+   expect(getProductTransaction(1,splitId)).toEqual(ownBefore);expect(getProductTransaction(2,foreignId)).toEqual(otherBefore);
+  }finally{d.exec('ROLLBACK');}
+ });
+ test('bulk category form rejection rolls back a newly requested category',async()=>{
+  const d=db();d.exec('BEGIN');
+  try{
+   const count=()=> (d.query('SELECT COUNT(*) AS n FROM categories WHERE user_id=1').get() as {n:number}).n,before=count();
+   const form=new FormData();form.append('ids',String(splitId));form.append('ids',String(foreignId));form.set('category_new','Rejected bulk category');
+   let result:unknown;try{result=await transactionActions['bulk-category']({request:new Request('http://test.invalid/',{method:'POST',body:form}),locals:{user:{id:1}}} as Parameters<typeof transactionActions['bulk-category']>[0]);}catch(error){result=error;}
+   expect(result).toHaveProperty('error');expect(count()).toBe(before);
+  }finally{d.exec('ROLLBACK');}
+ });
+ for(const mode of ['unsplit','bulk'] as const){
+ test(`authorized ${mode} still clears owned splits and preserves other owners`,async()=>{
+  const d=db();d.exec('BEGIN');
+  try{
+   d.query('INSERT INTO transaction_splits(transaction_id,category_id,amount_cents) VALUES(?,?,55555)').run(foreignId,income);
+   const other=getProductTransaction(2,foreignId),own=getProductTransaction(1,splitId)!;
+   if(mode==='bulk')bulkSetCategory(1,[splitId,splitId],transfer);
+   else{
+    const form=new FormData();form.set('id',String(splitId));form.set('unsplit','1');
+    expect(await transactionActions.split({request:new Request('http://test.invalid/',{method:'POST',body:form}),locals:{user:{id:1}}} as Parameters<typeof transactionActions.split>[0])).toEqual({ok:true});
+   }
+   expect(getProductTransaction(1,splitId)?.splits??[]).toHaveLength(0);
+   expect(getProductTransaction(1,splitId)?.amount_cents).toBe(own.amount_cents);
+   expect(getProductTransaction(2,foreignId)).toEqual(other);
+  }finally{d.exec('ROLLBACK');}
+ });
+ }
  test('transaction detail never crosses owner scope',()=>{expect(getProductTransaction(1,foreignId)).toBeNull();});
 });

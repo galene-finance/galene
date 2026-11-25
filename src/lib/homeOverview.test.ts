@@ -5,7 +5,7 @@ import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 import { fixture } from '../../ui-preview/product-fixtures';
 import { formatMoney } from './utils';
-plugin({name:'home-view-ssr',setup(build){build.onLoad({filter:/(HomeOverview|CategoryOverview|ScheduleAmount|TransactionAmount|AccountBalance|ProductTransactions|FinancialBadge|PeriodPicker|ReflectionOverview|ReflectTabs|ContributionList)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
+plugin({name:'home-view-ssr',setup(build){build.onLoad({filter:/(HomeOverview|SettingsOverview|CategoryOverview|ScheduleAmount|TransactionAmount|AccountBalance|ProductTransactions|FinancialBadge|PeriodPicker|ReflectionOverview|ReflectTabs|ContributionList)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
 test('transaction and balance badges keep state explicit',async()=>{
  expect(existsSync(new URL('./components/TransactionAmount.svelte',import.meta.url))).toBe(true);
  expect(existsSync(new URL('./components/AccountBalance.svelte',import.meta.url))).toBe(true);
@@ -49,6 +49,19 @@ test('scheduled amount badges describe expectations rather than received income'
  expect(html).not.toContain('Received');expect(html).not.toContain('data-tone="positive"');
  const transfer=render(Amount,{props:{amount:-50000,kind:'Transfer'}}).body;
  expect(transfer).toContain('Expected transfer');expect(transfer).toContain('data-tone="movement"');
+});
+test('settings preserves every native destination and admin/demo visibility',async()=>{
+ expect(existsSync(new URL('./components/SettingsOverview.svelte',import.meta.url))).toBe(true);
+ const {default:View}=await import('./components/SettingsOverview.svelte');
+ const {settingsSections}=await import('./settingsHub');
+ for(const isAdmin of [false,true]){
+  const html=render(View,{props:{data:{isAdmin,demo:true}}}).body;
+  const hrefs=[...html.matchAll(/href="([^"]+)"/g)].map(m=>m[1]).sort();
+  expect(hrefs).toEqual(settingsSections(isAdmin).flatMap(s=>s.cards.map(c=>c.href)).sort());
+  expect(html).toContain('Demo — read only');
+ }
+ const filtered=render(View,{props:{data:{isAdmin:true},query:'no such setting'}}).body;
+ expect(filtered).toContain('No matching settings');expect(filtered).toContain('Clear search');
 });
 test('month navigation retains the selected account',async()=>{
  const {default:Picker}=await import('./components/PeriodPicker.svelte');

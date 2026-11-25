@@ -1,8 +1,14 @@
 # Galene product system — W11
 
-## V3 active contract — 2026-11-25 owner revision
+## Expanded domain scope — active owner instruction
 
-The functioning v2 baseline is retained; its aesthetics/visual acceptance are superseded. Chris approved heavy YNAB inspiration, not a literal clone. Current source research and screenshot observations: YNAB-RESEARCH.md. Same writer/task, no ledger/importer replacement. All older financial safety requirements remain active.
+All three are now required: irregular/annual/due-date targets; real cash-backed allocation/reallocation with credit-card payment reserves; and provenance/coverage-aware net-worth history. This supersedes any older non-envelope/no-new-ledger exclusion below. Existing transactions/import history and MMI/Apple sources remain preserved; legacy budgets become targets, never automatic funded assignments.
+
+W16 owns isolated domain types/services/calculations/migrations; W11 owns UI/routes/integration and sole production activation; W17 owns isolated QA/review. Versioned backend contract is `design/BUDGET-ENGINE-V1.md` on W16's branch (contract-first commit 9329ee2, based on b4ec94a); it is not yet integrated or activated. UI must consume authoritative typed requirements, available cash, assignments/reserves and history coverage rather than derive them from legacy limits or guess missing amounts. Contract questions on normalized transaction rebuilds, all-writer revisions, activation cutoff, currency and calendar policy remain explicit gates.
+
+## V3 visual contract — 2026-11-25 owner revision
+
+The functioning v2 baseline is retained; its aesthetics/visual acceptance are superseded. Chris approved heavy YNAB inspiration, not a literal clone. Current source research and screenshot observations: YNAB-RESEARCH.md. Same integration task/deployment owner. Existing transaction/import history is preserved; the new allocation ledger is additive under the expanded scope. All older financial safety requirements remain active.
 
 ### Routes and shared layouts
 
@@ -36,7 +42,7 @@ Use local platform system sans, tabular amounts, 12/14/16/20/28px roles. Section
 
 Moment of care: tap a surprising number or badge and reach the explanation/contributing records without losing context. Deliberately retain Graphite dark/amber because Chris selected it, not as an automatic aesthetic reflex (auteur-allow: selected dark palette/action accent). Reject mono service labels, huge hero metrics, glow, generic fintech gradients and decorative empty cards. Native grouped rows and meaningful color-filled pills are a deliberate owner requirement, not decorative repeated cards.
 
-### Planning arithmetic contract
+### Legacy planning arithmetic until the new domain contract is integrated
 
 Cost to be me totals each valid current monthly planning target once; income targets are not a cost. It is unaffected by spending, refunds, current balances, forecast wages or funding fields. Monthly movement/payment targets can express planned commitments without becoming spending. Separate nonmonthly cadence unless a documented native rule can produce its current-month requirement; do not silently annualize or invent due dates. Do not blindly add schedules to limits: obligations may already overlap targets, including mixed fee/principal payments. Show schedules separately with scope, preserving all history. Missing/invalid targets are explicit, not invented zero-cost or funded amounts.
 

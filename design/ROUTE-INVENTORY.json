@@ -385,7 +385,7 @@
       "source": "(app)/settings/+page.svelte",
       "job": "Native settings: overview; style consistently without unintended configuration changes",
       "layout": "settings",
-      "coverage": "pending",
+      "coverage": "partial_synthetic_settings; native saved persistence and full states pending",
       "viewports": [
         390,
         768,
@@ -395,7 +395,26 @@
         "graphite",
         "ocean",
         "dark"
-      ]
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
+      ],
+      "evidence": "product-v3-settings/checks.json"
     },
     {
       "route": "/settings/about",
@@ -470,7 +489,7 @@
       "source": "(app)/settings/appearance/+page.svelte",
       "job": "Native settings: appearance; style consistently without unintended configuration changes",
       "layout": "settings",
-      "coverage": "pending",
+      "coverage": "partial_synthetic_settings; native saved persistence and full states pending",
       "viewports": [
         390,
         768,
@@ -480,7 +499,26 @@
         "graphite",
         "ocean",
         "dark"
-      ]
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
+      ],
+      "evidence": "product-v3-settings/checks.json"
     },
     {
       "route": "/settings/backups",

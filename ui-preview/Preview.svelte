@@ -1,4 +1,6 @@
 <script lang="ts">
+ import Settings from '../src/routes/(app)/settings/+page.svelte';
+ import Appearance from '../src/routes/(app)/settings/appearance/+page.svelte';
  import Overview from '../src/routes/(app)/+page.svelte';
  import Reflect from '../src/routes/(app)/reflect/+page.svelte';
  import Accounts from '../src/routes/(app)/accounts/+page.svelte';
@@ -29,6 +31,8 @@
 <div class="galene-shell" style:padding-top="32px"><ProductNav bind:open user={{id:1,name:'Sample owner',email:'sample@example.invalid',is_admin:1}} branding={{name:'Galene',icon:'emblem'}} themes={DEFAULT_THEMES} selectedTheme={theme.slug}/>
 <main id="main-content" class="product-main" inert={open||undefined}>
  {#if path==='/'}<Overview data={base as any}/>
+ {:else if path==='/settings'}<Settings data={{isAdmin:!url.searchParams.has('nonadmin'),demo:url.searchParams.has('demo')}}/>
+ {:else if path==='/settings/appearance'}<Appearance form={undefined} data={{themes:[],selected:themeSlug,appName:'Galene',icon:'emblem',favicon:'emblem',weekStartsOn:'monday',canPublishTheme:false}}/>
  {:else if path==='/reflect'}<Reflect data={{...base,view:url.searchParams.get('view')==='trends'?'trends':'summary'} as any}/>
  {:else if path==='/accounts'}<Accounts data={{accounts} as any}/>
  {:else if path.startsWith('/accounts/')}<Account data={{...base,account:accounts.find(a=>a.id===id),transactions:transactions.filter(t=>t.account_id===id)} as any}/>

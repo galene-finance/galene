@@ -14,7 +14,7 @@
 		themePackFilename,
 		uniqueThemeName
 	} from '$lib/theme-pack';
-	import { DEFAULT_THEMES, applyThemeNow, themeValue } from '$lib/themes';
+	import { DEFAULT_THEMES, applyThemeNow, themeValue, themePresentationOrder } from '$lib/themes';
 	import { watchFormToast } from '$lib/formToast.svelte';
 	import { toast } from '$lib/toasts';
 	import type { Theme, ThemeColors } from '$lib/types';
@@ -35,7 +35,7 @@
 		};
 	} = $props();
 
-	const allThemes = $derived([...DEFAULT_THEMES, ...data.themes]);
+	const allThemes = $derived(themePresentationOrder([...DEFAULT_THEMES, ...data.themes]));
 	const selectedTheme = $derived(
 		allThemes.find((t) => themeValue(t) === data.selected) ?? DEFAULT_THEMES[0]
 	);

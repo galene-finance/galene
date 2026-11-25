@@ -3,15 +3,16 @@ import type {BudgetAccount,CommandMeta,LedgerEvent,Target,TargetProgress,Balance
 import {targetCycle,evaluateTarget,costToBeMe} from '../../budget/targets';
 import {validateSnapshot,netWorthHistory} from '../../budget/history';
 import {projectLedger} from '../../budget/ledger';
+import {categoryFundingState} from '../../budget/state';
 import {add,civil,monthEnd,monthStart} from '../../budget/validation';
 import {readRegister,type TransferPair} from './register';
-export type Activation={asOfDate:string;accounts:BudgetAccount[];evidence:string};
+export type Activation={currency:string;asOfDate:string;accounts:BudgetAccount[];evidence:string};
 export class BudgetEngine {
  constructor(private database:Database,readonly ownerId:number){
   if(!Number.isSafeInteger(ownerId)||!database.query('SELECT id FROM users WHERE id=?').get(ownerId))throw new Error('unknown owner');
  }
  private state(){return this.database.query('SELECT revision,baseline_json,activity_through,register_json FROM budget_engine_state WHERE owner_id=?').get(this.ownerId) as {revision:number;baseline_json:string|null;activity_through:string|null;register_json:string|null}|null;}
- private own(table:'accounts'|'categories',id:number){if(!this.database.query(`SELECT id FROM ${table} WHERE id=? AND user_id=?`).get(id,this.ownerId))throw new Error('owner scope mismatch');}
+ private own(table:'accounts'|'categories',id:number){if(!this.database.query(`SELECT id FROM ${table} WHERE id=? AND user_id=?`).get(id,this.ownerId))throw new Error('owner scope mismatch');if(table==='categories'&&this.database.query("SELECT id FROM categories WHERE id=? AND type='income' AND is_transfer=0").get(id))throw new Error('income is not a spending envelope');}
  private categories(){return (this.database.query('SELECT id FROM categories WHERE user_id=? ORDER BY id').all(this.ownerId) as {id:number}[]).map(r=>r.id);}
  private events(){return (this.database.query("SELECT payload FROM budget_engine_events WHERE owner_id=? ORDER BY date,CASE WHEN kind='allocation' THEN 0 ELSE 1 END,sequence").all(this.ownerId) as {payload:string}[]).map(r=>JSON.parse(r.payload) as LedgerEvent);}
  private command(kind:string,payload:unknown,meta:CommandMeta,write:()=>void){
@@ -30,6 +31,9 @@ export class BudgetEngine {
  }
  activate(baseline:Activation,meta:CommandMeta){return this.command('activate',baseline,meta,()=>{
   civil(baseline.asOfDate);if(this.state()?.baseline_json)throw new Error('already active');if(!baseline.evidence.trim()||!baseline.accounts.length)throw new Error('accepted baseline evidence required');
+  const roster=this.database.query('SELECT id FROM accounts WHERE user_id=?').all(this.ownerId) as {id:number}[];
+  if(roster.length!==baseline.accounts.length||roster.some(a=>!baseline.accounts.some(b=>b.id===a.id)))throw new Error('complete account coverage required');
+  if(!/^[A-Z]{3}$/.test(baseline.currency)||baseline.accounts.some(a=>a.currency!==baseline.currency))throw new Error('single explicit currency required');
   for(const a of baseline.accounts)this.own('accounts',a.id);
   projectLedger(baseline.accounts,this.categories(),[],baseline.asOfDate);
   this.database.query('UPDATE budget_engine_state SET baseline_json=?,activity_through=? WHERE owner_id=?').run(JSON.stringify(baseline),baseline.asOfDate,this.ownerId);
@@ -38,8 +42,8 @@ export class BudgetEngine {
   if(!['assign','move','reserve'].includes(event.kind))throw new Error('allocation command required');
   const state=this.state();if(!state?.baseline_json)throw new Error('not active');const b=JSON.parse(state.baseline_json) as Activation;
   if(event.date<=b.asOfDate)throw new Error('before baseline');
-  if('categoryId'in event)this.own('categories',event.categoryId);if('fromCategoryId'in event){this.own('categories',event.fromCategoryId);this.own('categories',event.toCategoryId);}if('accountId'in event)this.own('accounts',event.accountId);
-  if(this.registerStale())throw new Error('stale register; refresh required');
+  if('categoryId'in event&&event.categoryId!==undefined)this.own('categories',event.categoryId);if('fromCategoryId'in event){this.own('categories',event.fromCategoryId);this.own('categories',event.toCategoryId);}if('accountId'in event)this.own('accounts',event.accountId);
+  if(this.registerStale(event.date))throw new Error('stale register; refresh required');
   projectLedger(b.accounts,this.categories(),[...this.events(),event],event.date,{validateAllocationIds:[event.id]});
   this.database.query('INSERT INTO budget_engine_events(owner_id,event_id,kind,date,payload) VALUES(?,?,?,?,?)').run(this.ownerId,event.id,'allocation',event.date,JSON.stringify(event));
  });}
@@ -48,7 +52,8 @@ export class BudgetEngine {
   const prior=this.database.query('SELECT category_id FROM budget_engine_targets WHERE owner_id=? AND target_id=? LIMIT 1').get(this.ownerId,target.id) as {category_id:number}|null;
   if(prior&&prior.category_id!==target.categoryId)throw new Error('target category immutable');
   this.database.query('INSERT INTO budget_engine_targets(owner_id,target_id,version,category_id,effective_month,payload) VALUES(?,?,?,?,?,?)').run(this.ownerId,target.id,(this.state()?.revision??0)+1,target.categoryId,effectiveMonth,JSON.stringify(target));
-  this.targets(effectiveMonth); // reject two active targets for a category
+  const months=this.database.query('SELECT DISTINCT effective_month FROM budget_engine_targets WHERE owner_id=? AND effective_month>=?').all(this.ownerId,effectiveMonth) as {effective_month:string}[];
+  for(const m of months)this.targets(m.effective_month); // validate future versions too
  });}
  archiveTarget(id:string,effectiveMonth:string,meta:CommandMeta){return this.command('archive-target',{id,effectiveMonth},meta,()=>{
   monthStart(effectiveMonth);const prior=this.database.query('SELECT category_id FROM budget_engine_targets WHERE owner_id=? AND target_id=? ORDER BY version DESC LIMIT 1').get(this.ownerId,id) as {category_id:number}|null;
@@ -76,10 +81,15 @@ export class BudgetEngine {
   projectLedger(b.accounts,this.categories(),this.events(),coverage.through,{validateAllocationIds:[]});
   this.database.query('UPDATE budget_engine_state SET activity_through=? WHERE owner_id=?').run(coverage.through,this.ownerId);
  });}
- private registerStale():boolean {
-  const s=this.state();if(!s?.register_json)return false;
+ private registerStale(through:string):boolean {
+  const s=this.state();if(!s?.baseline_json)return false;
+  const b=JSON.parse(s.baseline_json) as Activation;
+  const roster=this.database.query('SELECT id FROM accounts WHERE user_id=?').all(this.ownerId) as {id:number}[];
+  if(roster.length!==b.accounts.length||roster.some(a=>!b.accounts.some(x=>x.id===a.id)))return true;
+  if(!s.register_json)return !!this.database.query('SELECT 1 FROM transactions WHERE user_id=? AND pending=0 AND date>? AND date<=? LIMIT 1').get(this.ownerId,b.asOfDate,through);
   const r=JSON.parse(s.register_json) as {from:string;through:string;pairs:TransferPair[];fingerprint:string};
-  return readRegister(this.database,this.ownerId,r.from,r.through,r.pairs).fingerprint!==r.fingerprint;
+  if(readRegister(this.database,this.ownerId,r.from,r.through,r.pairs).fingerprint!==r.fingerprint)return true;
+  return !!this.database.query('SELECT 1 FROM transactions WHERE user_id=? AND pending=0 AND date>? AND date<=? LIMIT 1').get(this.ownerId,r.through,through);
  }
  refreshRegister(through:string,pairs:TransferPair[],meta:CommandMeta){
   // Hold the same write lock for native-row capture and derived-event replacement.
@@ -107,7 +117,7 @@ export class BudgetEngine {
  view(month:string,asOfDate=monthEnd(month)){
   civil(asOfDate);if(asOfDate.slice(0,7)!==month)throw new Error('cutoff outside month');
   const through=asOfDate,state=this.state();const baseline=state?.baseline_json?JSON.parse(state.baseline_json) as Activation:null;
-  const stale=this.registerStale();
+  const stale=this.registerStale(through);
   const ledger=baseline&&through>=baseline.asOfDate&&!stale?projectLedger(baseline.accounts,this.categories(),this.events(),through,{validateAllocationIds:[]}):null;
   if(ledger&&baseline){
    const before=new Date(civil(monthStart(month)).getTime()-86400000).toISOString().slice(0,10);
@@ -116,6 +126,13 @@ export class BudgetEngine {
    ledger.netExpenseCents=add(ledger.netExpenseCents,-prior.netExpenseCents);
   }
   return {version:1,revision:state?.revision??0,baseline,activityThrough:state?.activity_through??null,coverageComplete:!stale&&!!state?.activity_through&&state.activity_through>=through,registerStale:stale,ledger};
+ }
+ dashboard(month:string,obligations:{id:string;categoryId:number|null;amountCents:number}[],asOfDate=monthEnd(month)){
+  return this.database.transaction(()=>{
+   const view=this.view(month,asOfDate),plan=this.plan(month,obligations,asOfDate);
+   const categoryStates=this.categories().map(categoryId=>({categoryId,...categoryFundingState(view.ledger?.categories.find(c=>c.categoryId===categoryId)??null,plan.lines.find(l=>l.categoryId===categoryId)??null,view.coverageComplete,view.ledger?.cashBackingShortfallCents??0)}));
+   return {version:1 as const,view,plan,categoryStates,legacyTargets:this.legacyTargets()};
+  })();
  }
  plan(month:string,obligations:{id:string;categoryId:number|null;amountCents:number}[],asOfDate=monthEnd(month)){
   const view=this.view(month,asOfDate),targets=this.targets(month),progress=new Map<number,TargetProgress>();

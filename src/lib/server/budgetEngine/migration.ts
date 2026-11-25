@@ -40,4 +40,17 @@ CREATE TABLE IF NOT EXISTS budget_engine_snapshots (
  PRIMARY KEY(owner_id,source_key)
 );
 CREATE INDEX IF NOT EXISTS idx_budget_snapshots_owner ON budget_engine_snapshots(owner_id,as_of,account_id);
+CREATE TRIGGER IF NOT EXISTS budget_engine_transactions_insert AFTER INSERT ON transactions BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=NEW.user_id; END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_transactions_update AFTER UPDATE ON transactions BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=OLD.user_id OR owner_id=NEW.user_id; END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_transactions_delete AFTER DELETE ON transactions BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=OLD.user_id; END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_accounts_insert AFTER INSERT ON accounts BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=NEW.user_id; END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_accounts_update AFTER UPDATE ON accounts BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=OLD.user_id OR owner_id=NEW.user_id; END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_accounts_delete AFTER DELETE ON accounts BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=OLD.user_id; END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_categories_insert AFTER INSERT ON categories BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=NEW.user_id; END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_categories_update AFTER UPDATE ON categories BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=OLD.user_id OR owner_id=NEW.user_id; END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_categories_delete AFTER DELETE ON categories BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=OLD.user_id; END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_splits_insert AFTER INSERT ON transaction_splits BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=(SELECT user_id FROM transactions WHERE id=NEW.transaction_id); END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_splits_update AFTER UPDATE ON transaction_splits BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=(SELECT user_id FROM transactions WHERE id=OLD.transaction_id) OR owner_id=(SELECT user_id FROM transactions WHERE id=NEW.transaction_id); END;
+CREATE TRIGGER IF NOT EXISTS budget_engine_splits_delete AFTER DELETE ON transaction_splits BEGIN UPDATE budget_engine_state SET revision=revision+1 WHERE owner_id=(SELECT user_id FROM transactions WHERE id=OLD.transaction_id); END;
+
 `;

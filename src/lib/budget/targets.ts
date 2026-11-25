@@ -46,5 +46,5 @@ export function costToBeMe(targets:readonly Target[],month:string,progress:Reado
  });
  const coveredObligationIds:string[]=[],uncoveredObligationIds:string[]=[];const os=new Set<string>();
  for(const o of obligations){cents(o.amountCents);if(o.amountCents<0||os.has(o.id))throw new Error('invalid obligation');os.add(o.id);(lines.some(l=>l.active&&l.categoryId===o.categoryId)?coveredObligationIds:uncoveredObligationIds).push(o.id);}
- return {month,totalCents:lines.reduce((n,l)=>add(n,l.plannedCents),0),neededThisMonthCents:lines.reduce((n,l)=>add(n,l.neededThisMonthCents),0),lines,coveredObligationIds,uncoveredObligationIds,coverageComplete:uncoveredObligationIds.length===0};
+ return {month,totalCents:lines.some(l=>l.active)?lines.reduce((n,l)=>add(n,l.plannedCents),0):null,neededThisMonthCents:lines.reduce((n,l)=>add(n,l.neededThisMonthCents),0),lines,coveredObligationIds,uncoveredObligationIds,allProvidedObligationsCovered:uncoveredObligationIds.length===0,obligationCoverage:obligations.length?'provided_only':'not_supplied'};
 }

@@ -58,3 +58,16 @@ test('retrospective source correction reveals overassignment instead of rejectin
  const v=projectLedger(accounts,[1],[ev('i',{kind:'income',accountId:1,amountCents:-90000}),assignment],'2026-11-30',{validateAllocationIds:[]});
  expect(v.readyToAssignCents).toBe(-20000);expect(v.cashCents).toBe(10000);
 });
+test('cash spent elsewhere cannot leave a reserve falsely certified cash-backed',()=>{
+ const v=project([ev('a',{kind:'assign',categoryId:1,amountCents:100000}),ev('p',{kind:'purchase',accountId:2,categoryId:1,amountCents:100000}),ev('cash',{kind:'purchase',accountId:1,categoryId:2,amountCents:100000})]);
+ expect(v.cashCents).toBe(0);expect(v.cashBackingShortfallCents).toBe(100000);expect(v.cardReserves[0].cashBackedReserveCents).toBeNull();
+});
+test('credit balance transfer moves payment reserves without adding expense or cash',()=>{
+ const as=[...accounts,{id:4,scope:'credit' as const,balanceCents:0}];
+ const v=project([ev('r',{kind:'reserve',accountId:2,amountCents:15000}),ev('t',{kind:'transfer',fromAccountId:4,toAccountId:2,amountCents:20000})],as);
+ expect(v.cashCents).toBe(100000);expect(v.netExpenseCents).toBe(0);expect(v.cardReserves.find(c=>c.accountId===2)?.reservedCents).toBe(0);expect(v.cardReserves.find(c=>c.accountId===4)?.reservedCents).toBe(15000);expect(v.readyToAssignCents).toBe(85000);
+});
+test('tracking payment releases the card reserve and credit-to-tracking requires category',()=>{
+ const v=project([ev('r',{kind:'reserve',accountId:2,amountCents:20000}),ev('t',{kind:'transfer',fromAccountId:3,toAccountId:2,amountCents:20000})]);expect(v.readyToAssignCents).toBe(100000);expect(v.cardReserves[0].reservedCents).toBe(0);expect(v.netExpenseCents).toBe(0);
+ const b=project([assignment,ev('t',{kind:'transfer',fromAccountId:2,toAccountId:3,categoryId:1,amountCents:10000})]);expect(b.categories[0].availableCents).toBe(20000);expect(b.cardReserves[0].reservedCents).toBe(10000);expect(b.netExpenseCents).toBe(0);
+});

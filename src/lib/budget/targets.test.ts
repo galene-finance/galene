@@ -33,3 +33,4 @@ test('invalid dates, unsafe cents, malformed targets fail closed',()=>{
  for(const t of [{...target,startDate:'2026-02-30'},{...target,amountCents:1.5},{...target,cadence:'annual'},{...target,cadence:'weekly',weekday:8}]) expect(()=>evaluateTarget(t as Target,'2026-11',progress)).toThrow();
  expect(()=>evaluateTarget(target,'2026-13',progress)).toThrow();
 });
+test('an empty target plan is unknown, not a zero cost of living',()=>{expect(costToBeMe([],'2026-11',new Map(),[]).totalCents).toBeNull();});

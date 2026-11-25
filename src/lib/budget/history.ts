@@ -1,7 +1,7 @@
 import type {BalanceSnapshot,HistoryAccount,HistoryPoint} from './types';
 import {add,cents,civil,timestamp} from './validation';
 export function validateSnapshot(s:BalanceSnapshot):void {
- cents(s.balanceCents);timestamp(s.asOf);timestamp(s.recordedAt);
+ cents(s.balanceCents);timestamp(s.asOf);timestamp(s.recordedAt);if(!/^[A-Z]{3}$/.test(s.currency??''))throw new Error('currency required');
  if(!Number.isSafeInteger(s.accountId)||s.accountId<1||!['actual','accepted_estimate','reconstructed'].includes(s.source)||typeof s.evidence!=='string'||!s.evidence.trim())throw new Error('invalid snapshot evidence');
  if(s.recordedAt<s.asOf)throw new Error('snapshot from future');
  if(s.source==='reconstructed'&&(!s.coverageFrom||!s.coverageTo))throw new Error('reconstruction coverage required');
@@ -22,6 +22,7 @@ export function netWorthHistory(accounts:readonly HistoryAccount[],snapshots:rea
    const chosen=candidates[0];if(candidates.some(s=>s.asOf===chosen.asOf&&s.recordedAt===chosen.recordedAt&&s.balanceCents!==chosen.balanceCents))throw new Error('conflicting snapshots');
    sources.push({...chosen});
   }
+  if(new Set(sources.map(s=>s.currency)).size>1)throw new Error('mixed currency history unsupported');
   const knownSubtotalCents=sources.reduce((n,s)=>add(n,s.balanceCents),0);const complete=missingAccountIds.length===0&&expected.length>0;
   return {date,totalCents:complete?knownSubtotalCents:null,knownSubtotalCents,missingAccountIds,includedAccountIds:expected.map(a=>a.id),sources,complete};
  });
@@ -37,6 +38,6 @@ export function reconstructHistory(anchor:BalanceSnapshot,transactions:readonly 
   let balanceCents=anchor.balanceCents;
   for(const t of transactions){if(date<anchorDay&&t.date>date&&t.date<=anchorDay)balanceCents=add(balanceCents,-t.amountCents);if(date>anchorDay&&t.date>anchorDay&&t.date<=date)balanceCents=add(balanceCents,t.amountCents);}
   const asOf=date+'T23:59:59.999Z';if(asOf>anchor.recordedAt)throw new Error('cannot reconstruct future');
-  return {accountId:anchor.accountId,asOf,recordedAt:anchor.recordedAt,balanceCents,source:'reconstructed',evidence:`${anchor.source}: ${anchor.evidence}; ${coverage.reference}`,coverageFrom:coverage.from,coverageTo:coverage.to};
+  return {accountId:anchor.accountId,currency:anchor.currency,asOf,recordedAt:anchor.recordedAt,balanceCents,source:'reconstructed',evidence:`${anchor.source}: ${anchor.evidence}; ${coverage.reference}`,coverageFrom:coverage.from,coverageTo:coverage.to};
  });
 }

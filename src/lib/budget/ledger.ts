@@ -76,8 +76,24 @@ export function projectLedger(initial:readonly BudgetAccount[],categoryIds:reado
    }
    case 'transfer': {
     positive(n);const from=account(e.fromAccountId),to=account(e.toAccountId);if(from===to)throw new Error('same account');
-    if(from.scope==='credit'&&to.scope==='credit')throw new Error('credit balance transfer needs explicit review');
-    if(from.scope==='tracking'&&to.scope==='credit'||from.scope==='credit'&&to.scope==='tracking')throw new Error('credit tracking transfer needs explicit review');
+    if(from.scope==='credit'&&to.scope==='credit'){
+     const beforeCash=cash(),debtPaid=Math.min(n,Math.max(0,-to.balanceCents)),debtAdded=Math.max(0,n-Math.max(0,from.balanceCents));
+     const released=Math.min(reserves.get(to.id)!,debtPaid),moved=Math.min(released,debtAdded);reserve(to.id,-released);reserve(from.id,moved);
+     let toMove=Math.min(debtPaid-released,debtAdded-moved);const lots=shortfalls.filter(s=>s.accountId===to.id);
+     for(const lot of lots){const take=Math.min(toMove,lot.amount);lot.amount-=take;toMove-=take;if(take)shortfalls.push({accountId:from.id,categoryId:lot.categoryId,amount:take});}
+     from.balanceCents=add(from.balanceCents,-n);to.balanceCents=add(to.balanceCents,n);rta=add(rta,add(cash()-beforeCash,released-moved));capReserve(from);capReserve(to);break;
+    }
+    if(from.scope==='tracking'&&to.scope==='credit'){
+     const beforeCash=cash(),debtPaid=Math.min(n,Math.max(0,-to.balanceCents)),released=Math.min(reserves.get(to.id)!,debtPaid);reserve(to.id,-released);retire(to.id,debtPaid-released);
+     from.balanceCents=add(from.balanceCents,-n);to.balanceCents=add(to.balanceCents,n);rta=add(rta,add(cash()-beforeCash,released));capReserve(to);break;
+    }
+    if(from.scope==='credit'&&to.scope==='tracking'){
+     if(e.categoryId===undefined)throw new Error('tracking transfer category required');const c=category(e.categoryId);
+     const creditUsed=Math.min(n,Math.max(0,from.balanceCents));c.availableCents=add(c.availableCents,-creditUsed);
+     const debt=n-creditUsed,funded=Math.min(debt,Math.max(0,c.availableCents));c.availableCents-=funded;reserve(from.id,funded);
+     if(debt>funded)shortfalls.push({accountId:from.id,categoryId:c.categoryId,amount:debt-funded});c.activityCents=add(c.activityCents,-n);
+     from.balanceCents=add(from.balanceCents,-n);to.balanceCents=add(to.balanceCents,n);break;
+    }
     if(from.scope==='cash'&&to.scope==='credit'){
      const debtPaid=Math.min(Math.max(0,-to.balanceCents),n),funded=Math.min(reserves.get(to.id)!,debtPaid);reserve(to.id,-funded);rta=add(rta,-(debtPaid-funded));retire(to.id,debtPaid-funded);
     }else if(from.scope==='cash'&&to.scope==='tracking'){
@@ -94,5 +110,6 @@ export function projectLedger(initial:readonly BudgetAccount[],categoryIds:reado
   invariant();applied.push(e.id);
  }
  for(const c of cats)c.creditOverspentCents=shortfalls.filter(s=>s.categoryId===c.categoryId).reduce((n,s)=>add(n,s.amount),0);
- return {cashCents:cash(),readyToAssignCents:rta,categories:cats,accounts,cardReserves:[...reserves].map(([accountId,reservedCents])=>({accountId,reservedCents,debtCents:Math.max(0,-account(accountId).balanceCents),unfundedCents:Math.max(0,-account(accountId).balanceCents-reservedCents)})),netExpenseCents:expense,appliedEventIds:applied,cashOverspentCents:-negatives()};
+ const cashBackingShortfallCents=Math.max(0,-add(rta,negatives()));
+ return {cashBackingShortfallCents,cashCents:cash(),readyToAssignCents:rta,categories:cats,accounts,cardReserves:[...reserves].map(([accountId,reservedCents])=>({accountId,reservedCents,cashBackedReserveCents:cashBackingShortfallCents>0?null:reservedCents,debtCents:Math.max(0,-account(accountId).balanceCents),unfundedCents:Math.max(0,-account(accountId).balanceCents-reservedCents)})),netExpenseCents:expense,appliedEventIds:applied,cashOverspentCents:-negatives()};
 }

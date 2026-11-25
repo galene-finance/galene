@@ -9,7 +9,7 @@ Base: integrated `5fa12d90a965d03edb58388461e4f2906a2ba0c2`. This feature adds o
 - `src/lib/server/movingMoneyFeature.ts`
 - `src/lib/server/movingMoneyFeature.test.ts`
 - `src/lib/server/movingMoneyControls.test.ts`
-- `ui-preview/move-money-{App.svelte,fixture-server.ts,fixture.html,main.ts,vite.config.ts}`
+- `ui-preview/move-money-{App.svelte,fixture-server.ts,fixture.html,main.ts,vite.config.ts,native-render.ts,native-browser.mjs}`
 - this document
 
 ## Server model and action seam
@@ -95,6 +95,12 @@ Browser acceptance sequence exercised: move 75.25 between categories; add 50.00 
 ## Transfer-pair integration dependency
 
 The reviewed engine already persists exact confirmed pairs in owner-scoped `budget_engine_state.register_json` after successful refresh. Missing public readback is not missing storage. The smallest separate follow-up is an owner-scoped catalog reader that revalidates stored pair identities with the existing normalizer and supplies them to the next refresh, reporting changed/deleted/invalid pairs rather than silently clearing them. Do not call refresh with an unconditional empty array and do not infer pairs from matching amounts. This feature neither edits that shared seam nor repurposes transfer transactions.
+
+## QA-M01 progressive enhancement correction
+
+SSR must not disable a known-covered form based on selections that only client reactivity can observe. The native move button remains usable; HTML required/amount/date checks and the unchanged server/engine financial guards validate the submission. Native card forms use the direction-neutral `Update reserve` label, show explicitly named per-card summaries, and do not display a selected-direction limit that cannot change without JavaScript. After mount, the existing selection-sensitive disabled states, live limits and directional labels are enabled. Native submit handlers do not disable successful fields before the browser serializes them.
+
+The guarded fixture supports `ATLAS_MOVE_NATIVE_FIXTURE=1` to seed real synthetic RTA=0/reserve=10000, `/__move-native` to SSR the actual components without hydration, and `move-money-fixture.html?native=1` to exercise hydrated components using ordinary browser POST instead of the optional async transport. `ui-preview/move-money-native-browser.mjs` accepts `PLAYWRIGHT_MODULE` and `EVIDENCE_DIR`, launches JavaScript-disabled and enabled Chrome contexts, and tests native move/release persistence, unchanged zero-RTA reserve-add rejection, hydrated touch add/release, and native POST field preservation. It imports an existing Playwright package read-only and closes its test browser. This is synthetic acceptance, not production authentication acceptance.
 
 ## Release boundary
 

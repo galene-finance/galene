@@ -1,15 +1,17 @@
 <script lang="ts">
+ import {onMount} from 'svelte';
  import Badge from './FinancialBadge.svelte';
  import type {MovingMoneyModel,MovingMoneyResult,MovingMoneySubmit} from '$lib/movingMoneyFeatureTypes';
  let {model,commandKey,form,action,submit}:{model:MovingMoneyModel;commandKey:string;form?:MovingMoneyResult|null;action?:string;submit?:MovingMoneySubmit}=$props();
  let from=$state(''),to=$state(''),amount=$state(''),date=$state(''),pending=$state(false),localResult=$state<MovingMoneyResult|null>(null);
+ let hydrated=$state(false);onMount(()=>{hydrated=true;});
  const money=(n:number)=>new Intl.NumberFormat('en-US',{style:'currency',currency:model.currency}).format(n/100);
  const source=$derived(model.categories.find(c=>String(c.id)===from));
  const destination=$derived(model.categories.find(c=>String(c.id)===to));
  const result=$derived(localResult??(form?.feature==='move'?form:null));
  const canMove=$derived(model.known&&!!source&&!!destination&&from!==to&&(source.availableCents??0)>0);
  async function send(event:SubmitEvent){
-  if(!submit){pending=true;return;}event.preventDefault();const fields=new FormData(event.currentTarget as HTMLFormElement);pending=true;localResult=null;
+  if(!submit)return;event.preventDefault();const fields=new FormData(event.currentTarget as HTMLFormElement);pending=true;localResult=null;
   try{localResult=await submit('move',fields);if(localResult.ok)amount='';}catch{localResult={feature:'move',ok:false,status:503,error:'The save could not be confirmed. Reload and check your balances before retrying.'};}finally{pending=false;}
  }
 </script>
@@ -29,7 +31,7 @@
     {#if source&&destination}<div class="money-summary" aria-live="polite"><Badge value={source.availableCents===null?undefined:money(source.availableCents)} label={`${source.name} allocation`} tone="movement"/><span aria-hidden="true">→</span><Badge value={destination.availableCents===null?undefined:money(destination.availableCents)} label={`${destination.name} allocation`} tone={(destination.availableCents??0)<0?'negative':'neutral'}/></div>{/if}
     {#if (destination?.creditOverspentCents??0)>0}<p class="product-row-caption">This category has unfunded card spending. Money moved here first funds its card-payment reserve.</p>{/if}
     <div class="money-grid"><label>Amount ({model.currency})<input name="amount" bind:value={amount} inputmode="decimal" placeholder="0.00" pattern="(0|[1-9][0-9]*)([.][0-9][0-9]?)?" required/></label><label>Effective date<input name="date" type="date" value={date||model.asOfDate} oninput={event=>date=event.currentTarget.value} min={`${model.month}-01`} max={model.asOfDate} required/></label></div>
-    <div class="money-footer"><span class="product-row-caption">Targets and bank balances stay unchanged.</span><button class="product-button primary" disabled={!canMove||pending}>{pending?'Saving…':'Move allocation'}</button></div>
+    <div class="money-footer"><span class="product-row-caption">Targets and bank balances stay unchanged.</span><button class="product-button primary" disabled={!model.known||pending||(hydrated&&!canMove)}>{pending?'Saving…':'Move allocation'}</button></div>
    </fieldset>
   </form>
  </div>

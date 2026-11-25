@@ -137,7 +137,8 @@
  <form method="GET" class="product-toolbar"><label class="product-field" for="plan-date"><span>Compare activity as of</span><input id="plan-date" type="date" name="date" value={data.selectedDate} required/></label><button class="product-button">View</button></form>
  {#if form?.targetEffectiveMonth}<p class="product-details" role="status">Target version {form.targetOperation} effective {form.targetEffectiveMonth}. Earlier views are preserved.</p>{/if}
  {#if form?.error}<div class="product-attention" role="alert">{form.error}</div>{/if}
- {#if data.funding&&data.fundingDate&&data.commandKey}<FundingOverview funding={data.funding} fundingDate={data.fundingDate} commandKey={data.commandKey} categories={data.categories}/>{/if}
+ {#if data.funding&&data.fundingDate&&data.commandKey}<a class="product-button" href="/budget/setup">Accounts &amp; starting point</a>
+ <FundingOverview funding={data.funding} fundingDate={data.fundingDate} commandKey={data.commandKey} categories={data.categories}/>{/if}
  {#if form?.transferReviewed}<p role="status" class="product-details">Transfer matches saved and posted coverage refreshed. No transactions or bank balances were changed.</p>{/if}
  {#if data.transferReview&&data.funding&&data.commandKey}<TransferPairReview model={data.transferReview} revision={data.funding.view.revision} commandKey={data.commandKey} month={data.selectedDate.slice(0,7)}/>{/if}
  {#if data.moneyControls&&data.commandKey}{#key data.commandKey}

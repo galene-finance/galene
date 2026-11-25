@@ -37,7 +37,7 @@ export function transferReviewModel(ownerId:number,through:string){
  const catalog=transferPairCatalog(ownerId,through);
  return {from,through,currency:baseline.currency as string,truncated:rows.length>200,outflows:rows.filter(r=>r.amountCents<0),inflows:rows.filter(r=>r.amountCents>0),pairs:catalog.pairs,status:catalog.status,categories:getCategories(ownerId).filter(c=>c.type==='expense')};
 }
-async function boundedForm(request:Request){
+export async function boundedForm(request:Request){
  const reader=request.body?.getReader();if(!reader)throw new Error('Missing form');let size=0;const chunks:Uint8Array[]=[];
  while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>16384){await reader.cancel();throw new Error('Form too large');}chunks.push(value);}
  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}

@@ -155,3 +155,35 @@ test('transfer review renders native owner confirmation and saved selections',as
  const html=render(Review,{props:{model:data.transferReview,revision:data.funding.view.revision,commandKey:'review-render',month:'2024-01'}}).body;
  expect(html).toContain('Review transfer matches');expect(html).toContain('name="match_51"');expect(html).toContain('name="confirm"');expect(html).toContain('Save reviewed matches');
 });
+
+test('native Reflect captures only approved selected-scope source evidence',async()=>{
+ const route=await import('../../routes/(app)/reflect/+page.server');expect(typeof (route as any).actions?.captureHistory).toBe('function');
+ db().exec("INSERT INTO users(id,name,email,password_hash) VALUES(6,'Capture owner','capture@example.test','unused');INSERT INTO accounts(id,user_id,name,type,provider,external_id,provider_balance_cents,provider_balance_as_of) VALUES(61,6,'Source cash','bank','plaid','synthetic-61',10000,'2024-01-01 12:00:00'),(62,6,'Unmapped debt','credit',NULL,NULL,NULL,NULL)");
+ const owner={...user,id:6},u=new URL('https://synthetic.invalid/reflect?view=net-worth&account=61&date_from=2024-01-01&date_to=2024-01-02');
+ const financeEvidence={ownerId:6,timeZone:'UTC',closingCatalog:null,historyPolicies:[{accountId:61,currency:'USD',source:'plaid',sourceAccountRef:'synthetic-61'}],historyReceipts:[]};
+ const locals={user:owner,financeEvidence},read=()=>route.load({locals,url:u} as any) as any,initial=read();expect(initial.capture.offers).toHaveLength(1);expect(initial.netWorth.points[0].totalCents).toBeNull();
+ const fields={history_offer:initial.capture.offers[0].reference,revision:String(initial.capture.revision),key:'native-capture'};
+ const req=(extras:any={})=>({locals,url:u,request:new Request(u,{method:'POST',headers:{origin:u.origin},body:new URLSearchParams({...fields,...extras})})});
+ expect((await (route as any).actions.captureHistory({...req(),url:new URL(u.href.replace('account=61','account=62'))})).status).toBe(400);
+ expect((await (route as any).actions.captureHistory(req({balanceCents:'999'}))).status).toBe(400);
+ const saved=await (route as any).actions.captureHistory(req());expect(saved.ok).toBe(true);expect(read().netWorth.points[0].totalCents).toBe(10000);expect(read().netWorth.points[1].totalCents).toBeNull();expect(read().capture.offers).toHaveLength(0);
+ expect((await (route as any).actions.captureHistory({...req(),locals:{...locals,apiToken:{scope:'write'}}})).status).toBe(403);
+ expect((await (route as any).actions.captureHistory({...req(),locals:{user:owner}})).status).toBe(409);
+ closeDbForTests();expect(read().netWorth.points[0].totalCents).toBe(10000);
+});
+
+test('native baseline route reviews without writes, confirms once, then refreshes only post-cutoff activity',async()=>{
+ const file=new URL('../../routes/(app)/budget/setup/+page.server.ts',import.meta.url);expect((await import('node:fs')).existsSync(file)).toBe(true);
+ const route=await import('../../routes/(app)/budget/setup/+page.server');
+ db().exec("INSERT INTO users(id,name,email,password_hash) VALUES(7,'Setup owner','setup@example.test','unused');INSERT INTO accounts(id,user_id,name,type) VALUES(71,7,'Setup cash','bank');INSERT INTO categories(id,user_id,name,type) VALUES(71,7,'Food','expense'),(72,7,'Income','income');INSERT INTO transactions(id,user_id,account_id,category_id,date,amount_cents) VALUES(71,7,71,72,'2023-12-31',50000),(72,7,71,71,'2024-01-02',-1000)");
+ const owner={...user,id:7},engine=new BudgetEngine(db(),7);engine.saveTarget({id:'setup-target',categoryId:71,amountCents:20000,cadence:'monthly',behavior:'set_aside',startDate:'2024-01-01'},'2024-01',{expectedRevision:0,idempotencyKey:'setup-target'});
+ const evidence={reference:'synthetic-closing-71',ownerId:7,accountId:71,currency:'USD',balanceCents:100000,asOfDate:'2023-12-31',timeZone:'UTC',cutoff:'end_of_day',source:'accepted_estimate',description:'Synthetic approved closing estimate',recordedAt:'2024-01-01T12:00:00.000Z'};
+ const financeEvidence={ownerId:7,timeZone:'UTC',closingCatalog:()=>[evidence],historyPolicies:[],historyReceipts:[]},locals={user:owner,financeEvidence},u=new URL('https://synthetic.invalid/budget/setup?baseline_date=2023-12-31');
+ const read=()=>route.load({locals,url:u} as any) as any,model=read().setup;expect(model.phase).toBe('setup');
+ const fields={stage:'review',date:model.date,revision:String(model.revision),roster:model.rosterFingerprint,key:'native-setup',scope_71:'cash',source_71:evidence.reference};
+ const req=(extra:any={})=>({locals,url:u,request:new Request(u,{method:'POST',headers:{origin:u.origin},body:new URLSearchParams({...fields,...extra})})});
+ const review=await route.actions.baselineSetup(req() as any) as any;expect(review.phase).toBe('review');expect(engine.view('2024-01').baseline).toBeNull();expect(review.review.rows[0].evidence.source).toBe('accepted_estimate');
+ const result=await route.actions.baselineSetup(req({stage:'activate',review:review.review.fingerprint,confirm:'end-of-day'}) as any) as any;expect(result.phase).toBe('active');expect(read().setup.phase).toBe('active');
+ const refreshed=await actions.refresh(event({revision:String(result.revision),key:'setup-refresh'},owner));expect('ok' in refreshed&&refreshed.ok).toBe(true);expect(engine.view('2024-01').ledger?.cashCents).toBe(99000);expect(engine.targets('2024-01')[0].id).toBe('setup-target');
+ expect((await route.actions.baselineSetup({...req(),locals:{user:owner}} as any) as any).status).toBe(409);expect((await route.actions.baselineSetup({...req(),locals:{...locals,apiToken:{scope:'write'}}} as any) as any).status).toBe(403);
+});

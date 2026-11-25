@@ -6,7 +6,10 @@ import {
 	resolveCategoryFromForm,
 	saveBudget
 } from '$lib/server/finance';
-import { parseAmountToCents } from '$lib/utils';
+import { parseAmountToCents,todayISO } from '$lib/utils';
+import {fail} from '@sveltejs/kit';
+import {db} from '$lib/server/db';
+import {movingMoneyModel,movingMoneyCommand} from '$lib/server/movingMoneyFeature';
 import { productOwner } from '$lib/server/productAccess';
 import { budgetDate,budgetFunding,budgetCommand } from '$lib/server/budgetIntegration';
 import type { Budget } from '$lib/types';
@@ -17,10 +20,12 @@ export function load({locals,url}) {
  const ref=new Date(`${selectedDate}T12:00:00Z`);
  const categories=getCategories(userId);
  const budgets=getBudgets(userId).map(b=>({...b,...budgetPeriodSpend(userId,b.category_id,b.period,ref)}));
- return {budgets,categories,selectedDate,...budgetFunding(userId,selectedDate)};
+ return db().transaction(()=>{const funding=budgetFunding(userId,selectedDate);return {budgets,categories,selectedDate,...funding,moneyControls:movingMoneyModel(db(),userId,selectedDate.slice(0,7),funding.fundingDate)};}).deferred();
 }
 
 export const actions = {
+ moveMoney: async(event)=>{const result=await movingMoneyCommand('move',{database:db(),locals:event.locals,request:event.request,url:event.url,today:todayISO()});return result.ok?result:fail(result.status,result);},
+ cardReserve: async(event)=>{const result=await movingMoneyCommand('reserve',{database:db(),locals:event.locals,request:event.request,url:event.url,today:todayISO()});return result.ok?result:fail(result.status,result);},
  target: (event)=>budgetCommand('target',event),
  archiveTarget: (event)=>budgetCommand('target-archive',event),
  allocate: (event)=>budgetCommand('assign',event),

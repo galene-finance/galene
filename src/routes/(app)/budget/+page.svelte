@@ -2,6 +2,9 @@
 	import { enhance } from '$app/forms';
 	import TargetSettings from '$lib/components/TargetSettings.svelte';
 	import FundingOverview from '$lib/components/FundingOverview.svelte';
+ import MoveMoneyControls from '$lib/components/MoveMoneyControls.svelte';
+ import CardReserveControls from '$lib/components/CardReserveControls.svelte';
+ import type {MovingMoneyModel,MovingMoneyResult} from '$lib/movingMoneyFeatureTypes';
 	import CategoryPill from '$lib/components/CategoryPill.svelte';
 	import type {budgetFunding} from '$lib/server/budgetIntegration';
 	import Badge from '$lib/components/FinancialBadge.svelte';
@@ -29,8 +32,8 @@
 	};
 
 	let { form, data }: {
-		form: { error?: string | null; targetEffectiveMonth?: string; targetOperation?: string } | undefined;
-		data: { budgets: BudgetRow[]; categories: Category[]; selectedDate: string } & Partial<ReturnType<typeof budgetFunding>>;
+		form: ({ error?: string | null; targetEffectiveMonth?: string; targetOperation?: string } & Partial<MovingMoneyResult>) | undefined;
+		data: { budgets: BudgetRow[]; categories: Category[]; selectedDate: string; moneyControls?:MovingMoneyModel } & Partial<ReturnType<typeof budgetFunding>>;
 	} = $props();
 
 	const kinds=$derived(new Map(data.categories.map(c=>[c.id,c.type])));
@@ -133,6 +136,10 @@
  {#if form?.targetEffectiveMonth}<p class="product-details" role="status">Target version {form.targetOperation} effective {form.targetEffectiveMonth}. Earlier views are preserved.</p>{/if}
  {#if form?.error}<div class="product-attention" role="alert">{form.error}</div>{/if}
  {#if data.funding&&data.fundingDate&&data.commandKey}<FundingOverview funding={data.funding} fundingDate={data.fundingDate} commandKey={data.commandKey} categories={data.categories}/>{/if}
+ {#if data.moneyControls&&data.commandKey}{#key data.commandKey}
+ <MoveMoneyControls model={data.moneyControls} commandKey={data.commandKey} form={form?.feature?form as MovingMoneyResult:undefined}/>
+ <CardReserveControls model={data.moneyControls} commandKey={data.commandKey} form={form?.feature?form as MovingMoneyResult:undefined}/>
+ {/key}{/if}
  {#if data.targetSpecs&&data.funding&&data.commandKey}<TargetSettings targets={data.targetSpecs} categories={data.categories} budgets={data.budgets} month={data.selectedDate.slice(0,7)} revision={data.funding.view.revision} commandKey={data.commandKey}/>{/if}
  {#if !data.budgets.length&&!activeTargets.length}<section class="product-panel product-empty"><strong>Start with a category that matters</strong><p>Add a target you can adjust as the month unfolds.</p><button class="product-button" onclick={openAdd}>Add your first target</button></section>{/if}
  {#each groups as group (group.key)}

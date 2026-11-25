@@ -107,3 +107,30 @@ test('native refresh retains explicit persisted transfer matches and refuses cha
  const corrupt={...JSON.parse(stored()),pairs:[{outflowId:31,inflowId:32,categoryId:1}]};d.query('UPDATE budget_engine_state SET register_json=? WHERE owner_id=3').run(JSON.stringify(corrupt));expect(transferPairCatalog(3,'2024-02-29').status).toBe('needs_review');
  d.query('UPDATE budget_engine_state SET register_json=? WHERE owner_id=3').run(before);d.exec('DELETE FROM transactions WHERE id=32');expect(transferPairCatalog(3,'2024-02-29').status).toBe('needs_review');
 });
+
+test('native Plan exposes moving-money controls and persists reserve actions with targets intact',async()=>{
+ expect(typeof (actions as any).moveMoney).toBe('function');expect(typeof (actions as any).cardReserve).toBe('function');
+ const d=db();d.exec("INSERT INTO users(id,name,email,password_hash) VALUES(4,'Money owner','money@example.test','unused');INSERT INTO accounts(id,user_id,name,type) VALUES(41,4,'Cash','bank'),(42,4,'Card','credit');INSERT INTO categories(id,user_id,name,type) VALUES(41,4,'Food','expense'),(42,4,'Bills','expense');");
+ const e=new BudgetEngine(d,4);e.activate({currency:'USD',asOfDate:'2023-12-31',accounts:[{id:41,currency:'USD',scope:'cash',balanceCents:100000},{id:42,currency:'USD',scope:'credit',balanceCents:-30000}],evidence:'Synthetic money baseline'},{expectedRevision:0,idempotencyKey:'money-base'});
+ e.saveTarget({id:'money-food',categoryId:41,amountCents:20000,cadence:'monthly',behavior:'set_aside',startDate:'2024-01-01'},'2024-01',{expectedRevision:1,idempotencyKey:'money-target'});e.refreshRegister('2024-01-31',[],{expectedRevision:2,idempotencyKey:'money-register'});e.allocate({id:'money-assign',kind:'assign',date:'2024-01-01',categoryId:41,amountCents:20000},{expectedRevision:3,idempotencyKey:'money-assign'});
+ const owner={...user,id:4},read=()=>load({locals:{user:owner},url} as any) as any;
+ const initial=read();expect(initial.moneyControls.known).toBe(true);expect(initial.moneyControls.revision).toBe(initial.funding.view.revision);
+ const move={from_category_id:'41',to_category_id:'42',amount:'50.00',date:'2024-01-05',revision:String(initial.moneyControls.revision),key:'native-move'};
+ expect((await (actions as any).moveMoney(event(move,owner))).ok).toBe(true);expect(read().moneyControls.categories.find((c:any)=>c.id===42).availableCents).toBe(5000);
+ const reserve={account_id:'42',direction:'add',amount:'100.00',date:'2024-01-05',revision:String(read().moneyControls.revision),key:'native-reserve'};
+ const saved=await (actions as any).cardReserve(event(reserve,owner));expect(saved.ok).toBe(true);expect(await (actions as any).cardReserve(event(reserve,owner))).toEqual(saved);
+ closeDbForTests();const after=read();expect(after.moneyControls.cards[0].cashBackedReserveCents).toBe(10000);expect(after.moneyControls.readyToAssignCents).toBe(70000);expect(after.targetSpecs[0].id).toBe('money-food');expect(after.funding.plan.totalCents).toBe(20000);
+ expect((await (actions as any).cardReserve(event({...reserve,key:'stale-native'},owner))).status).toBe(409);expect(read().moneyControls.revision).toBe(after.moneyControls.revision);
+ expect((await (actions as any).moveMoney(event(move,owner,'https://other.invalid'))).status).toBe(403);
+});
+
+test('native Reflect net-worth view preserves gaps and rejects foreign account scope',async()=>{
+ const {load:reflect}=await import('../../routes/(app)/reflect/+page.server');
+ const historyURL=new URL('https://synthetic.invalid/reflect?view=net-worth&date_from=2024-01-01&date_to=2024-01-02');
+ const initial=reflect({locals:{user},url:historyURL} as any) as any;expect(initial.view).toBe('net-worth');expect(initial.netWorth.points).toHaveLength(2);expect(initial.netWorth.points[0].totalCents).toBeNull();expect(initial.netWorth.canCapture).toBe(false);
+ const e=new BudgetEngine(db(),1);e.recordSnapshot('native-history-test',{accountId:1,balanceCents:100000,currency:'USD',asOf:'2024-01-01T23:59:00.000Z',recordedAt:'2024-01-02T00:00:00.000Z',source:'actual',evidence:'Explicit synthetic dated evidence'},{expectedRevision:e.view('2024-01').revision,idempotencyKey:'native-history-seed'});
+ const saved=reflect({locals:{user},url:historyURL} as any) as any;expect(saved.netWorth.points[0].totalCents).toBe(100000);expect(saved.netWorth.points[1].totalCents).toBeNull();expect(saved.netWorth.accounts.map((a:any)=>a.id)).toEqual([1]);
+ expect(()=>reflect({locals:{user},url:new URL(historyURL+'&account=41')} as any)).toThrow();expect(()=>reflect({locals:{user:{...user,role:'viewer'}},url:historyURL} as any)).toThrow();expect(()=>reflect({locals:{user,apiToken:{}},url:historyURL} as any)).toThrow();
+ expect(()=>reflect({locals:{user},url:new URL('https://synthetic.invalid/reflect?view=net-worth&date_from=2023-01-01&date_to=2024-01-02')} as any)).toThrow();
+ const future=reflect({locals:{user},url:new URL('https://synthetic.invalid/reflect?view=net-worth&date_from=2099-01-01&date_to=2099-01-02')} as any) as any;expect(future.netWorth.error).toBeTruthy();expect(future.netWorth.points).toEqual([]);
+});

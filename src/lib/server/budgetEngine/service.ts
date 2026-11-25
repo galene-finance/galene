@@ -43,9 +43,26 @@ export class BudgetEngine {
   const state=this.state();if(!state?.baseline_json)throw new Error('not active');const b=JSON.parse(state.baseline_json) as Activation;
   if(event.date<=b.asOfDate)throw new Error('before baseline');
   if('categoryId'in event&&event.categoryId!==undefined)this.own('categories',event.categoryId);if('fromCategoryId'in event){this.own('categories',event.fromCategoryId);this.own('categories',event.toCategoryId);}if('accountId'in event)this.own('accounts',event.accountId);
-  if(this.registerStale(event.date))throw new Error('stale register; refresh required');
-  projectLedger(b.accounts,this.categories(),[...this.events(),event],event.date,{validateAllocationIds:[event.id]});
+  civil(event.date);
+  // Stage under the command's IMMEDIATE transaction so replay uses exactly the
+  // persisted same-day allocation/posting order. Any failed check rolls it back.
   this.database.query('INSERT INTO budget_engine_events(owner_id,event_id,kind,date,payload) VALUES(?,?,?,?,?)').run(this.ownerId,event.id,'allocation',event.date,JSON.stringify(event));
+  const events=this.events();
+  const horizon=events.reduce((last,e)=>e.date>last?e.date:last,state.activity_through&&state.activity_through>event.date?state.activity_through:event.date);
+  if(this.registerStale(horizon))throw new Error('stale register; refresh required');
+  const index=events.findIndex(e=>e.id===event.id);
+  const affectedIds=events.slice(index).filter(e=>['assign','move','reserve'].includes(e.kind)).map(e=>e.id);
+  // Revalidate the new intent AND every later commitment, not only its date.
+  // Older source corrections stay truthful; a later corrective command must
+  // still be allowed to repair them rather than re-rejecting the old history.
+  projectLedger(b.accounts,this.categories(),events,horizon,{validateAllocationIds:affectedIds});
+  const before=events.filter(e=>e.id!==event.id);
+  const checkpoints=[...new Set([event.date,horizon,...events.filter(e=>e.date>=event.date).map(e=>e.date)])].sort();
+  for(const date of checkpoints){
+   const old=projectLedger(b.accounts,this.categories(),before,date,{validateAllocationIds:[]});
+   const proposed=projectLedger(b.accounts,this.categories(),events,date,{validateAllocationIds:[]});
+   if(proposed.cashBackingShortfallCents>old.cashBackingShortfallCents)throw new Error('insufficient funds across committed timeline');
+  }
  });}
  saveTarget(target:Target,effectiveMonth:string,meta:CommandMeta){return this.command('target',{target,effectiveMonth},meta,()=>{
   monthStart(effectiveMonth);this.own('categories',target.categoryId);targetCycle(target,effectiveMonth);

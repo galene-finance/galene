@@ -13,7 +13,10 @@ export function targetCycle(t:Target,month:string):{start:string;due:string|null
   let goal=t.amountCents;
   if(t.cadence==='weekly'){
    let count=0;const end=Number(monthEnd(month).slice(8));
-   for(let day=1;day<=end;day++)if(civil(`${month}-${String(day).padStart(2,'0')}`).getUTCDay()===t.weekday)count++;
+   for(let day=1;day<=end;day++){
+    const occurrence=`${month}-${String(day).padStart(2,'0')}`;
+    if(occurrence>=t.startDate&&civil(occurrence).getUTCDay()===t.weekday)count++;
+   }
    goal=cents(goal*count);
   }
   return {start:month===t.startDate.slice(0,7)?t.startDate:start,due:monthEnd(month),active:true,goal};

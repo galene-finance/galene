@@ -9,6 +9,7 @@ import {
 	themeHeadScript,
 	themeToCss,
 	themeCssHash,
+	themePresentationOrder,
 } from './themes';
 
 describe('Graphite default without losing saved choices', () => {
@@ -30,6 +31,13 @@ describe('filled status palette', () => {
 		const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
 		return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
 	}
+ for(const slug of ['graphite','ocean','dark']) test(`${slug} has readable primary controls and the shared radius`,()=>{
+  const theme=DEFAULT_THEMES.find(t=>t.slug===slug)!;const c=theme.colors;
+  expect(themeToCss(theme)).toContain('color-scheme: dark;');
+  const a=luminance(c.primary),b=luminance(c.primaryForeground);
+  expect((Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)).toBeGreaterThanOrEqual(4.5);
+  expect(c.radius).toBe('0.875rem');
+ });
 	for (const theme of DEFAULT_THEMES) test(`${theme.slug} has opaque readable filled status tokens`, () => {
 		const css = themeToCss(theme);
 		for (const state of ['neutral', 'positive', 'attention', 'negative', 'movement']) {
@@ -48,6 +56,13 @@ test('cache keys change when emitted CSS changes beyond stored colors', () => {
   for (let i = 0; i < source.length; i++) oldHash = (oldHash * 31 + source.charCodeAt(i)) | 0;
   expect(themeCssHash(theme)).not.toBe(Math.abs(oldHash).toString(36));
  }
+});
+
+test('presentation leads with the chosen trio without changing native normalization order',()=>{
+ const before=DEFAULT_THEMES.map(t=>t.slug);
+ expect(themePresentationOrder(DEFAULT_THEMES).slice(0,3).map(t=>t.slug)).toEqual(['graphite','ocean','dark']);
+ expect(DEFAULT_THEMES.map(t=>t.slug)).toEqual(before);
+ expect(DEFAULT_THEMES[0].slug).toBe('light');
 });
 
 describe('stored theme slug', () => {

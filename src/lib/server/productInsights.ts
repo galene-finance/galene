@@ -12,8 +12,8 @@ export function productInsights(userId:number,url:URL,type:'income'|'expense') {
  const byTransaction=new Map<number,{transaction:typeof data.transactions[number];contributionCents:number}>();
  for(const p of parts){const row=byTransaction.get(p.transaction.id)??{transaction:p.transaction,contributionCents:0};row.contributionCents+=p.cents;byTransaction.set(p.transaction.id,row);}
  const contributions=[...byTransaction.values()].sort((a,b)=>b.transaction.date.localeCompare(a.transaction.date)||b.transaction.id-a.transaction.id);
- const history=Array.from({length:6},(_,i)=>shiftMonth(data.period.month,i-5)).map(month=>{
-  const {from,to}=monthBounds(month);const s=summarizeActivity(getTransactionsInPeriod(userId,from,to),data.categories);
+ const history=Array.from({length:6},(_,i)=>shiftMonth(data.period.dateTo.slice(0,7),i-5)).map(month=>{
+  const {from,to}=monthBounds(month);const s=summarizeActivity(getTransactionsInPeriod(userId,from,to).filter(t=>data.accountId===null||t.account_id===data.accountId),data.categories);
   return {month,cents:type==='income'?s.incomeCents:s.spendingCents,postedCount:s.postedCount,uncategorizedCount:s.uncategorizedCount};
  });
  return {...data,type,categoryRows,contributions,history};

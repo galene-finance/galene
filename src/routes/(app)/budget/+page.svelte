@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import Badge from '$lib/components/FinancialBadge.svelte';
+	import {monthlyPlanTotal} from '$lib/monthlyPlan';
+	import {planningGroups} from '$lib/planningGroups';
 	import Title from '$lib/components/Title.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Combobox from '$lib/components/ui/Combobox.svelte';
@@ -26,6 +29,11 @@
 		data: { budgets: BudgetRow[]; categories: Category[]; selectedDate: string };
 	} = $props();
 
+	const kinds=$derived(new Map(data.categories.map(c=>[c.id,c.type])));
+	const plan=$derived(monthlyPlanTotal(data.budgets,kinds));
+	const groups=$derived(planningGroups(data.budgets,data.categories));
+	const withoutTarget=$derived(data.categories.filter(c=>c.type==='expense'&&!data.categories.some(child=>child.parent_id===c.id)&&!data.budgets.some(b=>b.category_id===c.id)));
+	function addForCategory(c:Category){openAdd();categoryId=String(c.id);}
 	// --- Add / edit dialog ---
 	let dialogOpen = $state(false);
 	let editing = $state<BudgetRow | null>(null);
@@ -103,44 +111,43 @@
 	watchFormToast(() => form);
 </script>
 
-<Title title="Budget" />
-
+<Title title="Plan" />
 <div class="product-page">
- <header class="product-heading"><div><h1>Budget</h1><p>A spending plan, with room to make changes.</p></div><button class="product-button primary" onclick={openAdd}>Add a limit</button></header>
- <form method="GET" class="product-toolbar"><label class="product-field">As of <input type="date" name="date" value={data.selectedDate} required/></label><button class="product-button">View budget</button><span class="product-muted">Limits compared with posted, categorized activity.</span></form>
- <div class="product-attention"><span>These are spending limits, not money set aside. Uncategorized activity may still need review.</span><a class="product-link" href="/transactions?empty=category">Review activity</a></div>
- {#if !data.budgets.length}<section class="product-panel product-empty"><strong>Give your money a simple plan</strong><p>Add a limit for a category you want to keep an eye on.</p><button class="product-button" onclick={openAdd}>Add your first limit</button></section>{/if}
- {#each ['month','week','year'] as frequency}
-  {@const items=data.budgets.filter(b=>b.period===frequency)}
-  {#if items.length}
-  <section class="product-panel"><header class="product-panel-header"><h2>{frequency==='month'?'Monthly':frequency==='week'?'Weekly':'Yearly'} limits</h2><span class="product-muted">{items.length} categories</span></header>
-   {#each items as b}
+ <header class="product-heading plan-heading"><div><h1>Plan</h1></div><button class="product-button primary" onclick={openAdd}>Add a target</button></header>
+ <section class="product-panel"><header class="product-panel-header"><div><h2>Cost to be me</h2><p class="product-row-caption">Current monthly targets</p></div>{#if plan.totalCents!==null}<Badge value={formatMoney(plan.totalCents)} label="Monthly plan"/>{:else}<Badge label={plan.needsReview?'Review targets':'No monthly targets'} tone={plan.needsReview?'attention':'neutral'}/>{/if}</header><footer class="product-details">{plan.targetIds.length} monthly targets · not money available.</footer></section>
+ <form method="GET" class="product-toolbar"><label class="product-field" for="plan-date"><span>Compare activity as of</span><input id="plan-date" type="date" name="date" value={data.selectedDate} required/></label><button class="product-button">View</button></form>
+ {#if !data.budgets.length}<section class="product-panel product-empty"><strong>Start with a category that matters</strong><p>Add a target you can adjust as the month unfolds.</p><button class="product-button" onclick={openAdd}>Add your first target</button></section>{/if}
+ {#each groups as group (group.key)}
+  {@const groupPlan=monthlyPlanTotal(group.items,kinds)}
+  <section class="product-panel"><header class="product-panel-header"><div><h2>{group.name}</h2><p class="product-row-caption">{group.period==='month'?'Monthly':group.period==='week'?'Weekly':'Yearly'} · {group.items.length} targets{group.income?' · separate from planned costs':''}</p></div>{#if groupPlan.totalCents!==null}<Badge value={formatMoney(groupPlan.totalCents)} label="Monthly targets"/>{/if}</header>
+   {#each group.items as b (b.id)}
+    {@const income=kinds.get(b.category_id)==='income'}
+    {@const movement=kinds.get(b.category_id)==='transfer'}
     {@const over=b.spentCents>b.limit_cents}
-    {@const income=data.categories.find(c=>c.id===b.category_id)?.type==='income'}
+    {@const tone=movement?'movement':income?(b.spentCents>=b.limit_cents?'positive':'neutral'):(over?'negative':'positive')}
     <div class="budget-line">
-     <a class="budget-category" href={`/categories/${b.category_id}?date_from=${b.from}&date_to=${inclusiveEnd(b.to)}`}><strong>{b.category_name}</strong><span class="product-row-caption">{periodLabel(b.period,b.from,b.to)}</span></a>
-     <div class="budget-progress"><div class="product-bar-caption"><span>{income?'Received':'Spent'} {formatMoney(b.spentCents)}</span><strong>{formatMoney(b.limit_cents)} {income?'target':'limit'}</strong></div><div class="product-bar-track" aria-hidden="true"><div class="product-bar-fill" style:width={`${Math.max(0,Math.min(100,b.spentCents/Math.max(1,b.limit_cents)*100))}%`} style:background={over&&!income?'var(--destructive)':'var(--primary)'}></div></div></div>
-     <span class="budget-difference">{formatMoney(Math.abs(b.limit_cents-b.spentCents))}<small>{income?(over?'above target':'to target'):(over?'over limit':'under limit')}</small></span>
-     <button class="product-button" aria-label={`Edit ${b.category_name} limit`} onclick={()=>openEdit(b)}>Edit</button>
+     <button type="button" class="budget-category" aria-label={`Edit ${b.category_name} target`} onclick={()=>openEdit(b)} disabled={movement} title={movement?'Movement targets are not editable in this form':undefined}><span class="budget-category-title"><Badge label={b.category_name} {tone}/><span class="budget-edit-hint">{movement?'Movement':'Edit'}</span></span><span class="product-row-caption">{periodLabel(b.period,b.from,b.to)}</span>{#if !movement}<span class="product-row-caption">{income?'Posted income':'Recorded spending'} {formatMoney(b.spentCents)} · {formatMoney(b.limit_cents)} {income?'goal':'limit'}</span>{/if}</button>
+     <a class="budget-difference" href={`/categories/${b.category_id}?date_from=${b.from}&date_to=${inclusiveEnd(b.to)}`} aria-label={`View ${b.category_name} activity`}><Badge value={formatMoney(movement?b.limit_cents:Math.abs(b.limit_cents-b.spentCents))} label={movement?'Planned movement':income?(over?'Above goal':b.spentCents===b.limit_cents?'Goal reached':'To income goal'):(over?'Over limit':'Left to limit')} {tone}/></a>
     </div>
    {/each}
   </section>
-  {/if}
  {/each}
- <details class="product-panel product-details"><summary>About your plan</summary><p>Refunds reduce spending in the original category. Transfers and card payments are not new spending. Week, month and year limits keep their own periods. Changing a limit changes the plan; it does not move money or change an account balance.</p></details>
+ {#if withoutTarget.length}<details class="product-panel product-details"><summary>Categories without a target ({withoutTarget.length})</summary><p>A category without a target is not proof of spending or of money available.</p><ul class="product-list">{#each withoutTarget as c}<li class="product-row"><Badge label={c.name}/><button class="product-button" onclick={()=>addForCategory(c)}>Add target</button></li>{/each}</ul></details>{/if}
+ <details class="product-panel product-details"><summary>How the plan works</summary><p>Targets are current; changing the comparison date does not restore past targets. The comparison uses posted, categorized activity. Income goals and other cadences are separate from Cost to be me. Refunds reduce spending in their category. Transfers and card payments are not new spending. Each target retains its own week, month or year period. Changing a target changes the plan; it does not move money or reserve an account balance. Category groups collect their individual targets without adding the group total a second time.</p></details>
 </div>
 
 <Dialog
 	bind:open={dialogOpen}
 	size="md"
-	title={editing ? 'Edit budget' : 'Add budget'}
-	description={editing ? undefined : 'Set a spending limit for a category.'}
+	title={editing ? 'Edit target' : 'Add target'}
+	description={editing ? undefined : 'Set a spending limit or an income goal.'}
 >
 	<form id="budget-dialog-form" method="POST" action="?/save" use:enhance={handleSubmit} class="flex flex-col gap-4">
-		<div class="flex gap-2" role="radiogroup" aria-label="Budget type">
+		<div class="flex gap-2" role="group" aria-label="Target type">
 			<button
 				type="button"
 				onclick={() => onTypeChange('expense')}
+                aria-pressed={type === 'expense'}
 				class="flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors {type === 'expense'
 					? 'border-primary bg-primary/10 text-primary'
 					: 'border-border text-muted-foreground hover:bg-muted'}"
@@ -150,6 +157,7 @@
 			<button
 				type="button"
 				onclick={() => onTypeChange('income')}
+                aria-pressed={type === 'income'}
 				class="flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors {type === 'income'
 					? 'border-primary bg-primary/10 text-primary'
 					: 'border-border text-muted-foreground hover:bg-muted'}"
@@ -217,7 +225,10 @@
 	{/snippet}
 </Dialog>
 <style>
- .budget-line{display:grid;grid-template-columns:minmax(160px,1.1fr) minmax(200px,1.4fr) 100px auto;gap:24px;align-items:center;padding:20px 22px;border-bottom:1px solid var(--border)}
- .budget-line:last-child{border-bottom:0}.budget-category{font-size:14px}.budget-category strong{font-weight:550}.budget-difference{text-align:right;font-variant-numeric:tabular-nums;font-size:14px}.budget-difference small{display:block;color:var(--muted-foreground);font-size:11px}
- @media(max-width:1050px){.budget-line{grid-template-columns:1fr auto;gap:14px;padding:18px 16px}.budget-progress{grid-column:1/-1;grid-row:2}.budget-difference{grid-column:1;text-align:left}.budget-line>button{grid-column:2;grid-row:1}.budget-difference small{display:inline;margin-left:6px}}
+ .plan-heading{flex-direction:row;align-items:center}
+ .budget-line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:center;padding:17px 22px;border-bottom:1px solid var(--border)}
+ .budget-line:last-child{border-bottom:0}.budget-category{min-width:0;text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-height:44px;border:0;background:transparent;color:var(--foreground)}
+ .budget-category-title{display:flex;align-items:center;gap:10px;max-width:100%}.budget-edit-hint{font-size:11px;color:var(--muted-foreground)}.budget-difference{display:inline-flex;align-items:center;justify-content:flex-end;min-height:44px;text-decoration:none}
+ @media(max-width:767px){.budget-line{gap:12px;padding:16px}.budget-category-title{gap:6px}.budget-category .product-row-caption{font-size:11px}}
+
 </style>

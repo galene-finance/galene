@@ -10,8 +10,8 @@ export const scheduled:Scheduled[]=[{id:1,name:'Sample next salary',account_id:1
 export function fixture(url:URL){
  const month=url.searchParams.get('month')??'2026-11';const from=`${month}-01`,to=month==='2026-11'?'2026-12-01':`${month}-29`,dateTo=month==='2026-11'?'2026-11-30':`${month}-28`;
  const period={month,from,to,dateTo,previous:'2026-10',next:'2026-12',custom:false,query:`month=${month}`};
- const scoped=transactions.filter(t=>t.date.startsWith(month));const summary=summarizeActivity(scoped,categories);
- return {period,categories,accounts,transactions:scoped,summary,plan:monthlyPlanTotal(budgets,new Map(categories.map(c=>[c.id,c.type]))),upcoming:scheduled.map(s=>({date:s.start_date,scheduled:s})),history:[{month,incomeCents:summary.incomeCents,spendingCents:summary.spendingCents,uncategorizedCount:summary.uncategorizedCount,postedCount:summary.postedCount}]};
+ const rawAccount=url.searchParams.get('account');const accountId=rawAccount?Number(rawAccount):null;const scoped=transactions.filter(t=>t.date.startsWith(month)&&(accountId===null||t.account_id===accountId));const summary=summarizeActivity(scoped,categories);
+ return {period,categories,accounts,accountId,scopeQuery:period.query+(accountId===null?'':`&account=${accountId}`),transactions:scoped,summary,plan:monthlyPlanTotal(budgets,new Map(categories.map(c=>[c.id,c.type]))),upcoming:scheduled.map(s=>({date:s.start_date,scheduled:s})),history:[{month,incomeCents:summary.incomeCents,spendingCents:summary.spendingCents,uncategorizedCount:summary.uncategorizedCount,postedCount:summary.postedCount}]};
 }
 export function insight(url:URL,type:'income'|'expense'){
  const base=fixture(url),parts=base.summary.parts.filter(p=>p.type===type);return {...base,type,categoryRows:base.summary.categories.filter(c=>c.type===type),contributions:parts.map(p=>({transaction:p.transaction,contributionCents:p.cents})),history:[{month:base.period.month,cents:type==='income'?base.summary.incomeCents:base.summary.spendingCents,postedCount:base.summary.postedCount,uncategorizedCount:base.summary.uncategorizedCount}]};

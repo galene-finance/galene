@@ -1,5 +1,6 @@
 <script lang="ts">
  import Overview from '../src/routes/(app)/+page.svelte';
+ import Reflect from '../src/routes/(app)/reflect/+page.svelte';
  import Accounts from '../src/routes/(app)/accounts/+page.svelte';
  import Account from '../src/routes/(app)/accounts/[id]/+page.svelte';
  import Transaction from '../src/routes/(app)/transactions/[id]/+page.svelte';
@@ -10,23 +11,25 @@
  import Scheduled from '../src/routes/(app)/scheduled/+page.svelte';
  import Cashflow from '../src/routes/(app)/cashflow/+page.svelte';
  import ProductNav from '../src/lib/components/ProductNav.svelte';
- import {DEFAULT_THEMES,themeToCss} from '../src/lib/themes';
+ import {DEFAULT_THEMES,themeToCss,applyThemeNow} from '../src/lib/themes';
  import {fixture,insight,category,accounts,categories,transactions,scheduled,budgets} from './product-fixtures';
  import native from './native-fixture.json';
  import '../src/lib/product.css';
  const url=new URL(location.href),path=url.pathname,base=fixture(url),id=Number(path.split('/').at(-1));
- let open=$state(false);let dark=$state(false);
- const theme=$derived(DEFAULT_THEMES.find(t=>t.slug===(dark?'dark':'light'))!);
+ let open=$state(false);let themeSlug=$state(url.searchParams.get('theme')??'graphite');
+ const theme=$derived(DEFAULT_THEMES.find(t=>t.slug===themeSlug)??DEFAULT_THEMES.find(t=>t.slug==='graphite')!);
+ $effect(()=>applyThemeNow(theme));
  const q=url.searchParams.get('q')??'',status=url.searchParams.get('status')??'all',sort=url.searchParams.get('sort')??'newest';
  const items=transactions.filter(t=>(t.merchant??'').toLowerCase().includes(q.toLowerCase())).filter(t=>status==='all'||(status==='posted'?!t.pending:t.pending)).toSorted((a,b)=>sort==='oldest'?a.date.localeCompare(b.date):sort==='amount'?Math.abs(b.amount_cents)-Math.abs(a.amount_cents):b.date.localeCompare(a.date));
  const register:any={data:{items,total:items.length,pages:1},filters:{accountIds:[],categoryIds:[],tagIds:[],emptyFields:[],amountOp:'',amountFrom:null,amountTo:null,dateFrom:'',dateTo:'',q,page:1,pageSize:50,status,sort},accounts,categories,tags:[]};
  const cashflow:any={from:'2026-11-01',to:'2026-11-30',currentMonth:'2026-11',monthList:['2026-11'],monthLabels:["NOV '26"],accounts,categories,filters:{accountIds:[],categoryIds:[]},filtersActive:false,...native.cashflow,transactions:[...native.transactions.filter(t=>!t.pending&&categories.find(c=>c.id===t.category_id)?.type!=='transfer'&&t.category_id!==null),...(url.searchParams.has('invalid_split')?[{...native.transactions.find(t=>t.category_id===2)!,id:9999,amount_cents:-10000,splits:[{category_id:2,amount_cents:9000}]}]:[])],occurrences:native.plannedDrill.map(o=>({...o,accountId:scheduled.find(s=>s.id===o.id)?.account_id??null}))};
 </script>
 <svelte:head>{@html `<style>${themeToCss(theme)}</style>`}</svelte:head>
-<div class="preview-banner"><strong>SYNTHETIC COMPONENT PREVIEW — NO LIVE ACCOUNTS; SAVES DISABLED</strong><button onclick={()=>dark=!dark}>Switch {dark?'light':'dark'}</button></div>
+<div class="preview-banner"><strong>SYNTHETIC COMPONENT PREVIEW — NO LIVE ACCOUNTS; SAVES DISABLED</strong><select aria-label="Preview theme" bind:value={themeSlug}><option value="graphite">Graphite</option><option value="ocean">Ocean</option><option value="dark">Dark</option></select></div>
 <div class="galene-shell" style:padding-top="32px"><ProductNav bind:open user={{id:1,name:'Sample owner',email:'sample@example.invalid',is_admin:1}} branding={{name:'Galene',icon:'emblem'}} themes={DEFAULT_THEMES} selectedTheme={theme.slug}/>
 <main id="main-content" class="product-main" inert={open||undefined}>
  {#if path==='/'}<Overview data={base as any}/>
+ {:else if path==='/reflect'}<Reflect data={{...base,view:url.searchParams.get('view')==='trends'?'trends':'summary'} as any}/>
  {:else if path==='/accounts'}<Accounts data={{accounts} as any}/>
  {:else if path.startsWith('/accounts/')}<Account data={{...base,account:accounts.find(a=>a.id===id),transactions:transactions.filter(t=>t.account_id===id)} as any}/>
  {:else if path==='/transactions'}<Activity data={register}/>

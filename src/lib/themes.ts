@@ -39,7 +39,7 @@ export const DEFAULT_THEMES: Theme[] = [
 			border: '#334155',
 			warning: '#fbbf24',
 			input: '#475569',
-			radius: '0.5rem'
+			radius: '0.875rem'
 		}
 	},
 	{
@@ -73,13 +73,13 @@ export const DEFAULT_THEMES: Theme[] = [
 			foreground: '#e2e8f0',
 			mutedForeground: '#8494ab',
 			primary: '#3b82f6',
-			primaryForeground: '#ffffff',
+			primaryForeground: '#08111f',
 			success: '#34d399',
 			destructive: '#f87171',
 			border: '#1e2a40',
 			warning: '#fbbf24',
 			input: '#243350',
-			radius: '0.5rem'
+			radius: '0.875rem'
 		}
 	},
 	{
@@ -119,7 +119,7 @@ export const DEFAULT_THEMES: Theme[] = [
 			border: '#2c3136',
 			warning: '#fbbf24',
 			input: '#3a4046',
-			radius: '0.5rem'
+			radius: '0.875rem'
 		}
 	}
 ];
@@ -133,6 +133,12 @@ export function getDefaultTheme(slug: string): Theme | null {
  * to the data-theme attribute value, so it beats the :root defaults in
  * app.css regardless of stylesheet order.
  */
+export function themePresentationOrder<T extends {slug:string}>(themes:readonly T[]):T[]{
+ const preferred=['graphite','ocean','dark'];
+ const rank=(slug:string)=>{const i=preferred.indexOf(slug);return i<0?preferred.length:i;};
+ return [...themes].sort((a,b)=>rank(a.slug)-rank(b.slug));
+}
+
 function readableInk(hex: string): string {
 	const rgb = [1, 3, 5].map(i => parseInt(hex.trim().slice(i, i + 2), 16) / 255)
 		.map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
@@ -145,6 +151,7 @@ export function themeToCss(theme: Theme): string {
 	const tones = { neutral: c.border, positive: c.success, attention: c.warning, negative: c.destructive, movement: isDarkHex(c.background) ? '#a6c8ec' : '#dbeafe' };
 	const pills = Object.entries(tones).map(([state, fill]) => `--pill-${state}-fill: ${fill};\n--pill-${state}-ink: ${readableInk(fill)};`).join('\n');
 	return `html[data-theme='${theme.slug}'] {
+	color-scheme: ${isDarkHex(c.background)?'dark':'light'};
 	--background: ${c.background};
 	--surface: ${c.surface};
 	--surface-hover: ${c.surfaceHover};

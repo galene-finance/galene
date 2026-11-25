@@ -2,6 +2,7 @@
 
 /* Graphite fallback before scripts run; saved native themes override it. */
 :root {
+	color-scheme: dark;
 	--background: #111315;
 	--surface: #1a1d20;
 	--surface-hover: #23272b;
@@ -17,7 +18,7 @@
 	--destructive-foreground: #000000;
 	--warning: #fbbf24;
 	--ring: #f59e0b;
-	--radius: 0.5rem;
+	--radius: 0.875rem;
 	--pill-neutral-fill: #2c3136;
 	--pill-neutral-ink: #ffffff;
 	--pill-positive-fill: #4ade80;

@@ -1,5 +1,5 @@
 import {afterAll,beforeAll,describe,expect,test} from 'bun:test';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {closeDbForTests,db} from './db';
@@ -7,6 +7,7 @@ import {cashflowForMonths,categoryAmountInPeriod,getHomeSummary,getProductTransa
 import {computeDashboardData} from './dashboard';
 import {generateComputedAlerts,listNotifications} from './notifications';
 import {productPeriod} from './product';
+import {productInsights} from './productInsights';
 import {load as overviewLoad} from '../../routes/(app)/+page.server';
 import {actions as transactionActions} from '../../routes/(app)/transactions/+page.server';
 import {actions as calendarActions} from '../../routes/(app)/calendar/+page.server';
@@ -33,6 +34,41 @@ beforeAll(()=>{
 });
 afterAll(()=>{closeDbForTests();if(previousPath===undefined)delete process.env.GALENE_DB_PATH;else process.env.GALENE_DB_PATH=previousPath;if(previousEphemeral===undefined)delete process.env.GALENE_ALLOW_EPHEMERAL_DATA;else process.env.GALENE_ALLOW_EPHEMERAL_DATA=previousEphemeral;rmSync(dir,{recursive:true,force:true});});
 describe('one posted accounting definition across native pages',()=>{
+ test('full-month history ends at the end month of a custom reporting range',()=>{
+  const previous=new Date(`${start}T12:00:00Z`);previous.setUTCMonth(previous.getUTCMonth()-1);
+  const from=previous.toISOString().slice(0,7)+'-15';
+  const url=new URL(`http://test.invalid/?date_from=${from}&date_to=${month}-12`);
+  const home=overviewLoad({locals:{user:{id:1,role:'user'}},url,depends:()=>{}} as any);
+  expect(home.history.at(-1)?.month).toBe(month);
+  expect(productInsights(1,url,'expense').history.at(-1)?.month).toBe(month);
+ });
+
+ test('Reflect exposes actuals without forecast dependencies and remains owner-only',async()=>{
+  expect(existsSync(new URL('../../routes/(app)/reflect/+page.server.ts',import.meta.url))).toBe(true);
+  const {load}=await import('../../routes/(app)/reflect/+page.server');
+  const url=new URL(`http://test.invalid/reflect?month=${month}`);
+  const result=load({locals:{user:{id:1,role:'user'}},url} as any);
+  expect(result.summary.incomeCents).toBe(90000);
+  expect(result.history).toHaveLength(6);
+  expect('upcoming' in result).toBe(false);
+  expect(()=>load({locals:{user:{id:1,role:'viewer'}},url} as any)).toThrow();
+ });
+
+ test('account-scoped history agrees with its headline and preserves drilldown scope',()=>{
+  const d=db();d.exec('SAVEPOINT report_scope_probe');
+  try {
+   const other=Number(d.query("INSERT INTO accounts(user_id,name,type) VALUES(1,'Another owned account','bank')").run().lastInsertRowid);
+   d.query('INSERT INTO transactions(user_id,account_id,category_id,date,amount_cents,pending) VALUES(1,?,?,?,777000,0)').run(other,income,start);
+   const url=new URL(`http://test.invalid/?month=${month}&account=${account}`);
+   const home=overviewLoad({locals:{user:{id:1,role:'user'}},url,depends:()=>{}} as any);
+   expect(home.summary.incomeCents).toBe(90000);
+   expect(home.history.at(-1)?.incomeCents).toBe(90000);
+   const report=productInsights(1,url,'income');
+   expect(report.history.at(-1)?.cents).toBe(90000);
+   expect(report.scopeQuery).toBe(`month=${month}&account=${account}`);
+  } finally {d.exec('ROLLBACK TO report_scope_probe; RELEASE report_scope_probe');}
+ });
+
  test('home loads only owner monthly targets and never treats expected wages as cash',()=>{
   const d=db();d.exec('SAVEPOINT monthly_plan_probe');
   try {

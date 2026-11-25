@@ -40,15 +40,18 @@ export function productActivity(userId:number,url:URL){
  const transactions=account===null?all:all.filter(t=>t.account_id===Number(account));
  const summary=summarizeActivity(transactions,categories);
  const {parts,...totals}=summary;
- return {period,categories,accounts,transactions,summary:totals};
+ return {period,categories,accounts,transactions,summary:totals,accountId:account===null?null:Number(account),scopeQuery:period.query+(account===null?'':`&account=${account}`)};
+}
+export function productHistory(userId:number,data:ReturnType<typeof productActivity>){
+ return Array.from({length:6},(_,i)=>shiftMonth(data.period.dateTo.slice(0,7),i-5)).map(month=>{
+  const {from,to}=monthBounds(month);const s=summarizeActivity(getTransactionsInPeriod(userId,from,to).filter(t=>data.accountId===null||t.account_id===data.accountId),data.categories);
+  return {month,incomeCents:s.incomeCents,spendingCents:s.spendingCents,uncategorizedCount:s.uncategorizedCount,postedCount:s.postedCount};
+ });
 }
 export function productOverview(userId:number,url:URL){
  const data=productActivity(userId,url),today=todayISO();
  const end=new Date(`${today}T12:00:00Z`);end.setUTCDate(end.getUTCDate()+44);
  const upcoming=getScheduled(userId).flatMap(s=>expandScheduled(s,today,end.toISOString().slice(0,10))).sort((a,b)=>a.date.localeCompare(b.date));
- const history=Array.from({length:6},(_,i)=>shiftMonth(data.period.month,i-5)).map(month=>{
-  const {from,to}=monthBounds(month);const s=summarizeActivity(getTransactionsInPeriod(userId,from,to),data.categories);
-  return {month,incomeCents:s.incomeCents,spendingCents:s.spendingCents,uncategorizedCount:s.uncategorizedCount,postedCount:s.postedCount};
- });
+ const history=productHistory(userId,data);
  return {...data,plan:monthlyPlanTotal(getBudgets(userId),new Map(data.categories.map(c=>[c.id,c.type]))),upcoming,history};
 }

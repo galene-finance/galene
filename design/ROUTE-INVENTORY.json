@@ -6,7 +6,7 @@
       "source": "(app)/+page.svelte",
       "job": "Home: monthly plan, actuals and sources",
       "layout": "product",
-      "coverage": "pending",
+      "coverage": "partial_synthetic_core; full matrix and authenticated acceptance pending",
       "viewports": [
         390,
         768,
@@ -16,6 +16,24 @@
         "graphite",
         "ocean",
         "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
       ]
     },
     {
@@ -91,7 +109,7 @@
       "source": "(app)/budget/+page.svelte",
       "job": "Plan: grouped targets and actuals",
       "layout": "product",
-      "coverage": "pending",
+      "coverage": "partial_synthetic_core; full matrix and authenticated acceptance pending",
       "viewports": [
         390,
         768,
@@ -101,6 +119,24 @@
         "graphite",
         "ocean",
         "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
       ]
     },
     {
@@ -176,7 +212,7 @@
       "source": "(app)/income/+page.svelte",
       "job": "Received/recorded income and contribution detail",
       "layout": "product",
-      "coverage": "pending",
+      "coverage": "partial_synthetic_core; full matrix and authenticated acceptance pending",
       "viewports": [
         390,
         768,
@@ -186,6 +222,16 @@
         "graphite",
         "ocean",
         "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
       ]
     },
     {
@@ -220,6 +266,41 @@
         "graphite",
         "ocean",
         "dark"
+      ]
+    },
+    {
+      "route": "/reflect",
+      "source": "(app)/reflect/+page.svelte",
+      "job": "Actual-only summary, category links and full-month trends",
+      "layout": "product",
+      "coverage": "partial_synthetic_core; full matrix and authenticated acceptance pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
       ]
     },
     {
@@ -482,7 +563,7 @@
       "source": "(app)/spending/+page.svelte",
       "job": "Actual spending breakdown and contributions",
       "layout": "product",
-      "coverage": "pending",
+      "coverage": "partial_synthetic_core; full matrix and authenticated acceptance pending",
       "viewports": [
         390,
         768,
@@ -492,6 +573,16 @@
         "graphite",
         "ocean",
         "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
       ]
     },
     {
@@ -597,11 +688,7 @@
       ]
     }
   ],
-  "planned_additions": [
-    {
-      "route": "/reflect",
-      "job": "Actual-only reporting entry and segmented views"
-    }
-  ],
-  "acceptance_rule": "Synthetic screens are not authenticated acceptance; never create secrets, import, delete or export real data during visual QA."
+  "planned_additions": [],
+  "acceptance_rule": "Synthetic screens are not authenticated acceptance; never create secrets, import, delete or export real data during visual QA.",
+  "current_screen_count": 36
 }

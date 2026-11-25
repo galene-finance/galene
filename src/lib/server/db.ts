@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { BALANCE_ADJUSTMENT_KIND, BALANCE_ADJUSTMENT_NAME } from '../balanceAdjustment';
 import { encryptPlaintextSecrets, prepareStoredSecrets } from './secrets';
 import { hashToken } from './tokenHash';
+import { budgetEngineMigration } from './budgetEngine/migration';
 
 function dataDir(): string {
 	return process.env.GALENE_DATA_DIR ?? resolve(process.cwd(), 'data');
@@ -1238,7 +1239,8 @@ ${reconcileTablesSql()}`,
 			database.exec('ALTER TABLE transactions ADD COLUMN provider_merchant TEXT');
 		}
 	}
-}
+},
+budgetEngineMigration
 ];
 
 function reconcileTablesSql(): string {

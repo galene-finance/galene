@@ -1,4 +1,5 @@
 <script lang="ts">
+ import Calendar from '../src/routes/(app)/calendar/+page.svelte';
  import Settings from '../src/routes/(app)/settings/+page.svelte';
  import Appearance from '../src/routes/(app)/settings/appearance/+page.svelte';
  import Overview from '../src/routes/(app)/+page.svelte';
@@ -42,6 +43,7 @@
  {:else if path==='/spending'||path==='/income'}<Insights data={insight(url,path==='/income'?'income':'expense') as any}/>
  {:else if path==='/budget'}<Budget data={{budgets,categories,selectedDate:'2026-11-24'}}/>
  {:else if path==='/scheduled'}<Scheduled data={{rows:[...scheduled,...(url.searchParams.has('qa')?[{...scheduled[0],id:3,name:'Sample refund',amount_cents:1000,category_id:2},{...scheduled[0],id:4,name:'Sample income reversal',amount_cents:-1000,category_id:1},{...scheduled[0],id:5,name:'Sample transfer',amount_cents:-1000,category_id:3}]:[])].map(s=>({scheduled:s,nextDate:s.start_date})),accounts,categories,tags:[]}}/>
+ {:else if path==='/calendar'}<Calendar form={undefined} data={{month:url.searchParams.get('month')??'2026-11',transactions,occurrences:base.upcoming,hideActuals:false,weekStartsOn:'monday',accounts,categories,tags:[]}}/>
  {:else if path==='/cashflow'}<Cashflow data={cashflow}/>
  {:else}<section class="product-panel product-empty"><h1>Outside this component preview</h1><p>This is not the live app. Authenticated acceptance is still required.</p><a class="product-link" href="/">Return to preview overview</a></section>{/if}
 </main></div>

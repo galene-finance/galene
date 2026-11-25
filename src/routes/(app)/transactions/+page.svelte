@@ -843,7 +843,7 @@
 							{tx.account_name} · {formatDate(tx.date)}
 						</div>
 						<div class="flex items-center gap-2">
-							<span class="cat-pill inline-flex max-w-44 items-center rounded-full border border-border bg-muted">
+							<span class="inline-flex max-w-44 items-center">
 								<CategoryCell transaction={tx} categories={data.categories} readonly={viewer || !!tx.reconciled_at} />
 							</span>
 							<div class="flex min-w-0 flex-1 gap-1 overflow-hidden">
@@ -1015,15 +1015,3 @@
 	tags={data.tags}
 	{form}
 />
-
-<style>
-	/* Mobile: strip the CategoryCell combobox's own chrome so it reads as a pill */
-	.cat-pill :global(input) {
-		height: 1.5rem;
-		padding: 0 0.5rem;
-		border-color: transparent;
-		border-radius: 9999px;
-		background: transparent;
-		font-size: 0.75rem;
-	}
-</style>

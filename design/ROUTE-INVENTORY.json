@@ -34,7 +34,27 @@
           "theme": "dark",
           "width": 390
         }
-      ]
+      ],
+      "latest_visual_evidence": "product-v3-planning/checks.json",
+      "latest_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "bubble_acceptance": "partial synthetic; integrated funding/persistence/touch and final source review pending"
     },
     {
       "route": "/accounts",
@@ -209,7 +229,27 @@
         "graphite",
         "ocean",
         "dark"
-      ]
+      ],
+      "latest_visual_evidence": "product-v3-planning/checks.json",
+      "latest_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "bubble_acceptance": "partial synthetic; integrated funding/persistence/touch and final source review pending"
     },
     {
       "route": "/categories/[id]",
@@ -681,7 +721,27 @@
           "theme": "graphite",
           "width": 1440
         }
-      ]
+      ],
+      "latest_visual_evidence": "product-v3-planning/checks.json",
+      "latest_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "bubble_acceptance": "partial synthetic; integrated funding/persistence/touch and final source review pending"
     },
     {
       "route": "/transactions",
@@ -721,7 +781,27 @@
           "width": 390
         }
       ],
-      "evidence": "product-v3-register/checks.json"
+      "evidence": "product-v3-register/checks.json",
+      "latest_visual_evidence": "product-v3-planning/checks.json",
+      "latest_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "bubble_acceptance": "partial synthetic; integrated funding/persistence/touch and final source review pending"
     },
     {
       "route": "/transactions/[id]",

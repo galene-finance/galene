@@ -34,7 +34,7 @@ A month/group/category/transaction drilldown and scope-aware totals are the usef
 ## Actual screenshot inspection
 
 - Plan/detail screenshot from source 3: https://cdn.bfldr.com/NIEXAZS5/at/7xqkrtx886348bmzng8q77/Target-Funding-Web-Help-Article.png?auto=webp&format=png
-Observed: compact navigation, month context, segmented filters, grouped rows, rounded selected row, filled amount pills, and a stacked inspector. Borrow grouping and hierarchy. Do not borrow its Assigned/Available/Funded/Assign-money semantics.
+Observed: compact navigation, month context, segmented filters, grouped rows, rounded selected row, filled amount pills, and a stacked inspector. Borrow grouping and hierarchy. Do not copy Assigned/Available/Funded claims as visual decoration. Those owner-requested semantics now require the real allocation engine and integrated state/mutation acceptance.
 - Mobile report screenshot from source 8: https://cdn.bfldr.com/NIEXAZS5/at/5hbqn35qbgqphgg9bgjt39jr/Income-Vs-Spending-6-Months-Dark-iOS-Help-Article.png?auto=webp&format=png
 Observed: one rounded dark surface, readable conclusion before the paired bars, shared baseline, month labels and explicit Income/Spending legend. The image is a cropped report card, not evidence of navigation or interactive behavior. Use a truthful computed summary only where coverage supports one; otherwise describe the visible recorded period.
 

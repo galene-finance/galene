@@ -1,4 +1,6 @@
 <script lang="ts">
+ import CategoryPill from './CategoryPill.svelte';
+ import {categoryIdentity} from '$lib/categoryIdentity';
 	import { enhance } from '$app/forms';
 	import { categoryPickerItems } from '$lib/categoryPicker';
 	import Combobox from './ui/Combobox.svelte';
@@ -30,6 +32,7 @@
 			? categories.find((c) => c.id === transaction.category_id)
 			: undefined
 	);
+	const identity=$derived(categoryIdentity(selected?.id,selected?.color));
 	const isTransfer = $derived(
 		transaction.category_type === 'transfer' || selected?.type === 'transfer'
 	);
@@ -46,11 +49,9 @@
 	}
 </script>
 
-<div class="inline-flex items-center gap-1">
+<div class="category-control inline-flex items-center gap-1" style:--category-fill={identity.fill} style:--category-ink={identity.ink}>
 	{#if readonly}
-		<span class="inline-block max-w-44 truncate text-sm {transaction.category_name ? '' : 'text-muted-foreground'}">
-			{transaction.category_name ?? 'No category'}
-		</span>
+		<CategoryPill id={selected?.id} name={selected?.name??transaction.category_name??'No category'} color={selected?.color}/>
 	{:else}
 	<form
 		id="cat-form-{transaction.id}"
@@ -108,3 +109,4 @@
 		</span>
 	{/if}
 </div>
+<style>.category-control :global(input[role="combobox"]){background:var(--category-fill);color:var(--category-ink);border-radius:999px;min-height:44px;border-color:transparent;font-weight:650}.category-control :global(input::placeholder){color:var(--category-ink);opacity:1}.category-control :global([data-combobox-trigger] svg){color:var(--category-ink)}</style>

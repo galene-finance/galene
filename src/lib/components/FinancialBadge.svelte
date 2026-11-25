@@ -1,11 +1,11 @@
 <script lang="ts">
  export type BadgeTone = 'neutral' | 'positive' | 'attention' | 'negative' | 'movement';
- let { label, value, tone = 'neutral' }: { label: string; value?: string; tone?: BadgeTone } = $props();
+ let { label, value, tone = 'neutral', symbol }: { label: string; value?: string; tone?: BadgeTone; symbol?:string } = $props();
  const symbols: Record<BadgeTone, string> = { neutral: '•', positive: '✓', attention: '!', negative: '!', movement: '↔' };
 </script>
 
 <span class="financial-badge" data-tone={tone}>
- <span class="badge-symbol" aria-hidden="true">{symbols[tone]}</span>
+ <span class="badge-symbol" aria-hidden="true">{symbol??symbols[tone]}</span>
  <span class="badge-content">{#if value !== undefined}<strong>{value}</strong>{/if}<span>{label}</span></span>
 </span>
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+ import Overview from '$lib/components/CashflowOverview.svelte';
  import {activityParts} from '$lib/activity';
 	import { untrack } from 'svelte';
 	import { browser } from '$app/environment';
@@ -59,22 +60,25 @@
 	let filtersOpen = $state(false);
 	let savingFilters = $state(false);
 
-	function saveFilters(next: CashflowViewFilters) {
+	let filterError = $state('');
+	let pendingFilters = $state<CashflowViewFilters | null>(null);
+	async function saveFilters(next: CashflowViewFilters) {
+		if (savingFilters) return;
+		pendingFilters = next;
+		filterError = '';
 		savingFilters = true;
-		const body = new FormData();
-		body.set('filters', JSON.stringify(next));
-		fetch('?/save-filters', { method: 'POST', body })
-			.then(async (r) => {
-				if (r.ok || r.status === 303 || r.redirected) {
-					await goto(window.location.pathname + window.location.search, {
-						invalidateAll: true,
-						replaceState: true
-					});
-				}
-			})
-			.finally(() => {
-				savingFilters = false;
-			});
+		try {
+			const body = new FormData();
+			body.set('filters', JSON.stringify(next));
+			const response = await fetch('?/save-filters', { method: 'POST', body });
+			if (!response.ok && response.status !== 303) throw new Error('Filter request failed');
+			await goto(window.location.pathname + window.location.search, {invalidateAll:true,replaceState:true});
+			pendingFilters = null;
+		} catch {
+			filterError = 'Could not confirm your filters were saved. Reload to check, or try again.';
+		} finally {
+			savingFilters = false;
+		}
 	}
 
 	// Remember the last applied range so it survives a refresh or re-login.
@@ -287,8 +291,8 @@
 
 <Title title="Cashflow" />
 
-<div class="mx-auto flex max-w-5xl flex-col gap-4 2xl:max-w-7xl">
-	<div class="flex flex-wrap items-center justify-between gap-3">
+<div class="product-page flex flex-col gap-4">
+	<div class="product-heading">
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">Cashflow</h1>
 			<p class="text-sm text-muted-foreground">
@@ -337,25 +341,9 @@
 		<Button type="submit">Apply</Button>
 	</form>
 
-	<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-		<div class="rounded-lg border border-border bg-surface p-4">
-			<p class="text-sm text-muted-foreground">Income · {rangeLabel}</p>
-			<p class="mt-1 text-2xl font-semibold text-success">{formatMoney(data.summary.actualIncomeCents)}</p>
-			<p class="text-xs text-muted-foreground">Forecast {formatMoney(data.summary.forecastIncomeCents)}</p>
-		</div>
-		<div class="rounded-lg border border-border bg-surface p-4">
-			<p class="text-sm text-muted-foreground">Spending · {rangeLabel}</p>
-			<p class="mt-1 text-2xl font-semibold">{formatMoney(data.summary.actualExpenseCents)}</p>
-			<p class="text-xs text-muted-foreground">Forecast {formatMoney(data.summary.forecastExpenseCents)}</p>
-		</div>
-		<div class="rounded-lg border border-border bg-surface p-4">
-			<p class="text-sm text-muted-foreground">Net cashflow · {rangeLabel}</p>
-			<p class="mt-1 text-2xl font-semibold {netActual < 0 ? 'text-destructive' : 'text-success'}">
-				{formatMoney(netActual)}
-			</p>
-			<p class="text-xs text-muted-foreground">Forecast {formatMoney(netForecast)}</p>
-		</div>
-	</div>
+	{#if savingFilters}<p role="status" class="product-muted">Saving filters…</p>{/if}
+	{#if filterError}<div role="alert" class="product-panel product-panel-body"><p>{filterError}</p><button class="product-button" onclick={()=>{if(pendingFilters)void saveFilters(pendingFilters);}}>Try again</button><button class="product-button" onclick={()=>filtersOpen=true}>Review filters</button></div>{/if}
+	<Overview summary={data.summary} {rangeLabel}/>
 
 	{#if noActivity}
 		<div class="rounded-lg border border-dashed border-border bg-surface p-10 text-center">
@@ -609,7 +597,7 @@
 	bind:open={filtersOpen}
 	accounts={data.accounts}
 	categories={data.categories}
-	filters={data.filters}
+	filters={pendingFilters??data.filters}
 	onSave={saveFilters}
 />
 

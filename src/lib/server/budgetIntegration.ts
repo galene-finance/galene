@@ -29,13 +29,21 @@ export function transferPairCatalog(ownerId:number,through:string):{status:'none
   return {status:invalidCategory||foreignAccount||current.issues.some(i=>i.reason==='invalid_transfer_pair')?'needs_review':'verified',pairs};
  }catch{return {status:'needs_review',pairs:[]};}
 }
+export function transferReviewModel(ownerId:number,through:string){
+ const state=db().query('SELECT baseline_json FROM budget_engine_state WHERE owner_id=?').get(ownerId) as {baseline_json:string|null}|null;
+ if(!state?.baseline_json)return null;
+ const baseline=JSON.parse(state.baseline_json),from=new Date(civil(baseline.asOfDate).getTime()+86400000).toISOString().slice(0,10);
+ const rows=db().query(`SELECT t.id,t.date,t.amount_cents AS amountCents,t.account_id AS accountId,a.name AS accountName,COALESCE(t.merchant,'Transfer') AS name FROM transactions t JOIN accounts a ON a.id=t.account_id AND a.user_id=t.user_id JOIN categories c ON c.id=t.category_id AND c.user_id=t.user_id WHERE t.user_id=? AND t.pending=0 AND c.is_transfer=1 AND t.amount_cents!=0 AND t.date>=? AND t.date<=? ORDER BY t.date,t.id LIMIT 201`).all(ownerId,from,through) as {id:number;date:string;amountCents:number;accountId:number;accountName:string;name:string}[];
+ const catalog=transferPairCatalog(ownerId,through);
+ return {from,through,currency:baseline.currency as string,truncated:rows.length>200,outflows:rows.filter(r=>r.amountCents<0),inflows:rows.filter(r=>r.amountCents>0),pairs:catalog.pairs,status:catalog.status,categories:getCategories(ownerId).filter(c=>c.type==='expense')};
+}
 async function boundedForm(request:Request){
  const reader=request.body?.getReader();if(!reader)throw new Error('Missing form');let size=0;const chunks:Uint8Array[]=[];
  while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>16384){await reader.cancel();throw new Error('Form too large');}chunks.push(value);}
  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
  return new Request(request.url,{method:'POST',headers:request.headers,body:bytes}).formData();
 }
-export async function budgetCommand(kind:'assign'|'refresh'|'target'|'target-archive',{locals,request,url}:{locals:{user:User|null|undefined;viewer?:unknown;apiToken?:unknown};request:Request;url:URL}){
+export async function budgetCommand(kind:'assign'|'refresh'|'target'|'target-archive'|'pairs',{locals,request,url}:{locals:{user:User|null|undefined;viewer?:unknown;apiToken?:unknown};request:Request;url:URL}){
  const owner=productOwner(locals.user);if(locals.viewer||locals.apiToken)return fail(403,{error:'Use your owner session for this change.'});
  if(request.headers.get('origin')!==url.origin)return fail(403,{error:'This form must be submitted from this app.'});
  try{
@@ -56,11 +64,24 @@ export async function budgetCommand(kind:'assign'|'refresh'|'target'|'target-arc
    const repeat=String(form.get('repeat_months')??'');if(cadence==='irregular'&&repeat){if(!/^[1-9]\d{0,3}$/.test(repeat))throw new Error('Invalid repeat');target.repeatMonths=Number(repeat);}
    return {ok:true,targetEffectiveMonth:effectiveMonth,targetOperation:"saved",...engine.saveTarget(target,effectiveMonth,meta)};
   }
-  if(kind==='refresh'){
+  if(kind==='refresh'||kind==='pairs'){
    const selectedThrough=selected.slice(0,7)===todayISO().slice(0,7)?todayISO():monthEnd(selected.slice(0,7));
    const previousThrough=engine.view(selected.slice(0,7),selectedThrough).activityThrough;
    const through=previousThrough&&previousThrough>selectedThrough?previousThrough:selectedThrough;if(through>todayISO())throw new Error('Future activity');
    return db().transaction(()=>{
+    if(kind==='pairs'){
+     const model=transferReviewModel(owner,through);if(!model||model.truncated||form.get('confirm')!=='yes')throw new Error('transfer review incomplete');
+     const allowed=new Set(['revision','key','confirm',...model.outflows.flatMap(r=>[`match_${r.id}`,`category_${r.id}`])]);
+     for(const field of form.keys())if(!allowed.has(field)||form.getAll(field).length!==1)throw new Error('invalid transfer form');
+     const pairs:TransferPair[]=[];
+     for(const row of model.outflows){
+      const field=`match_${row.id}`;if(form.getAll(field).length!==1)throw new Error('incomplete transfer form');const value=form.get(field);
+      if(value==='')continue;if(typeof value!=='string'||! /^[1-9]\d*$/.test(value)||!model.inflows.some(r=>r.id===Number(value)))throw new Error('invalid transfer selection');
+      const category=String(form.get(`category_${row.id}`)??'');if(category&&(!/^[1-9]\d*$/.test(category)||!model.categories.some(c=>c.id===Number(category))))throw new Error('invalid transfer category');
+      pairs.push({outflowId:row.id,inflowId:Number(value),...(category?{categoryId:Number(category)}:{})});
+     }
+     return {ok:true,transferReviewed:true,...engine.refreshRegister(through,pairs,meta)};
+    }
     const catalog=transferPairCatalog(owner,through);if(catalog.status==='needs_review')throw new Error('saved transfer review');
     return {ok:true,...engine.refreshRegister(through,catalog.pairs,meta)};
    }).immediate();
@@ -71,6 +92,6 @@ export async function budgetCommand(kind:'assign'|'refresh'|'target'|'target-arc
   return {ok:true,...engine.allocate({id:`ui:${key}`,kind:'assign',date,categoryId:Number(rawCategory),amountCents:amount},meta)};
  }catch(cause){
   const message=cause instanceof Error?cause.message:'';
-  return fail(400,{error:message==='saved transfer review'?'Saved transfer matches need review before activity can be refreshed. No saved matches were removed.':message.includes('revision')?'The plan changed. Reload before trying again.':message.includes('stale')?'Posted activity changed. Refresh coverage before assigning.':kind==='target'||kind==='target-archive'?'Target change was not saved. Check its category, amount, dates and cadence, or reload if the plan changed.':'This change could not be applied. Check the date, category, coverage and available cash; no budget change was saved.'});
+  return fail(400,{error:message==='saved transfer review'?'Saved transfer matches need review before activity can be refreshed. No saved matches were removed.':message.includes('revision')?'The plan changed. Reload before trying again.':message.includes('stale')?'Posted activity changed. Refresh coverage before assigning.':kind==='pairs'?'Transfer matches were not saved. Resolve every transfer, check equal opposite amounts on the same posted date and different accounts, and reload if the plan changed.':kind==='target'||kind==='target-archive'?'Target change was not saved. Check its category, amount, dates and cadence, or reload if the plan changed.':'This change could not be applied. Check the date, category, coverage and available cash; no budget change was saved.'});
  }
 }

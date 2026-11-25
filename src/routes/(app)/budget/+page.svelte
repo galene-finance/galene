@@ -2,6 +2,8 @@
 	import { enhance } from '$app/forms';
 	import TargetSettings from '$lib/components/TargetSettings.svelte';
 	import FundingOverview from '$lib/components/FundingOverview.svelte';
+ import TransferPairReview from '$lib/components/TransferPairReview.svelte';
+ import type {transferReviewModel} from '$lib/server/budgetIntegration';
  import MoveMoneyControls from '$lib/components/MoveMoneyControls.svelte';
  import CardReserveControls from '$lib/components/CardReserveControls.svelte';
  import type {MovingMoneyModel,MovingMoneyResult} from '$lib/movingMoneyFeatureTypes';
@@ -32,8 +34,8 @@
 	};
 
 	let { form, data }: {
-		form: ({ error?: string | null; targetEffectiveMonth?: string; targetOperation?: string } & Partial<MovingMoneyResult>) | undefined;
-		data: { budgets: BudgetRow[]; categories: Category[]; selectedDate: string; moneyControls?:MovingMoneyModel } & Partial<ReturnType<typeof budgetFunding>>;
+		form: ({ error?: string | null; targetEffectiveMonth?: string; targetOperation?: string; transferReviewed?:boolean } & Partial<MovingMoneyResult>) | undefined;
+		data: { budgets: BudgetRow[]; categories: Category[]; selectedDate: string; moneyControls?:MovingMoneyModel;transferReview?:ReturnType<typeof transferReviewModel> } & Partial<ReturnType<typeof budgetFunding>>;
 	} = $props();
 
 	const kinds=$derived(new Map(data.categories.map(c=>[c.id,c.type])));
@@ -136,6 +138,8 @@
  {#if form?.targetEffectiveMonth}<p class="product-details" role="status">Target version {form.targetOperation} effective {form.targetEffectiveMonth}. Earlier views are preserved.</p>{/if}
  {#if form?.error}<div class="product-attention" role="alert">{form.error}</div>{/if}
  {#if data.funding&&data.fundingDate&&data.commandKey}<FundingOverview funding={data.funding} fundingDate={data.fundingDate} commandKey={data.commandKey} categories={data.categories}/>{/if}
+ {#if form?.transferReviewed}<p role="status" class="product-details">Transfer matches saved and posted coverage refreshed. No transactions or bank balances were changed.</p>{/if}
+ {#if data.transferReview&&data.funding&&data.commandKey}<TransferPairReview model={data.transferReview} revision={data.funding.view.revision} commandKey={data.commandKey} month={data.selectedDate.slice(0,7)}/>{/if}
  {#if data.moneyControls&&data.commandKey}{#key data.commandKey}
  <MoveMoneyControls model={data.moneyControls} commandKey={data.commandKey} form={form?.feature?form as MovingMoneyResult:undefined}/>
  <CardReserveControls model={data.moneyControls} commandKey={data.commandKey} form={form?.feature?form as MovingMoneyResult:undefined}/>

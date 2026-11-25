@@ -1,6 +1,6 @@
 import {beforeAll,afterAll,test,expect} from 'bun:test';
 import {plugin} from 'bun';import {readFileSync} from 'node:fs';import {compile} from 'svelte/compiler';import {render} from 'svelte/server';
-plugin({name:'budget-ui-ssr',setup(build){build.onLoad({filter:/(TargetEditor|TargetSettings|FundingOverview|FundingAmount|FinancialBadge|CategoryPill)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
+plugin({name:'budget-ui-ssr',setup(build){build.onLoad({filter:/(TransferPairReview|TargetEditor|TargetSettings|FundingOverview|FundingAmount|FinancialBadge|CategoryPill)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
 import {mkdtempSync,rmSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {db,closeDbForTests} from './db';import {BudgetEngine} from './budgetEngine/service';
 import {productOverview} from './product';
@@ -133,4 +133,25 @@ test('native Reflect net-worth view preserves gaps and rejects foreign account s
  expect(()=>reflect({locals:{user},url:new URL(historyURL+'&account=41')} as any)).toThrow();expect(()=>reflect({locals:{user:{...user,role:'viewer'}},url:historyURL} as any)).toThrow();expect(()=>reflect({locals:{user,apiToken:{}},url:historyURL} as any)).toThrow();
  expect(()=>reflect({locals:{user},url:new URL('https://synthetic.invalid/reflect?view=net-worth&date_from=2023-01-01&date_to=2024-01-02')} as any)).toThrow();
  const future=reflect({locals:{user},url:new URL('https://synthetic.invalid/reflect?view=net-worth&date_from=2099-01-01&date_to=2099-01-02')} as any) as any;expect(future.netWorth.error).toBeTruthy();expect(future.netWorth.points).toEqual([]);
+});
+
+test('owner explicitly reviews transfer pairs through the native Plan action',async()=>{
+ expect(typeof (actions as any).reviewTransfers).toBe('function');
+ const d=db();d.exec("INSERT INTO users(id,name,email,password_hash) VALUES(5,'Transfer owner','review@example.test','unused');INSERT INTO accounts(id,user_id,name,type) VALUES(51,5,'Checking','bank'),(52,5,'Savings','bank');INSERT INTO categories(id,user_id,name,type,is_transfer) VALUES(51,5,'Transfer','expense',1)");
+ const e=new BudgetEngine(d,5);e.activate({currency:'USD',asOfDate:'2023-12-31',accounts:[{id:51,currency:'USD',scope:'cash',balanceCents:100000},{id:52,currency:'USD',scope:'cash',balanceCents:0}],evidence:'Synthetic transfer baseline'},{expectedRevision:0,idempotencyKey:'review-base'});
+ d.exec("INSERT INTO transactions(id,user_id,account_id,category_id,date,amount_cents) VALUES(51,5,51,51,'2024-01-02',-10000),(52,5,52,51,'2024-01-02',10000)");
+ const owner={...user,id:5},read=()=>load({locals:{user:owner},url} as any) as any;
+ const first=read();expect(first.transferReview.outflows[0].id).toBe(51);expect(first.funding.view.ledger).toBeNull();
+ const fields={revision:String(first.funding.view.revision),key:'review-pair',confirm:'yes',match_51:'52'};
+ expect((await (actions as any).reviewTransfers(event({...fields,match_51:'1'},owner))).status).toBe(400);expect(e.view('2024-01').revision).toBe(first.funding.view.revision);
+ const result=await (actions as any).reviewTransfers(event(fields,owner));expect(result.ok).toBe(true);expect(read().funding.view.coverageComplete).toBe(true);expect(read().transferReview.pairs).toEqual([{outflowId:51,inflowId:52}]);expect(read().funding.view.ledger.cashCents).toBe(100000);
+ expect(await (actions as any).reviewTransfers(event(fields,owner))).toEqual(result);
+ expect((await (actions as any).reviewTransfers(event({...fields,key:'review-stale'},owner))).status).toBe(400);
+ closeDbForTests();expect(read().transferReview.pairs).toEqual([{outflowId:51,inflowId:52}]);expect(read().funding.view.ledger.netExpenseCents).toBe(0);
+});
+
+test('transfer review renders native owner confirmation and saved selections',async()=>{
+ const {default:Review}=await import('../components/TransferPairReview.svelte');const data=load({locals:{user:{...user,id:5}},url} as any) as any;
+ const html=render(Review,{props:{model:data.transferReview,revision:data.funding.view.revision,commandKey:'review-render',month:'2024-01'}}).body;
+ expect(html).toContain('Review transfer matches');expect(html).toContain('name="match_51"');expect(html).toContain('name="confirm"');expect(html).toContain('Save reviewed matches');
 });

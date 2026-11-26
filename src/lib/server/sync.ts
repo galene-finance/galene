@@ -895,7 +895,9 @@ export function mergeRepostedTransactions(
 			// The merchant may have changed on the re-post (e.g. a corrected
 			// name); let the user's rules categorize the survivor if it has
 			// no category yet.
-			if (orphan.category_id == null && target.category_id == null) applyCategorizationRules(userId, target.id);
+			if (orphan.category_id == null && target.category_id == null) {
+				applyCategorizationRules(userId, target.id, database);
+			}
 		}
 	}
 	return merged;

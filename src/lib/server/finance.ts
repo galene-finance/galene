@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import { BALANCE_ADJUSTMENT_KIND } from '../balanceAdjustment';
 import { db, seedBalanceAdjustmentCategories } from './db';
 import { demoBlockedMessage, isDemoMode } from './demoMode';
@@ -2422,8 +2423,11 @@ export function deleteScheduledScoped(
 // Categorization rules
 // ---------------------------------------------------------------------------
 
-export function getRules(userId: number): (CategorizationRule & { category_name: string | null })[] {
-	const rows = db()
+export function getRules(
+	userId: number,
+	database: Database = db()
+): (CategorizationRule & { category_name: string | null })[] {
+	const rows = database
 		.query(
 			`SELECT r.id, r.name, r.conditions, r.category_id, r.priority, r.enabled, c.name AS category_name
 			 FROM categorization_rules r
@@ -2485,8 +2489,8 @@ function ruleMatches(
 }
 
 /** Fills a missing category on a transaction from the first matching enabled rule. */
-export function applyCategorizationRules(userId: number, txId: number) {
-	const tx = db()
+export function applyCategorizationRules(userId: number, txId: number, database: Database = db()) {
+	const tx = database
 		.query(
 			'SELECT account_id, amount_cents, merchant, category_id, reconciled_at FROM transactions WHERE id = ? AND user_id = ?'
 		)
@@ -2500,9 +2504,9 @@ export function applyCategorizationRules(userId: number, txId: number) {
 		  }
 		| undefined;
 	if (!tx || tx.category_id != null || tx.reconciled_at) return;
-	for (const rule of getRules(userId).filter((r) => r.enabled === 1)) {
+	for (const rule of getRules(userId, database).filter((r) => r.enabled === 1)) {
 		if (ruleMatches(rule.conditions, tx)) {
-			db()
+			database
 				.query(
 					`UPDATE transactions SET category_id = ?, updated_at = datetime('now')
 					 WHERE id = ? AND category_id IS NULL AND reconciled_at IS NULL`

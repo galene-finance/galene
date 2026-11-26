@@ -17,6 +17,10 @@ test('feature move command persists and reloads conserved category allocations',
 const baseFields={from_category_id:'1',to_category_id:'2',amount:'10.00',date:'2024-02-20',revision:'3',key:'command'};
 function run(d:Database,kind:'move'|'reserve',fields:Record<string,string>,extra:Record<string,unknown>={}){return movingMoneyCommand(kind,{database:d,locals:{user},url,request:request(fields),today:'2024-02-29',...extra});}
 test('partial coverage fails closed without saving allocations',async()=>{const {d}=fixture();try{d.exec("UPDATE budget_engine_state SET activity_through='2024-02-10'");expect((await run(d,'move',baseFields)).ok).toBe(false);expect(d.query("SELECT count(*) AS n FROM budget_engine_events WHERE event_id LIKE 'ui-money:%'").get()).toEqual({n:0});}finally{d.close();}});
+test('unclassified signed activity withholds every moving-money claim',()=>{const {d,e}=fixture();try{
+ e.replacePosted([{id:'tx:unclassified',date:'2024-02-02',kind:'unclassified',accountId:1,amountCents:-1000}],{from:'2024-02-01',through:'2024-02-29',complete:true,evidence:'synthetic signed source'},{expectedRevision:3,idempotencyKey:'unclassified'});
+ const model=movingMoneyModel(d,1,'2024-02','2024-02-29');expect(model).toMatchObject({known:false,reason:'Categorize posted activity before moving allocations.',cashCents:null,readyToAssignCents:null,assignableCents:null,shortfallCents:null});expect(model.categories.every(c=>c.availableCents===null&&c.creditOverspentCents===null)).toBe(true);expect(model.cards.every(c=>c.reservedCents===null&&c.debtCents===null)).toBe(true);
+ }finally{d.close();}});
 test('reserve adds and releases budget funds, never executes a payment',async()=>{const {d}=fixture();try{
  const accountRows=d.query('SELECT * FROM accounts ORDER BY id').all();
  const f={account_id:'2',direction:'add',amount:'50.00',date:'2024-02-20',revision:'3',key:'card-add'};expect((await run(d,'reserve',f)).ok).toBe(true);

@@ -5,6 +5,7 @@ import { BALANCE_ADJUSTMENT_KIND, BALANCE_ADJUSTMENT_NAME } from '../balanceAdju
 import { encryptPlaintextSecrets, prepareStoredSecrets } from './secrets';
 import { hashToken } from './tokenHash';
 import { budgetEngineMigration } from './budgetEngine/migration';
+import { ledgerBaselineEvidenceMigration } from './ledgerBaselineMigration';
 
 function dataDir(): string {
 	return process.env.GALENE_DATA_DIR ?? resolve(process.cwd(), 'data');
@@ -1240,7 +1241,8 @@ ${reconcileTablesSql()}`,
 		}
 	}
 },
-budgetEngineMigration
+budgetEngineMigration,
+ledgerBaselineEvidenceMigration
 ];
 
 function reconcileTablesSql(): string {

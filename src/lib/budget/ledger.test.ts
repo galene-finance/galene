@@ -54,6 +54,16 @@ test('unknown identities, duplicate sources, unsafe money, future events and unf
 test('income reversals reduce actual cash rather than count as spending',()=>{
  const v=project([ev('i',{kind:'income',accountId:1,amountCents:-5000})]);expect(v.cashCents).toBe(95000);expect(v.readyToAssignCents).toBe(95000);expect(v.netExpenseCents).toBe(0);
 });
+test('signed unclassified cash and credit movement changes balances without income or spending meaning',()=>{
+ const cases=[
+  {accountId:1,amountCents:-5000,balance:95000,cash:95000,rta:95000},
+  {accountId:1,amountCents:5000,balance:105000,cash:105000,rta:105000},
+  {accountId:2,amountCents:-5000,balance:-25000,cash:100000,rta:100000},
+  {accountId:2,amountCents:5000,balance:-15000,cash:100000,rta:100000}
+ ];
+ for(const row of cases){const v=project([ev('u',{kind:'unclassified',accountId:row.accountId,amountCents:row.amountCents})]);expect(v.accounts.find(a=>a.id===row.accountId)?.balanceCents).toBe(row.balance);expect(v).toMatchObject({cashCents:row.cash,readyToAssignCents:row.rta,netExpenseCents:0,unclassifiedCount:1});expect(v.categories.every(c=>c.activityCents===0)).toBe(true);}
+ expect(()=>project([ev('z',{kind:'unclassified',accountId:1,amountCents:0})])).toThrow('nonzero');
+});
 test('retrospective source correction reveals overassignment instead of rejecting reality',()=>{
  const v=projectLedger(accounts,[1],[ev('i',{kind:'income',accountId:1,amountCents:-90000}),assignment],'2026-11-30',{validateAllocationIds:[]});
  expect(v.readyToAssignCents).toBe(-20000);expect(v.cashCents).toBe(10000);

@@ -24,7 +24,7 @@ export function baselineSetupModel(database:Database,ownerId:number,date:string,
   return {phase:baseline?'active':'setup',revision:s?.revision??0,date,timeZone:clock.timeZone,lastClosedDate,rosterFingerprint:digest(accounts),providerAvailable,accounts:accounts.map(a=>{const offers=unique.filter(r=>r.accountId===a.id);return {...a,offers,issue:offers.length?null:'No approved closing-balance evidence for this date and timezone.'};}),active:baseline?{date:baseline.asOfDate,currency:baseline.currency,accounts:baseline.accounts.map(a=>({id:a.id,name:accounts.find(x=>x.id===a.id)?.name??'Saved account',scope:a.scope,balanceCents:a.balanceCents}))}:null};
  })();
 }
-type Context={database:Database;catalog:BaselineCatalog;clock:BaselineClock;locals:{user?:{id:number;role?:string}|null;viewer?:unknown;apiToken?:unknown};request:Request;url:URL;demo?:boolean};
+type Context={database:Database;catalog:BaselineCatalog;prepareEvidence?:(ownerId:number,date:string)=>void;clock:BaselineClock;locals:{user?:{id:number;role?:string}|null;viewer?:unknown;apiToken?:unknown};request:Request;url:URL;demo?:boolean};
 export async function baselineSetupAction(c:Context):Promise<BaselineSetupResult>{
  const reject=(status:number,error:string):BaselineSetupResult=>({feature:'baselineSetup',ok:false,status,error});
  if(!c.locals.user)return reject(401,'Sign in to your owner account.');
@@ -38,6 +38,7 @@ export async function baselineSetupAction(c:Context):Promise<BaselineSetupResult
   const date=one('date'),stage=one('stage'),revision=one('revision'),key=one('key');civil(date);
   if(date>baselineClosedDate(c.clock))return reject(422,'Choose a completed end-of-day date, not today or a future day.');
   if(!['review','activate'].includes(stage)||!/^\d+$/.test(revision)||!Number.isSafeInteger(Number(revision))||!key.trim()||key.length>100)throw Error('invalid form');
+  if(stage==='review'&&c.prepareEvidence){try{c.prepareEvidence(c.locals.user!.id,date);}catch{throw Error('missing evidence');}}
   return c.database.transaction(()=>{
    const owner=c.locals.user!.id,model=baselineSetupModel(c.database,owner,date,c.catalog,c.clock);
    // An exact activation retry still goes to the engine's original receipt. A new activation cannot reset it.

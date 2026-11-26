@@ -9,10 +9,13 @@ declare global {
 		type Platform = Request;
 		interface Locals {
             /** Server-only approved-source context. Never populated from request fields.
-             * No production producer is configured until approved mappings/receipts exist. */
+             * Optional producers require explicit configuration and owner-bound receipts. */
             financeEvidence?: {
                 ownerId:number; timeZone:string;
+                baselineDate?:string;
+                previewClosingCatalog?:import('$lib/server/baselineSetupFeature').BaselineCatalog;
                 closingCatalog:import('$lib/server/baselineSetupFeature').BaselineCatalog;
+                prepareClosingEvidence?:(ownerId:number,date:string)=>void;
                 historyPolicies:readonly import('$lib/server/historyCaptureProvider').HistoryCapturePolicy[];
                 historyReceipts:readonly import('$lib/server/historyCaptureProvider').HistoryExternalEvidence[];
             };

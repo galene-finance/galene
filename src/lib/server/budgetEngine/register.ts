@@ -8,7 +8,7 @@ export type RegisterCategory={id:number;kind:'expense'|'income'|'transfer'};
 export function normalizeRegister(rows:readonly RegisterRow[],categories:readonly RegisterCategory[],pairs:readonly TransferPair[]){
  const byId=new Map(rows.map(r=>[r.id,r]));if(byId.size!==rows.length)throw new Error('duplicate transaction');
  const kinds=new Map(categories.map(c=>[c.id,c.kind]));if(kinds.size!==categories.length)throw new Error('duplicate category');
- const events:LedgerEvent[]=[],issues:{transactionId:number;reason:string}[]=[];const paired=new Set<number>();
+ const events:LedgerEvent[]=[],issues:{transactionId:number;reason:string}[]=[];const paired=new Set<number>();let unclassifiedCount=0;
  for(const pair of pairs){
   const from=byId.get(pair.outflowId),to=byId.get(pair.inflowId);
   if(!from||!to||from.id===to.id||paired.has(from.id)||paired.has(to.id)||from.pending||to.pending||from.splits.length||to.splits.length||from.account_id===to.account_id||from.date!==to.date||from.amount_cents>=0||from.amount_cents!==-to.amount_cents||kinds.get(from.category_id??-1)!=='transfer'||kinds.get(to.category_id??-1)!=='transfer'){
@@ -23,13 +23,14 @@ export function normalizeRegister(rows:readonly RegisterRow[],categories:readonl
   if(splits.length&&(splits.some(s=>!Number.isSafeInteger(s.amount_cents)||s.amount_cents<=0)||splits.reduce((n,s)=>add(n,s.amount_cents),0)!==Math.abs(r.amount_cents))){issues.push({transactionId:r.id,reason:'invalid_split'});continue;}
   const parts=splits.length?splits.map(s=>({categoryId:s.category_id,amount:Math.sign(r.amount_cents)*s.amount_cents})):[{categoryId:r.category_id,amount:r.amount_cents}];
   parts.forEach((part,i)=>{
-   const kind=kinds.get(part.categoryId??-1);if(!kind){issues.push({transactionId:r.id,reason:'uncategorized'});return;}if(kind==='transfer'){issues.push({transactionId:r.id,reason:'unpaired_transfer'});return;}
+   if(part.categoryId===null){events.push({id:`tx:${r.id}:${i}`,date:r.date,kind:'unclassified',accountId:r.account_id,amountCents:part.amount});unclassifiedCount++;return;}
+   const kind=kinds.get(part.categoryId);if(!kind){issues.push({transactionId:r.id,reason:'unknown_category'});return;}if(kind==='transfer'){issues.push({transactionId:r.id,reason:'unpaired_transfer'});return;}
    const base={id:`tx:${r.id}:${i}`,date:r.date,accountId:r.account_id};
    if(kind==='income')events.push({...base,kind:'income',amountCents:part.amount});
    else events.push({...base,kind:part.amount<0?'purchase':'refund',categoryId:part.categoryId!,amountCents:Math.abs(part.amount)});
   });
  }
- return {events:events.sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id,undefined,{numeric:true})),issues};
+ return {events:events.sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id,undefined,{numeric:true})),issues,unclassifiedCount};
 }
 /** Local owner-scoped read seam. Caller still declares provider/coverage freshness separately. */
 export function readRegister(database:Database,ownerId:number,from:string,through:string,pairs:TransferPair[]=[]){

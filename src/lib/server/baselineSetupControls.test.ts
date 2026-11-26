@@ -1,6 +1,12 @@
 import {test,expect} from 'bun:test';import {plugin} from 'bun';import {readFileSync} from 'node:fs';import {compile} from 'svelte/compiler';import {render} from 'svelte/server';
-import type {BaselineSetupModel} from '../baselineSetupTypes';
+import {defaultBaselineScope,type BaselineSetupModel} from '../baselineSetupTypes';
 plugin({name:'baseline-setup-ssr',setup(build){build.onLoad({filter:/(BaselineAccountSetup|FinancialBadge)\.svelte$/},({path})=>({contents:compile(readFileSync(path,'utf8'),{filename:path,generate:'server',css:'injected'}).js.code,loader:'js'}));}});
 const model:BaselineSetupModel={phase:'setup',revision:0,date:'2024-01-31',timeZone:'UTC',lastClosedDate:'2024-02-01',rosterFingerprint:'roster',providerAvailable:false,accounts:[{id:1,name:'Checking',type:'bank',offers:[],issue:'No approved closing-balance evidence for this date and timezone.'}],active:null};
 test('baseline setup distinguishes missing evidence from zero and existing baseline from reset',async()=>{const {default:Setup}=await import('../components/BaselineAccountSetup.svelte');const missing=render(Setup,{props:{model,commandKey:'test'}}).body;expect(missing).toContain('End-of-day date');expect(missing).toContain('No approved closing-balance');expect(missing).toContain('Review opening baseline');expect(missing).toContain('disabled');expect(missing).not.toContain('$0.00');
  const active=render(Setup,{props:{model:{...model,phase:'active',active:{date:model.date,currency:'USD',accounts:[{id:1,name:'Checking',scope:'cash',balanceCents:100000}]}},commandKey:'test'}}).body;expect(active).toContain('Opening baseline is saved');expect(active).not.toContain('<form');expect(active).not.toContain('Activate baseline');});
+test('account types have deterministic budget roles and sole evidence is preselected',async()=>{
+ expect(['bank','cash','credit','investment','loan','other'].map(defaultBaselineScope)).toEqual(['cash','cash','credit','tracking','tracking','tracking']);
+ const evidence={reference:'approved',ownerId:1,accountId:1,currency:'USD',balanceCents:100,asOfDate:model.date,timeZone:'UTC',cutoff:'end_of_day' as const,source:'accepted_estimate' as const,description:'Synthetic accepted estimate',recordedAt:'2024-02-01T12:00:00.000Z'};
+ const {default:Setup}=await import('../components/BaselineAccountSetup.svelte');const body=render(Setup,{props:{model:{...model,providerAvailable:true,accounts:[{...model.accounts[0],offers:[evidence],issue:null}]},commandKey:'test'}}).body;
+ expect(body).toMatch(/option value="cash" selected/);expect(body).toMatch(/option value="approved" selected/);expect(body).toContain('Role is suggested from the account type');
+});

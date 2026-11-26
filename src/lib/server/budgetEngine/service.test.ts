@@ -49,6 +49,22 @@ test('real register seam reprojects edits and refuses stale allocations',()=>{
  e.refreshRegister('2026-11-30',[],meta(4,'refresh2'));expect(e.view('2026-11').ledger?.cashCents).toBe(98000);
  expect(e.view('2026-11').coverageComplete).toBe(true);d.close();
 });
+test('uncategorized register rows preserve signed balances but withhold funding until deterministic reclassification',()=>{
+ const d=fixture(),e=new BudgetEngine(d,1);try{
+  d.exec("INSERT INTO categories(id,user_id,name,type) VALUES(4,1,'Income correction','income')");
+  e.activate(baseline,meta(0,'a'));
+  d.exec("INSERT INTO transactions(id,user_id,account_id,category_id,date,amount_cents,pending) VALUES(101,1,1,NULL,'2026-11-02',-1000,0),(102,1,2,NULL,'2026-11-03',500,0),(103,1,1,NULL,'2026-11-04',-200,0),(104,1,1,NULL,'2026-11-05',-999,1),(105,1,1,NULL,'2026-11-06',0,0)");
+  e.refreshRegister('2026-11-30',[],meta(e.view('2026-11').revision,'unclassified'));
+  const raw=e.view('2026-11');expect(raw).toMatchObject({coverageComplete:true,classificationComplete:false,unclassifiedCount:3});
+  expect(raw.balanceProjection?.accounts.map(a=>[a.id,a.balanceCents])).toEqual([[1,98800],[2,-9500]]);expect(raw.ledger).toMatchObject({netExpenseCents:0,unclassifiedCount:3});
+  const publicView=e.dashboard('2026-11',[]);expect(publicView.view.ledger).toBeNull();expect(publicView.view.balanceProjection?.cashCents).toBe(98800);expect(publicView.plan.fundingKnown).toBe(false);expect(publicView.categoryStates[0]).toMatchObject({targetStatus:'no_target',cashStatus:'unknown',availableCents:null,activityCents:null});
+  const before=raw.revision,beforeAttempt=JSON.stringify({events:d.query('SELECT * FROM budget_engine_events ORDER BY sequence').all(),receipts:d.query('SELECT * FROM budget_engine_receipts ORDER BY key').all()});expect(()=>e.allocate({id:'blocked',date:'2026-11-04',kind:'assign',categoryId:1,amountCents:100},meta(before,'blocked'))).toThrow('classification');expect(e.view('2026-11').revision).toBe(before);expect(JSON.stringify({events:d.query('SELECT * FROM budget_engine_events ORDER BY sequence').all(),receipts:d.query('SELECT * FROM budget_engine_receipts ORDER BY key').all()})).toBe(beforeAttempt);
+  d.exec('UPDATE transactions SET category_id=1 WHERE id IN (101,102); UPDATE transactions SET category_id=4 WHERE id=103');
+  e.refreshRegister('2026-11-30',[],meta(e.view('2026-11').revision,'classified'));
+  const resolved=e.view('2026-11');expect(resolved).toMatchObject({coverageComplete:true,classificationComplete:true,unclassifiedCount:0});expect(resolved.ledger).toMatchObject({cashCents:98800,netExpenseCents:500});expect(e.dashboard('2026-11',[]).view.ledger).not.toBeNull();
+  expect(d.query("SELECT event_id FROM budget_engine_events WHERE owner_id=1 AND kind='posted' ORDER BY event_id").all()).toEqual([{event_id:'tx:101:0'},{event_id:'tx:102:0'},{event_id:'tx:103:0'}]);
+ }finally{d.close();}
+});
 test('monthly view resets assignment/activity totals, not rolled-over cash',()=>{
  const d=fixture(),e=new BudgetEngine(d,1);e.activate(baseline,meta(0,'a'));
  e.allocate({id:'alloc',date:'2026-11-01',kind:'assign',categoryId:1,amountCents:10000},meta(1,'alloc'));

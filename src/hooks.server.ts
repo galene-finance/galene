@@ -6,6 +6,7 @@ import { forbidViewerMutation, guardViewerPage } from '$lib/server/viewerGuard';
 import { startSyncScheduler } from '$lib/server/scheduler';
 import { startBackupScheduler } from '$lib/server/backup';
 import { assertDataDirOnVolume, db, openDatabaseOrExit } from '$lib/server/db';
+import { ledgerBaselineConfig, ledgerFinanceEvidenceContext } from '$lib/server/ledgerBaselineEvidence';
 import { ensureDemoBootstrap, isDemoMode } from '$lib/server/demoMode';
 import { guardDemoMode } from '$lib/server/demoGuard';
 import { backfillPlaidInstitutionIds } from '$lib/server/providers/plaid';
@@ -91,6 +92,22 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 	event.locals.user = user;
+	event.locals.financeEvidence = undefined;
+	if (!demo && user?.role === 'owner' && !event.locals.viewer && !event.locals.apiToken) {
+		const config = ledgerBaselineConfig();
+		if (config) {
+			try {
+				event.locals.financeEvidence = ledgerFinanceEvidenceContext(
+					db(),
+					user.id,
+					new Date().toISOString(),
+					config
+				);
+			} catch {
+				// Optional evidence integration fails closed without blocking Galene.
+			}
+		}
+	}
 
 	// Actions run before loads, so the (app) layout's load guard can't protect
 	// them. Bounce unauthenticated form submissions to /login instead of

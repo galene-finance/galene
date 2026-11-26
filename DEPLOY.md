@@ -147,6 +147,11 @@ MCP (Settings-managed HTTP on the app, or stdio from the app image):
 | `GALENE_ENABLE_MCP` | *(unset → Settings, default off)* | `1`/`0` overrides Settings → API MCP HTTP (`/mcp` on the app port). |
 | `GALENE_API_URL` | `http://localhost:3000` | Base URL for a client-launched stdio MCP process (`mcp-bundle.js` from the app image). |
 | `GALENE_API_TOKEN` | — | Required for **stdio**. Do not set on the app for Settings-managed HTTP MCP. |
+| `GALENE_LEDGER_BASELINE_ENABLED` | *(unset, disabled)* | `1` enables the optional owner-session baseline evidence producer. It remains fail-closed unless the currency and accounting timezone below are also valid. |
+| `GALENE_LEDGER_BASELINE_CURRENCY` | — | Required three-letter uppercase currency for ledger-derived baseline estimates, for example `USD`. Galene does not infer or convert account currency. |
+| `GALENE_LEDGER_BASELINE_TIME_ZONE` | — | Required IANA accounting timezone, for example `America/New_York`. Provider observation dates and completed-day cutoffs are evaluated in this zone. |
+
+The ledger baseline producer uses signed posted parent transactions with an opening anchor or a later provider-balance observation. Its records are visibly labeled accepted estimates. It does not infer balances from categories or splits, does not write during GET/load, and does not activate a baseline automatically. The owner first reviews the derived evidence; that POST persists an immutable receipt, and activation remains a separate explicit confirmation.
 
 ### The `Secure` cookie flag and plain HTTP
 

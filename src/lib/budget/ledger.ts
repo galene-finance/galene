@@ -13,7 +13,7 @@ export function projectLedger(initial:readonly BudgetAccount[],categoryIds:reado
  const shortfalls:{accountId:number;categoryId:number;amount:number}[]=[];
  const cash=()=>accounts.reduce((n,a)=>add(n,a.scope==='cash'?a.balanceCents:a.scope==='credit'?Math.max(0,a.balanceCents):0),0);
  const negatives=()=>cats.reduce((n,c)=>add(n,Math.min(0,c.availableCents)),0);
- let rta=cash(),expense=0;const seen=new Set<string>();const applied:string[]=[];
+ let rta=cash(),expense=0,unclassified=0;const seen=new Set<string>();const applied:string[]=[];
  const reserve=(id:number,n:number)=>reserves.set(id,add(reserves.get(id)!,n));
  const retire=(id:number,n:number,categoryId?:number)=>{let left=n;for(const s of shortfalls){if(s.accountId!==id||(categoryId!==undefined&&s.categoryId!==categoryId))continue;const used=Math.min(left,s.amount);s.amount-=used;left-=used;}return n-left;};
  const fill=(c:CategoryFunds,n:number)=>{
@@ -49,6 +49,9 @@ export function projectLedger(initial:readonly BudgetAccount[],categoryIds:reado
    }
    case 'income': {
     if(n===0)throw new Error('nonzero income required');const a=account(e.accountId);const before=cash();a.balanceCents=add(a.balanceCents,n);rta=add(rta,cash()-before);capReserve(a);break;
+   }
+   case 'unclassified': {
+    if(n===0)throw new Error('nonzero unclassified movement required');const a=account(e.accountId),before=cash();a.balanceCents=add(a.balanceCents,n);rta=add(rta,cash()-before);capReserve(a);unclassified++;break;
    }
    case 'purchase': {
     positive(n);const a=account(e.accountId),c=category(e.categoryId);
@@ -111,5 +114,5 @@ export function projectLedger(initial:readonly BudgetAccount[],categoryIds:reado
  }
  for(const c of cats)c.creditOverspentCents=shortfalls.filter(s=>s.categoryId===c.categoryId).reduce((n,s)=>add(n,s.amount),0);
  const cashBackingShortfallCents=Math.max(0,-add(rta,negatives()));
- return {cashBackingShortfallCents,cashCents:cash(),readyToAssignCents:rta,categories:cats,accounts,cardReserves:[...reserves].map(([accountId,reservedCents])=>({accountId,reservedCents,cashBackedReserveCents:cashBackingShortfallCents>0?null:reservedCents,debtCents:Math.max(0,-account(accountId).balanceCents),unfundedCents:Math.max(0,-account(accountId).balanceCents-reservedCents)})),netExpenseCents:expense,appliedEventIds:applied,cashOverspentCents:-negatives()};
+ return {cashBackingShortfallCents,cashCents:cash(),readyToAssignCents:rta,categories:cats,accounts,cardReserves:[...reserves].map(([accountId,reservedCents])=>({accountId,reservedCents,cashBackedReserveCents:cashBackingShortfallCents>0?null:reservedCents,debtCents:Math.max(0,-account(accountId).balanceCents),unfundedCents:Math.max(0,-account(accountId).balanceCents-reservedCents)})),netExpenseCents:expense,unclassifiedCount:unclassified,appliedEventIds:applied,cashOverspentCents:-negatives()};
 }

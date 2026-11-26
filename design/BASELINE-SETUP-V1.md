@@ -23,6 +23,10 @@ New files only:
 
 The feature does not create/import source evidence or claim a live provider is configured. Supply a reviewed owner-bound closing-statement/capture resolver; until then, pass `null` and show the honest missing-evidence state. Accepted estimates remain visibly estimated and retain their approved provenance. No currency conversion is inferred. All current owner accounts must be included; tracking means excluded from spendable budget cash, not omitted from coverage.
 
+The optional native ledger producer is explicitly enabled with `GALENE_LEDGER_BASELINE_ENABLED=1` plus valid `GALENE_LEDGER_BASELINE_CURRENCY` and `GALENE_LEDGER_BASELINE_TIME_ZONE` bindings. It has no guessed defaults. Opening anchors roll forward using posted signed parent transactions on and after `opening_as_of`. Provider observations may roll back only to a completed cutoff strictly before the observation's accounting civil date and at most fourteen days earlier. Pending rows are excluded. Categories and splits never affect balance math; equal/opposite movements remain signed once in each account. Every result is an `accepted_estimate`, never an independently verified bank balance.
+
+GET/load derives only a bounded preview and performs no durable write. The guarded owner POST review path persists the canonical source digest, bounded provenance and exact offered records. Activation remains a separate explicit confirmation. Review and activation re-read the signed source rows; anchor, source identity, amount, date, posted-state, roster, timezone or currency drift invalidates the prior receipt instead of silently changing it.
+
 ## Read → review → confirm
 
 `baselineSetupModel(database, ownerId, date, catalog, clock)` reads one consistent snapshot. It returns current revision and account-roster fingerprint, each account's approved source offers/missing state, and any already-active opening baseline. Current account balance fields are never used as opening balances. Already-active setup is read-only; there is no reset control.

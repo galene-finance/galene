@@ -55,7 +55,8 @@ export class BudgetEngine {
   // Revalidate the new intent AND every later commitment, not only its date.
   // Older source corrections stay truthful; a later corrective command must
   // still be allowed to repair them rather than re-rejecting the old history.
-  projectLedger(b.accounts,this.categories(),events,horizon,{validateAllocationIds:affectedIds});
+  const projected=projectLedger(b.accounts,this.categories(),events,horizon,{validateAllocationIds:affectedIds});
+  if(projected.unclassifiedCount)throw new Error('classification required before allocation');
   const before=events.filter(e=>e.id!==event.id);
   const checkpoints=[...new Set([event.date,horizon,...events.filter(e=>e.date>=event.date).map(e=>e.date)])].sort();
   for(const date of checkpoints){
@@ -142,13 +143,16 @@ export class BudgetEngine {
    for(const c of ledger.categories){const old=prior.categories.find(p=>p.categoryId===c.categoryId)!;c.assignedCents=add(c.assignedCents,-old.assignedCents);c.activityCents=add(c.activityCents,-old.activityCents);}
    ledger.netExpenseCents=add(ledger.netExpenseCents,-prior.netExpenseCents);
   }
-  return {version:1,revision:state?.revision??0,baseline,activityThrough:state?.activity_through??null,coverageComplete:!stale&&!!state?.activity_through&&state.activity_through>=through,registerStale:stale,ledger};
+  const unclassifiedCount=ledger?.unclassifiedCount??0,classificationComplete=ledger!==null&&unclassifiedCount===0;
+  const balanceProjection=ledger?{cashCents:ledger.cashCents,accounts:ledger.accounts}:null;
+  return {version:1,revision:state?.revision??0,baseline,activityThrough:state?.activity_through??null,coverageComplete:!stale&&!!state?.activity_through&&state.activity_through>=through,classificationComplete,unclassifiedCount,registerStale:stale,balanceProjection,ledger};
  }
  dashboard(month:string,obligations:{id:string;categoryId:number|null;amountCents:number}[],asOfDate=monthEnd(month)){
   return this.database.transaction(()=>{
-   const view=this.view(month,asOfDate),plan=this.plan(month,obligations,asOfDate);
-   const categoryStates=this.categories().map(categoryId=>({categoryId,...categoryFundingState(view.ledger?.categories.find(c=>c.categoryId===categoryId)??null,plan.lines.find(l=>l.categoryId===categoryId)??null,view.coverageComplete,view.ledger?.cashBackingShortfallCents??0)}));
-   return {version:1 as const,view,plan,categoryStates,legacyTargets:this.legacyTargets()};
+   const view=this.view(month,asOfDate),plan=this.plan(month,obligations,asOfDate),fundingKnown=view.coverageComplete&&view.classificationComplete;
+   const categoryStates=this.categories().map(categoryId=>({categoryId,...categoryFundingState(view.ledger?.categories.find(c=>c.categoryId===categoryId)??null,plan.lines.find(l=>l.categoryId===categoryId)??null,fundingKnown,view.ledger?.cashBackingShortfallCents??0)}));
+   const publicView=view.classificationComplete?view:{...view,ledger:null};
+   return {version:1 as const,view:publicView,plan,categoryStates,legacyTargets:this.legacyTargets()};
   })();
  }
  plan(month:string,obligations:{id:string;categoryId:number|null;amountCents:number}[],asOfDate=monthEnd(month)){
@@ -161,6 +165,6 @@ export class BudgetEngine {
    for(const e of events){if(e.date>asOfDate||e.date<cycle.start)continue;let n=0;if(e.kind==='assign'&&e.categoryId===t.categoryId)n=e.amountCents;if(e.kind==='move')n=e.toCategoryId===t.categoryId?e.amountCents:e.fromCategoryId===t.categoryId?-e.amountCents:0;cycleAssignedCents=add(cycleAssignedCents,n);if(e.date.slice(0,7)===month)monthAssignedCents=add(monthAssignedCents,n);}
    progress.set(t.categoryId,{cycleAssignedCents,monthAssignedCents,cycleStartAvailableCents:prior?.categories.find(c=>c.categoryId===t.categoryId)?.availableCents??0,availableCents:view.ledger?.categories.find(c=>c.categoryId===t.categoryId)?.availableCents??0});
   }
-  return {...costToBeMe(targets,month,progress,obligations),fundingKnown:!!view.ledger&&view.coverageComplete,progressStartsAt:b?.asOfDate??null};
+  return {...costToBeMe(targets,month,progress,obligations),fundingKnown:!!view.ledger&&view.coverageComplete&&view.classificationComplete,progressStartsAt:b?.asOfDate??null};
  }
 }

@@ -132,26 +132,27 @@ function aSchedTags(schedId: number): number[] {
 }
 
 describe('cross-user junction mutations', () => {
-	test('clearTransactionSplits ignores another user transaction', () => {
+	test('clearTransactionSplits rejects another user transaction without mutation', () => {
 		const a = makeUser('Alice', 'alice-scope@example.com');
 		const b = makeUser('Bob', 'bob-scope@example.com');
 		const alice = seedLedger(a, 'A');
 		seedLedger(b, 'B');
 		const before = aSplitCats(alice.txId);
 		expect(before.length).toBe(2);
-		clearTransactionSplits(b, alice.txId);
+		expect(() => clearTransactionSplits(b, alice.txId)).toThrow(/not found/i);
 		expect(aSplitCats(alice.txId)).toEqual(before);
 	});
 
-	test('bulkSetCategory split cleanup only touches owned transactions', () => {
+	test('bulkSetCategory rejects a mixed-owner batch before split cleanup', () => {
 		const a = makeUser('Alice', 'alice-bulk@example.com');
 		const b = makeUser('Bob', 'bob-bulk@example.com');
 		const alice = seedLedger(a, 'A');
 		const bob = seedLedger(b, 'B');
-		const before = aSplitCats(alice.txId);
-		bulkSetCategory(b, [alice.txId, bob.txId], bob.foodId);
-		expect(aSplitCats(alice.txId)).toEqual(before);
-		expect(aSplitCats(bob.txId)).toEqual([]);
+		const aliceBefore = aSplitCats(alice.txId);
+		const bobBefore = aSplitCats(bob.txId);
+		expect(() => bulkSetCategory(b, [alice.txId, bob.txId], bob.foodId)).toThrow(/not found/i);
+		expect(aSplitCats(alice.txId)).toEqual(aliceBefore);
+		expect(aSplitCats(bob.txId)).toEqual(bobBefore);
 	});
 
 	test('bulkAddTags does not attach tags to another user transaction', () => {
@@ -184,7 +185,7 @@ describe('cross-user junction mutations', () => {
 			color: null,
 			tags: [bob.tagId]
 		};
-		saveTransaction(b, input);
+		expect(() => saveTransaction(b, input)).toThrow(/not found/i);
 		expect(aTagLinks(alice.txId)).toEqual(before);
 		const aliceTx = db()
 			.query('SELECT merchant FROM transactions WHERE id = ?')

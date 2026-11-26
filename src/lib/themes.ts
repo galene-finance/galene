@@ -1,20 +1,20 @@
 import type { Theme, ThemeColors } from './types';
 
 /** Slug of the built-in theme used when a user has no saved choice. */
-export const DEFAULT_THEME_SLUG = 'light';
+export const DEFAULT_THEME_SLUG = 'graphite';
 
 const light: ThemeColors = {
-	background: '#f8fafc',
+	background: '#f3f6fa',
 	surface: '#ffffff',
 	surfaceHover: '#f1f5f9',
-	foreground: '#1e293b',
-	mutedForeground: '#64748b',
-	primary: '#0d9488',
+	foreground: '#172b43',
+	mutedForeground: '#52647a',
+	primary: '#265bb5',
 	primaryForeground: '#ffffff',
-	success: '#16a34a',
-	destructive: '#dc2626',
+	success: '#167046',
+	destructive: '#b91c1c',
 	border: '#e2e8f0',
-	warning: '#f59e0b',
+	warning: '#946000',
 	input: '#cbd5e1',
 	radius: '0.5rem'
 };
@@ -39,7 +39,7 @@ export const DEFAULT_THEMES: Theme[] = [
 			border: '#334155',
 			warning: '#fbbf24',
 			input: '#475569',
-			radius: '0.5rem'
+			radius: '0.875rem'
 		}
 	},
 	{
@@ -73,13 +73,13 @@ export const DEFAULT_THEMES: Theme[] = [
 			foreground: '#e2e8f0',
 			mutedForeground: '#8494ab',
 			primary: '#3b82f6',
-			primaryForeground: '#ffffff',
+			primaryForeground: '#08111f',
 			success: '#34d399',
 			destructive: '#f87171',
 			border: '#1e2a40',
 			warning: '#fbbf24',
 			input: '#243350',
-			radius: '0.5rem'
+			radius: '0.875rem'
 		}
 	},
 	{
@@ -119,7 +119,7 @@ export const DEFAULT_THEMES: Theme[] = [
 			border: '#2c3136',
 			warning: '#fbbf24',
 			input: '#3a4046',
-			radius: '0.5rem'
+			radius: '0.875rem'
 		}
 	}
 ];
@@ -133,9 +133,25 @@ export function getDefaultTheme(slug: string): Theme | null {
  * to the data-theme attribute value, so it beats the :root defaults in
  * app.css regardless of stylesheet order.
  */
+export function themePresentationOrder<T extends {slug:string}>(themes:readonly T[]):T[]{
+ const preferred=['graphite','ocean','dark'];
+ const rank=(slug:string)=>{const i=preferred.indexOf(slug);return i<0?preferred.length:i;};
+ return [...themes].sort((a,b)=>rank(a.slug)-rank(b.slug));
+}
+
+function readableInk(hex: string): string {
+	const rgb = [1, 3, 5].map(i => parseInt(hex.trim().slice(i, i + 2), 16) / 255)
+		.map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+	const light = rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+	return (light + 0.05) / 0.05 >= 1.05 / (light + 0.05) ? '#000000' : '#ffffff';
+}
+
 export function themeToCss(theme: Theme): string {
 	const c = theme.colors;
+	const tones = { neutral: c.border, positive: c.success, attention: c.warning, negative: c.destructive, movement: isDarkHex(c.background) ? '#a6c8ec' : '#dbeafe' };
+	const pills = Object.entries(tones).map(([state, fill]) => `--pill-${state}-fill: ${fill};\n--pill-${state}-ink: ${readableInk(fill)};`).join('\n');
 	return `html[data-theme='${theme.slug}'] {
+	color-scheme: ${isDarkHex(c.background)?'dark':'light'};
 	--background: ${c.background};
 	--surface: ${c.surface};
 	--surface-hover: ${c.surfaceHover};
@@ -152,12 +168,13 @@ export function themeToCss(theme: Theme): string {
 	--warning: ${c.warning};
 	--ring: ${c.primary};
 	--radius: ${c.radius};
+${pills}
 }`;
 }
 
-/** Short hash of the theme's colors, used to bust the /theme.css cache. */
+/** Hash emitted CSS so derived-token changes also invalidate /theme.css caches. */
 export function themeCssHash(theme: Theme): string {
-	const s = JSON.stringify(theme.colors);
+	const s = themeToCss(theme);
 	let h = 0;
 	for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
 	return Math.abs(h).toString(36);
@@ -214,7 +231,7 @@ export function themeBootstrapScript(): string {
 		'var s=localStorage.getItem(' +
 		JSON.stringify(THEME_SLUG_STORAGE_KEY) +
 		');' +
-		'var slug=(t&&css[t])?t:((s&&css[s])?s:null);' +
+		'var slug=(t&&css[t])?t:((s&&css[s])?s:' + JSON.stringify(DEFAULT_THEME_SLUG) + ');' +
 		'if(!slug)return;' +
 		'document.documentElement.dataset.theme=slug;' +
 		'var st=document.createElement("style");' +

@@ -29,7 +29,7 @@
 			message?: string;
 			ok?: boolean;
 		} | undefined;
-		data: {
+		data: { demo?: boolean;
 			tokens: ApiTokenInfo[];
 			mcpArgs: string[];
 			mcpBundleHint: string;

@@ -10,6 +10,7 @@ import {
 } from '$lib/server/scheduledMatch';
 import { paidAtByScheduled, setPaidAction } from '$lib/server/scheduledPaid';
 import {
+	saveTransactionFromForm,
 	getAccounts,
 	getCategories,
 	expandScheduled,
@@ -19,10 +20,8 @@ import {
 	getTags,
 	getTransactionsInPeriod,
 	saveScheduled,
-	saveTransaction,
 	setSetting,
 	scheduledInputFromForm,
-	transactionInputFromForm
 } from '$lib/server/finance';
 import { todayISO } from '$lib/utils';
 
@@ -70,14 +69,7 @@ export const actions = {
 	save: async ({ request, locals }) => {
 		const userId = locals.user!.id;
 		const form = await request.formData();
-		const { input, error } = transactionInputFromForm(userId, form);
-		if (error || !input) return { error };
-		try {
-			saveTransaction(userId, input);
-		} catch (e) {
-			return { error: e instanceof Error ? e.message : 'Could not save.' };
-		}
-		return { ok: true };
+		return saveTransactionFromForm(userId, form);
 	},
 
 	'save-scheduled': async ({ request, locals }) => {

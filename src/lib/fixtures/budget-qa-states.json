@@ -1,0 +1,502 @@
+{
+  "candidate": "d12791cef49536acd1d3cb82790e47ee60e46c75",
+  "source_sha256": "3f66756b787cf0a13bb96dea6e665b2d014cdd8fbf9a27a89f490b4a1849b6de",
+  "scope": "Synthetic W17 SQLite/reopen results; not production finance data",
+  "records": [
+    {
+      "label": "initial-underfunded",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "needs_funding",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 10000
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "needs_funding",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 20000
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        }
+      ]
+    },
+    {
+      "label": "assignment-after-reopen",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "met",
+          "cashStatus": "available",
+          "availableCents": 10000,
+          "assignedCents": 10000,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 0
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "needs_funding",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 20000
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        }
+      ]
+    },
+    {
+      "label": "stale-before-refresh",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "unknown",
+          "cashStatus": "unknown",
+          "availableCents": null,
+          "assignedCents": null,
+          "activityCents": null,
+          "creditOverspentCents": null,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "unknown",
+          "cashStatus": "unknown",
+          "availableCents": null,
+          "assignedCents": null,
+          "activityCents": null,
+          "creditOverspentCents": null,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "unknown",
+          "availableCents": null,
+          "assignedCents": null,
+          "activityCents": null,
+          "creditOverspentCents": null,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "unknown",
+          "availableCents": null,
+          "assignedCents": null,
+          "activityCents": null,
+          "creditOverspentCents": null,
+          "neededThisMonthCents": null
+        }
+      ]
+    },
+    {
+      "label": "spent-after-reopen",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "met",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 10000,
+          "activityCents": -10000,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 0
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "needs_funding",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 20000
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        }
+      ]
+    },
+    {
+      "label": "refund-after-reopen",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "met",
+          "cashStatus": "available",
+          "availableCents": 4000,
+          "assignedCents": 10000,
+          "activityCents": -6000,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 0
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "needs_funding",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 20000
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        }
+      ]
+    },
+    {
+      "label": "reallocation-after-reopen",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "needs_funding",
+          "cashStatus": "available",
+          "availableCents": 2000,
+          "assignedCents": 8000,
+          "activityCents": -6000,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 2000
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "needs_funding",
+          "cashStatus": "available",
+          "availableCents": 2000,
+          "assignedCents": 2000,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 18000
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        }
+      ]
+    },
+    {
+      "label": "target-edit-after-reopen",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "met",
+          "cashStatus": "available",
+          "availableCents": 2000,
+          "assignedCents": 8000,
+          "activityCents": -6000,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 0
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "needs_funding",
+          "cashStatus": "available",
+          "availableCents": 2000,
+          "assignedCents": 2000,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 18000
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        }
+      ]
+    },
+    {
+      "label": "card-purchase-after-reopen",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "met",
+          "cashStatus": "available",
+          "availableCents": 2000,
+          "assignedCents": 8000,
+          "activityCents": -6000,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 0
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "needs_funding",
+          "cashStatus": "available",
+          "availableCents": 500,
+          "assignedCents": 2000,
+          "activityCents": -1500,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 18000
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        }
+      ]
+    },
+    {
+      "label": "card-refund-after-reopen",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "met",
+          "cashStatus": "available",
+          "availableCents": 2000,
+          "assignedCents": 8000,
+          "activityCents": -6000,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 0
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "needs_funding",
+          "cashStatus": "available",
+          "availableCents": 1000,
+          "assignedCents": 2000,
+          "activityCents": -1000,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 18000
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        }
+      ]
+    },
+    {
+      "label": "card-payment-after-reopen",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "met",
+          "cashStatus": "available",
+          "availableCents": 2000,
+          "assignedCents": 8000,
+          "activityCents": -6000,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 0
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "needs_funding",
+          "cashStatus": "available",
+          "availableCents": 1000,
+          "assignedCents": 2000,
+          "activityCents": -1000,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 18000
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        }
+      ]
+    },
+    {
+      "label": "rollover-after-reopen",
+      "states": [
+        {
+          "categoryId": 1,
+          "targetStatus": "needs_funding",
+          "cashStatus": "available",
+          "availableCents": 2000,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 8000
+        },
+        {
+          "categoryId": 2,
+          "targetStatus": "needs_funding",
+          "cashStatus": "available",
+          "availableCents": 1000,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": 20000
+        },
+        {
+          "categoryId": 3,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        },
+        {
+          "categoryId": 4,
+          "targetStatus": "no_target",
+          "cashStatus": "empty",
+          "availableCents": 0,
+          "assignedCents": 0,
+          "activityCents": 0,
+          "creditOverspentCents": 0,
+          "neededThisMonthCents": null
+        }
+      ]
+    }
+  ]
+}

@@ -296,24 +296,26 @@
 		{#each Object.entries(extraHidden) as [k, v] (k)}
 			<input type="hidden" name={k} value={v} />
 		{/each}
-		<div class="flex gap-2" role="radiogroup" aria-label="Expectation type">
+		<div class="flex gap-2" role="group" aria-label="Expectation type">
 			<button
 				type="button"
 				onclick={() => onTypeChange('expense')}
+				aria-pressed={type === 'expense'}
 				class="flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors {type === 'expense'
 					? 'border-primary bg-primary/10 text-primary'
 					: 'border-border text-muted-foreground hover:bg-muted'}"
 			>
-				Expense
+				Money out
 			</button>
 			<button
 				type="button"
 				onclick={() => onTypeChange('income')}
+				aria-pressed={type === 'income'}
 				class="flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors {type === 'income'
 					? 'border-primary bg-primary/10 text-primary'
 					: 'border-border text-muted-foreground hover:bg-muted'}"
 			>
-				Income
+				Money in
 			</button>
 		</div>
 
@@ -393,26 +395,28 @@
 			{/if}
 		</div>
 
-		<Field label="Forecast behavior">
-			<div class="flex gap-2" role="radiogroup" aria-label="Forecast behavior">
+		<Field label="When should this appear in your forecast?">
+			<div class="flex gap-2" role="group" aria-label="Forecast timing">
 				<button
 					type="button"
 					onclick={() => (forecastBehavior = 'bill')}
+					aria-pressed={forecastBehavior === 'bill'}
 					class="flex-1 rounded-md border px-3 py-2 text-left text-sm transition-colors {forecastBehavior === 'bill'
 						? 'border-primary bg-primary/10'
 						: 'border-border hover:bg-muted'}"
 				>
-					<span class="font-medium">Bill</span>
-					<span class="block text-xs text-muted-foreground">Full amount on the due date</span>
+					<span class="font-medium">On the scheduled date</span>
+					<span class="block text-xs text-muted-foreground">The full payment or income on that day</span>
 				</button>
 				<button
 					type="button"
 					onclick={() => (forecastBehavior = 'spread')}
+					aria-pressed={forecastBehavior === 'spread'}
 					class="flex-1 rounded-md border px-3 py-2 text-left text-sm transition-colors {forecastBehavior === 'spread'
 						? 'border-primary bg-primary/10'
 						: 'border-border hover:bg-muted'}"
 				>
-					<span class="font-medium">Spread</span>
+					<span class="font-medium">Across the period</span>
 					<span class="block text-xs text-muted-foreground">Evenly across the repeat period</span>
 				</button>
 			</div>

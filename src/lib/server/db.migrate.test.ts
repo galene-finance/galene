@@ -354,7 +354,7 @@ CREATE TABLE plaid_items (
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		expect(migrationCount()).toBe(37);
+		expect(migrationCount()).toBe(39);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -398,7 +398,7 @@ CREATE TABLE plaid_items (
 			db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_paid'`).get()
 		).toEqual({ o: 1 });
 		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
-		expect(migrationCount()).toBe(37);
+		expect(migrationCount()).toBe(39);
 		expect(counts()).toEqual(before);
 		expect(db.query('SELECT id, name FROM scheduled').get()).toEqual({ id: 7, name: 'Rent' });
 		expect(db.query('SELECT occurrence_date, display_date FROM scheduled_exceptions').get()).toEqual({
@@ -417,7 +417,7 @@ CREATE TABLE plaid_items (
 		const db = new Database(':memory:');
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
-		expect(migrationCount()).toBe(37);
+		expect(migrationCount()).toBe(39);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -458,7 +458,7 @@ CREATE TABLE plaid_items (
 		expect(
 			db.query(`SELECT 1 AS o FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_match_dismissed'`).get()
 		).toEqual({ o: 1 });
-		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(37);
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
 		expect(counts()).toEqual(before);
 
 		db.query(
@@ -540,7 +540,7 @@ describe('migrate stored secrets (ADO-60)', () => {
 
 			migrate(db);
 
-			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(37);
+			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
 			expect(plaintextSecretLocations(db)).toEqual([]);
 			const creds = (db.query('SELECT credentials FROM connections WHERE id = 7').get() as { credentials: string })
 				.credentials;
@@ -596,7 +596,7 @@ describe('migrate stored secrets (ADO-60)', () => {
 			expect((db.query('SELECT credentials FROM connections WHERE id = 7').get() as { credentials: string }).credentials).toBe(
 				plaintext
 			);
-			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(37);
+			expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
 		} finally {
 			db.close();
 			if (previous === undefined) delete process.env.GALENE_SECRET_KEY;
@@ -614,7 +614,7 @@ describe('reconcile migration', () => {
 		migrate(db);
 		const index = migrationIndexContaining('reconcile sessions (ADO-8)');
 		expect(migrationIndexContaining('transactions.provider_merchant (ADO-76)')).toBe(index + 1);
-		expect(migrationCount()).toBe(index + 2);
+		expect(migrationCount()).toBe(index + 4);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -705,7 +705,7 @@ describe('provider merchant migration (ADO-76)', () => {
 		db.exec('PRAGMA foreign_keys = ON');
 		migrate(db);
 		const index = migrationIndexContaining('transactions.provider_merchant (ADO-76)');
-		expect(migrationCount()).toBe(index + 1);
+		expect(migrationCount()).toBe(index + 3);
 
 		db.query(`INSERT INTO users (id, name, email, password_hash) VALUES (1, 'Fixture', 'fixture@test.com', 'x')`).run();
 		db.query(`INSERT INTO accounts (id, user_id, name, type) VALUES (1, 1, 'Checking', 'bank')`).run();
@@ -749,7 +749,7 @@ describe('provider merchant migration (ADO-76)', () => {
 			provider_merchant: null,
 			category_id: 10
 		});
-		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(37);
+		expect((db.query('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(migrationCount());
 		expect(counts()).toEqual(before);
 
 		db.run(`PRAGMA user_version = ${index}`);

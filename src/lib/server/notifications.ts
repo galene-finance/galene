@@ -1,8 +1,10 @@
 import { db } from './db';
+import { scheduleKind } from '$lib/activity';
 import {
 	categoryAmountInPeriod,
 	currentPeriodBounds,
 	getBudgets,
+	getCategories,
 	expandScheduled,
 	getScheduled
 } from './finance';
@@ -173,9 +175,11 @@ function resolveStale(userId: number, kind: NotificationKind, activeKeys: string
  * notification list is opened, so the list is always current.
  */
 export function generateComputedAlerts(userId: number, ref: Date = new Date()): void {
+	const categories = new Map(getCategories(userId).map(c => [c.id, c]));
 	// One live row per (category, period, period start) while the budget is over.
 	const activeBudgetKeys: string[] = [];
 	for (const b of getBudgets(userId)) {
+		if (categories.get(b.category_id)?.type !== 'expense') continue;
 		const { from, to } = currentPeriodBounds(b.period, ref);
 		const key = `budget:${b.category_id}:${b.period}:${from}`;
 		const spent = -categoryAmountInPeriod(userId, b.category_id, from, to);
@@ -206,11 +210,12 @@ export function generateComputedAlerts(userId: number, ref: Date = new Date()): 
 			const key = `bill:${view.id}:${occ.date}`;
 			activeBillKeys.push(key);
 			const when = humanDate(occ.date, ref);
+			const kind = scheduleKind(view.amount_cents, view.category_id == null ? null : categories.get(view.category_id)?.type);
 			upsertNotification(
 				userId,
 				'bill_upcoming',
-				`Bill due ${when}: ${view.name}`,
-				`${formatMoney(view.amount_cents)}${view.account_name ? ` from ${view.account_name}` : ''}.`,
+				`${kind === 'Bill' ? 'Bill due' : `${kind} expected`} ${when}: ${view.name}`,
+				`${formatMoney(Math.abs(view.amount_cents))}${view.account_name ? ` ${view.amount_cents >= 0 ? 'into' : 'from'} ${view.account_name}` : ''}.`,
 				'/calendar',
 				key
 			);

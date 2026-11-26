@@ -24,7 +24,7 @@
 			name?: string;
 			email?: string;
 		} | undefined;
-		data: { users: UserRow[]; me: number };
+		data: { demo?: boolean; users: UserRow[]; me: number };
 	} = $props();
 
 	// --- Create form ---

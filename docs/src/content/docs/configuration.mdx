@@ -17,4 +17,6 @@ Galene is configured with environment variables. Everything has a default; behin
 
 Single sign-on is configured in Settings → Security. Optional `GALENE_OIDC_*` variables override those fields when set — see [Single sign-on (OIDC)](/self-host/oidc/), [Authentik (OIDC)](/self-host/oidc-authentik/), and the full table in [Environment variables](/reference/environment-variables/).
 
+Ledger-derived baseline estimates are disabled by default. Operators who intentionally enable them must set `GALENE_LEDGER_BASELINE_ENABLED=1` together with an explicit `GALENE_LEDGER_BASELINE_CURRENCY` and `GALENE_LEDGER_BASELINE_TIME_ZONE`; see [Environment variables](/reference/environment-variables/) for the evidence and review semantics.
+
 How `PORT` and the data directory behave in each deployment: [Docker & Compose](/self-host/docker/), [Podman](/self-host/podman/), [From source](/self-host/from-source/).

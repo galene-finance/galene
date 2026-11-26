@@ -91,10 +91,10 @@ describe('OIDC callback success', () => {
 		try {
 			await load({
 				url: new URL(`http://localhost/auth/oidc/callback?code=abc&state=${pending.state}`),
-				locals: { user: null, viewer: null },
+				locals: { user: null, viewer: null, apiToken: null },
 				cookies: {
-					get: () => undefined,
-					set: (name: string) => setCookies.push(name)
+					get: () => undefined, getAll: () => [], delete: () => {}, serialize: () => '',
+					set: (name: string) => { setCookies.push(name); }
 				},
 				getClientAddress: () => '127.0.0.1'
 			});
@@ -114,8 +114,8 @@ describe('OIDC callback success', () => {
 	test('welcome=1 is an error page, not an interstitial', async () => {
 		const view = await load({
 			url: new URL('http://localhost/auth/oidc/callback?welcome=1'),
-			locals: { user: null, viewer: null },
-			cookies: { get: () => undefined, set: () => {} },
+			locals: { user: null, viewer: null, apiToken: null },
+			cookies: { get: () => undefined, getAll: () => [], delete: () => {}, serialize: () => '', set: () => {} },
 			getClientAddress: () => '127.0.0.1'
 		});
 		expect(view.phase).toBe('error');

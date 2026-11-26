@@ -1,4 +1,5 @@
 <script lang="ts">
+ import Amount from '$lib/components/TransactionAmount.svelte';
 	import { flushSync, untrack } from 'svelte';
 	import { deserialize, enhance } from '$app/forms';
 	import { page } from '$app/state';
@@ -29,6 +30,8 @@
 		data: {
 			data: { items: Transaction[]; total: number; pages: number };
 			filters: {
+				status?: string;
+				sort?: string;
 				accountIds: number[];
 				categoryIds: number[];
 				tagIds: number[];
@@ -46,6 +49,7 @@
 			categories: Category[];
 			tags: Tag[];
 			viewer?: boolean;
+			openSyncReviews?: number;
 		};
 	} = $props();
 	const viewer = $derived(!!data.viewer);
@@ -59,6 +63,8 @@
 	// Filter state (synced from the URL after each navigation).
 	// untrack is the first paint only. The effect below applies the next URL.
 	let q = $state(untrack(() => data.filters.q));
+	let statusFilter = $state(untrack(() => data.filters.status ?? 'all'));
+	let sortBy = $state(untrack(() => data.filters.sort ?? 'newest'));
 	let filterAccounts = $state<string[]>(untrack(() => data.filters.accountIds.map(String)));
 	let filterCategories = $state<string[]>(untrack(() => data.filters.categoryIds.map(String)));
 	let filterTags = $state<string[]>(untrack(() => data.filters.tagIds.map(String)));
@@ -104,6 +110,8 @@
 		if (key === lastFiltersKey) return;
 		lastFiltersKey = key;
 		if (q !== f.q) q = f.q;
+		statusFilter=f.status??'all';
+		sortBy=f.sort??'newest';
 		if (filterAccounts.join(',') !== f.accountIds.map(String).join(',')) {
 			filterAccounts = f.accountIds.map(String);
 		}
@@ -391,21 +399,20 @@
 	});
 
 	const groups = $derived.by(() => {
-		const out: { label: string; items: Transaction[] }[] = [];
-		for (const t of data.data.items) {
-			const last = out[out.length - 1];
-			if (last && last.items[0].date === t.date) last.items.push(t);
-			else out.push({ label: dayGroupLabel(t.date), items: [t] });
-		}
-		return out;
-	});
+  if(data.filters.sort==='amount'||data.filters.sort==='merchant'){
+   return [{key:'sorted',label:data.filters.sort==='amount'?'Largest amounts first':'Merchants A–Z',items:data.data.items}];
+  }
+  const out: {key:string;label:string;items:Transaction[]}[]=[];
+  for(const t of data.data.items){const last=out.at(-1);if(last?.key===t.date)last.items.push(t);else out.push({key:t.date,label:dayGroupLabel(t.date),items:[t]});}
+  return out;
+ });
 </script>
 
 <Title title="Transactions" />
 
 <div class="mx-auto flex max-w-6xl flex-col gap-4 2xl:max-w-7xl">
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<h1 class="text-2xl font-semibold tracking-tight">Transactions</h1>
+		<div><h1 class="text-2xl font-semibold tracking-tight">Activity</h1><p class="product-muted">Find, review and organize your transactions.</p></div>
 		<div class="flex flex-wrap items-center gap-2">
 			<CsvIoIcons {exportHref} />
 			{#if !viewer}
@@ -430,6 +437,11 @@
 	<!-- Filters: collapsible panel on mobile, current row at md+ -->
 	<!-- GET filter form: plain submit (use:enhance requires POST) -->
 	<form method="GET" bind:this={filterFormEl} class="rounded-lg border border-border bg-surface">
+ <div class="product-toolbar" style:padding="14px" style:margin-bottom="0">
+  <label class="product-field">Status <select name="status" bind:value={statusFilter}><option value="all">All activity</option><option value="posted">Posted only</option><option value="pending">Pending only</option></select></label>
+  <label class="product-field">Sort <select name="sort" bind:value={sortBy}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="amount">Largest amount</option><option value="merchant">Merchant name</option></select></label>
+  <button class="product-button" type="submit">Apply</button>
+ </div>
 		<div class="flex items-center gap-3 p-3 md:hidden">
 			<Button
 				variant="secondary"
@@ -649,7 +661,6 @@
 							aria-label="Select all"
 						/>
 					</th>
-					<th class="px-3 py-2.5 font-medium">Date</th>
 					<th class="px-3 py-2.5 font-medium">Merchant</th>
 					<th class="px-3 py-2.5 font-medium">Category</th>
 					<th class="px-3 py-2.5 font-medium">Account</th>
@@ -668,12 +679,11 @@
 								aria-label="Select transaction"
 							/>
 						</td>
-						<td class="whitespace-nowrap px-3 py-2">{formatDate(tx.date)}</td>
 						<td class="max-w-52 px-3 py-2">
 							<div class="flex items-center gap-1">
 								<div class="min-w-0 flex-1 truncate" title={tx.merchant ?? undefined}>
 									{#if tx.merchant}
-										{tx.merchant}
+										{#if !viewer}<a class="product-link" href={`/transactions/${tx.id}`}>{tx.merchant}</a>{:else}{tx.merchant}{/if}
 									{:else}
 										<span class="text-muted-foreground">—</span>
 									{/if}
@@ -711,6 +721,7 @@
 									</button>
 								{/if}
 							</div>
+							<span class="product-row-caption">{formatDate(tx.date)}</span>
 							{#if tx.notes}
 								<div class="truncate text-xs text-muted-foreground" title={tx.notes}>{tx.notes}</div>
 							{/if}
@@ -726,9 +737,7 @@
 								{/each}
 							</div>
 						</td>
-						<td class="whitespace-nowrap px-3 py-2 text-right font-medium {tx.amount_cents > 0 ? 'text-success' : ''}">
-							{formatMoney(tx.amount_cents)}
-						</td>
+						<td class="px-3 py-2 text-right"><Amount transaction={tx} categories={data.categories}/></td>
 						<td class="px-3 py-2">
 							{#if !viewer}
 							<form id="delete-form-{tx.id}" method="POST" action="?/delete" class="hidden">
@@ -758,7 +767,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td class="px-3 py-12 text-center text-muted-foreground" colspan="8">
+						<td class="px-3 py-12 text-center text-muted-foreground" colspan="7">
 							{data.accounts.length === 0
 								? 'No accounts yet. Create one in Settings, then add transactions here.'
 								: 'No transactions match your filters.'}
@@ -771,7 +780,7 @@
 	{:else}
 	<!-- Mobile: stacked cards grouped by day -->
 	<div class="overflow-hidden rounded-lg border border-border bg-surface">
-		{#each groups as g (g.label)}
+		{#each groups as g (g.key)}
 			<div class="px-4 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 				{g.label}
 			</div>
@@ -788,7 +797,7 @@
 						<div class="flex items-baseline gap-2">
 							<span class="min-w-0 flex-1 truncate text-[15px] font-semibold">
 								{#if tx.merchant}
-									{tx.merchant}
+									{#if !viewer}<a class="product-link" href={`/transactions/${tx.id}`}>{tx.merchant}</a>{:else}{tx.merchant}{/if}
 								{:else}
 									<span class="text-muted-foreground">—</span>
 								{/if}
@@ -825,11 +834,7 @@
 									</svg>
 								</button>
 							{/if}
-							<span
-								class="shrink-0 text-[15px] font-medium tabular-nums {tx.amount_cents > 0 ? 'text-success' : ''}"
-							>
-								{formatMoney(tx.amount_cents)}
-							</span>
+							<Amount transaction={tx} categories={data.categories}/>
 						</div>
 						{#if tx.notes}
 							<div class="truncate text-xs text-muted-foreground" title={tx.notes}>{tx.notes}</div>
@@ -838,7 +843,7 @@
 							{tx.account_name} · {formatDate(tx.date)}
 						</div>
 						<div class="flex items-center gap-2">
-							<span class="cat-pill inline-flex max-w-44 items-center rounded-full border border-border bg-muted">
+							<span class="inline-flex max-w-44 items-center">
 								<CategoryCell transaction={tx} categories={data.categories} readonly={viewer || !!tx.reconciled_at} />
 							</span>
 							<div class="flex min-w-0 flex-1 gap-1 overflow-hidden">
@@ -1010,15 +1015,3 @@
 	tags={data.tags}
 	{form}
 />
-
-<style>
-	/* Mobile: strip the CategoryCell combobox's own chrome so it reads as a pill */
-	.cat-pill :global(input) {
-		height: 1.5rem;
-		padding: 0 0.5rem;
-		border-color: transparent;
-		border-radius: 9999px;
-		background: transparent;
-		font-size: 0.75rem;
-	}
-</style>

@@ -48,7 +48,7 @@
 	bind:this={gridEl}
 	role="region"
 	aria-label="Dashboard widgets"
-	class="db-grid {draggingId ? 'is-dragging' : ''}"
+	class="db-grid {draggingId ? 'is-dragging' : ''} {editMode ? 'is-editing' : ''}"
 	ondragover={(e) => {
 		if (!editMode || !draggingId) return;
 		e.preventDefault();
@@ -106,16 +106,21 @@
 	.db-grid.is-dragging > :global(*) {
 		transition: grid-column 150ms ease, grid-row 150ms ease;
 	}
-	/* Mobile: one column, each widget keeps its height in row units. The
-		:global(*) is required because each child root carries its own
-		component scoping hash, which a plain scoped selector can't match. */
-	@media (max-width: 40rem) {
+	/* Reading mode grows rows to fit financial labels instead of hiding them
+	   behind nested scrolling. Editing keeps the exact 96px resize geometry. */
+	.db-grid:not(.is-editing) { grid-auto-rows: minmax(96px, auto); }
+	.db-grid:not(.is-editing) :global(.finance-card-body) { flex: none; overflow-y: visible; }
+	.db-grid:not(.is-editing) > :global(.finance-card) { min-height: min-content; }
+	/* Mobile: one column, content-led height. */
+	@media (max-width: 48rem) {
 		.db-grid {
 			grid-template-columns: 1fr;
+			grid-auto-rows: auto;
 		}
 		.db-grid > :global(*) {
 			grid-column: 1 / -1 !important;
-			grid-row: auto / span var(--dh) !important;
+			grid-row: auto !important;
+			min-height: 180px;
 		}
 	}
 </style>

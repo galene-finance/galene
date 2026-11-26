@@ -1,0 +1,914 @@
+{
+  "existing_screen_count": 35,
+  "screens": [
+    {
+      "route": "/",
+      "source": "(app)/+page.svelte",
+      "job": "Home: monthly plan, actuals and sources",
+      "layout": "product",
+      "coverage": "partial_synthetic_core; full matrix and authenticated acceptance pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
+      ],
+      "latest_visual_evidence": "product-v3-planning/checks.json",
+      "latest_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "bubble_acceptance": "partial synthetic; integrated funding/persistence/touch and final source review pending"
+    },
+    {
+      "route": "/accounts",
+      "source": "(app)/accounts/+page.svelte",
+      "job": "Source-aware account overview",
+      "layout": "product",
+      "coverage": "partial_synthetic_register; authenticated saves and complete state matrix pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 820
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
+      ],
+      "evidence": "product-v3-register/checks.json"
+    },
+    {
+      "route": "/accounts/[id]",
+      "source": "(app)/accounts/[id]/+page.svelte",
+      "job": "Account source/as-of and activity",
+      "layout": "product",
+      "coverage": "partial_synthetic_register; authenticated saves and complete state matrix pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 820
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "evidence": "product-v3-register/checks.json"
+    },
+    {
+      "route": "/advisor/invite/[token]",
+      "source": "advisor/invite/[token]/+page.svelte",
+      "job": "Invitation result, no actual invitation or secret consumption",
+      "layout": "auth",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/auth/oidc/callback",
+      "source": "auth/oidc/callback/+page.svelte",
+      "job": "OIDC callback result, synthetic state checks",
+      "layout": "auth",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/budget",
+      "source": "(app)/budget/+page.svelte",
+      "job": "Plan: grouped targets and actuals",
+      "layout": "product",
+      "coverage": "partial_synthetic_core; full matrix and authenticated acceptance pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
+      ],
+      "latest_visual_evidence": "product-v3-funding-acceptance/checks.json",
+      "bubble_acceptance": "native loader/actions/service plus custom synthetic HTTP adapter; assignment/reload/spend/refund/rollover/scoped category checks; production auth/full scope pending"
+    },
+    {
+      "route": "/calendar",
+      "source": "(app)/calendar/+page.svelte",
+      "job": "Dated activity and schedule view",
+      "layout": "product",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/cashflow",
+      "source": "(app)/cashflow/+page.svelte",
+      "job": "Actual-versus-forecast planning",
+      "layout": "product",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "latest_visual_evidence": "product-v3-planning/checks.json",
+      "latest_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "bubble_acceptance": "partial synthetic; integrated funding/persistence/touch and final source review pending"
+    },
+    {
+      "route": "/categories/[id]",
+      "source": "(app)/categories/[id]/+page.svelte",
+      "job": "Category contribution drilldown",
+      "layout": "product",
+      "coverage": "partial_synthetic_category_recurring; full states and authenticated acceptance pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "evidence": "product-v3-category-recurring/checks.json",
+      "latest_visual_evidence": "product-v3-funding-acceptance/checks.json",
+      "bubble_acceptance": "native loader/actions/service plus custom synthetic HTTP adapter; assignment/reload/spend/refund/rollover/scoped category checks; production auth/full scope pending"
+    },
+    {
+      "route": "/customize",
+      "source": "(app)/customize/+page.svelte",
+      "job": "Retained native dashboard customization",
+      "layout": "product",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/income",
+      "source": "(app)/income/+page.svelte",
+      "job": "Received/recorded income and contribution detail",
+      "layout": "product",
+      "coverage": "partial_synthetic_core; full matrix and authenticated acceptance pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ]
+    },
+    {
+      "route": "/login",
+      "source": "login/+page.svelte",
+      "job": "Supported owner sign-in, masked credentials only",
+      "layout": "auth",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/recurring",
+      "source": "(app)/recurring/+page.svelte",
+      "job": "Review recurring-pattern discovery",
+      "layout": "product",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/reflect",
+      "source": "(app)/reflect/+page.svelte",
+      "job": "Actual-only summary, category links and full-month trends",
+      "layout": "product",
+      "coverage": "partial_synthetic_core; full matrix and authenticated acceptance pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
+      ]
+    },
+    {
+      "route": "/scheduled",
+      "source": "(app)/scheduled/+page.svelte",
+      "job": "Scheduled expectations and native edits",
+      "layout": "product",
+      "coverage": "partial_synthetic_category_recurring; full states and authenticated acceptance pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "evidence": "product-v3-category-recurring/checks.json"
+    },
+    {
+      "route": "/settings",
+      "source": "(app)/settings/+page.svelte",
+      "job": "Native settings: overview; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "partial_synthetic_settings; native saved persistence and full states pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
+      ],
+      "evidence": "product-v3-settings/checks.json"
+    },
+    {
+      "route": "/settings/about",
+      "source": "(app)/settings/about/+page.svelte",
+      "job": "Native settings: about; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/accounts",
+      "source": "(app)/settings/accounts/+page.svelte",
+      "job": "Native settings: accounts; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/advisor",
+      "source": "(app)/settings/advisor/+page.svelte",
+      "job": "Native settings: advisor; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/api",
+      "source": "(app)/settings/api/+page.svelte",
+      "job": "Native settings: api; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/appearance",
+      "source": "(app)/settings/appearance/+page.svelte",
+      "job": "Native settings: appearance; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "partial_synthetic_settings; native saved persistence and full states pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
+      ],
+      "evidence": "product-v3-settings/checks.json"
+    },
+    {
+      "route": "/settings/backups",
+      "source": "(app)/settings/backups/+page.svelte",
+      "job": "Native settings: backups; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/categories",
+      "source": "(app)/settings/categories/+page.svelte",
+      "job": "Native settings: categories; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/data",
+      "source": "(app)/settings/data/+page.svelte",
+      "job": "Native settings: data; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/rules",
+      "source": "(app)/settings/rules/+page.svelte",
+      "job": "Native settings: rules; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/security",
+      "source": "(app)/settings/security/+page.svelte",
+      "job": "Native settings: security; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/sync",
+      "source": "(app)/settings/sync/+page.svelte",
+      "job": "Native settings: sync; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/tags",
+      "source": "(app)/settings/tags/+page.svelte",
+      "job": "Native settings: tags; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/settings/users",
+      "source": "(app)/settings/users/+page.svelte",
+      "job": "Native settings: users; style consistently without unintended configuration changes",
+      "layout": "settings",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/spending",
+      "source": "(app)/spending/+page.svelte",
+      "job": "Actual spending breakdown and contributions",
+      "layout": "product",
+      "coverage": "partial_synthetic_core; full matrix and authenticated acceptance pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "latest_visual_evidence": "product-v3-planning/checks.json",
+      "latest_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "bubble_acceptance": "partial synthetic; integrated funding/persistence/touch and final source review pending"
+    },
+    {
+      "route": "/transactions",
+      "source": "(app)/transactions/+page.svelte",
+      "job": "Search/filter/sort native activity",
+      "layout": "product",
+      "coverage": "partial_synthetic_register; authenticated saves and complete state matrix pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 820
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        }
+      ],
+      "evidence": "product-v3-register/checks.json",
+      "latest_visual_evidence": "product-v3-planning/checks.json",
+      "latest_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 390
+        },
+        {
+          "theme": "ocean",
+          "width": 390
+        },
+        {
+          "theme": "dark",
+          "width": 390
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        }
+      ],
+      "bubble_acceptance": "partial synthetic; integrated funding/persistence/touch and final source review pending"
+    },
+    {
+      "route": "/transactions/[id]",
+      "source": "(app)/transactions/[id]/+page.svelte",
+      "job": "Transaction provenance and native editing",
+      "layout": "product",
+      "coverage": "partial_synthetic_register; authenticated saves and complete state matrix pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ],
+      "verified_visual_cases": [
+        {
+          "theme": "graphite",
+          "width": 820
+        },
+        {
+          "theme": "graphite",
+          "width": 1440
+        },
+        {
+          "theme": "graphite",
+          "width": 390
+        }
+      ],
+      "evidence": "product-v3-register/checks.json"
+    },
+    {
+      "route": "/transactions/export",
+      "source": "(app)/transactions/export/+page.svelte",
+      "job": "Native export utility; no real ledger downloads during QA",
+      "layout": "product",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/transactions/import",
+      "source": "(app)/transactions/import/+page.svelte",
+      "job": "Native import utility; no actual imports during QA",
+      "layout": "product",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/transactions/review",
+      "source": "(app)/transactions/review/+page.svelte",
+      "job": "Review pending classification/import work",
+      "layout": "product",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    },
+    {
+      "route": "/trends",
+      "source": "(app)/trends/+page.svelte",
+      "job": "Historical activity trends with coverage",
+      "layout": "product",
+      "coverage": "pending",
+      "viewports": [
+        390,
+        768,
+        1440
+      ],
+      "themes": [
+        "graphite",
+        "ocean",
+        "dark"
+      ]
+    }
+  ],
+  "planned_additions": [],
+  "acceptance_rule": "Synthetic screens are not authenticated acceptance; never create secrets, import, delete or export real data during visual QA.",
+  "current_screen_count": 36
+}

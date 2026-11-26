@@ -28,6 +28,11 @@ description: Every environment variable the app image reads (including optional 
 | `GALENE_OIDC_SCOPES` | unset | Space-separated scopes. Overrides Settings when non-empty. Default in Settings is `openid profile email`. |
 | `GALENE_ENABLE_MCP` | unset | `1`/`0` overrides Settings → API MCP HTTP on/off. Unset uses the saved toggle (**default off**). When off, `/mcp` is not live. When on, MCP shares the app `PORT` (no separate MCP port). |
 | `GALENE_THEME_GALLERY_URL` | `https://themes.galene.finance/api/themes` | Where **Settings → Appearance → Publish** sends signed theme packs. Must be `https` (plain `http` only for `localhost` / `127.0.0.1`). See [Appearance](/features/appearance/#publish-to-the-theme-gallery). |
+| `GALENE_LEDGER_BASELINE_ENABLED` | unset (disabled) | `1` enables the optional owner-session baseline evidence producer. It remains disabled unless the currency and accounting timezone below are also valid. |
+| `GALENE_LEDGER_BASELINE_CURRENCY` | — | Required three-letter uppercase currency, such as `USD`. Galene does not infer or convert account currency. |
+| `GALENE_LEDGER_BASELINE_TIME_ZONE` | — | Required IANA accounting timezone, such as `America/New_York`. Provider observation dates and completed-day cutoffs use this zone. |
+
+The optional ledger baseline producer uses signed posted parent transactions and excludes pending activity. It never infers balances from categories or splits. Its results are labeled accepted estimates; loading the setup page is read-only, owner review stores an immutable evidence receipt, and activation still requires a separate explicit confirmation.
 
 ## MCP bundle (stdio from the app image)
 

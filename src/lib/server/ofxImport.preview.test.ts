@@ -1,23 +1,37 @@
 /**
  * OFX preview + confirm (issue #105). Temp database only.
  */
-import { Database } from 'bun:sqlite';
-import { afterEach, describe, expect, test } from 'bun:test';
+import type { Database } from 'bun:sqlite';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const dir = mkdtempSync(join(tmpdir(), 'galene-ofx-'));
-process.env.GALENE_DATA_DIR = dir;
-process.env.GALENE_DB_PATH = join(dir, 'galene.db');
-process.env.GALENE_ALLOW_EPHEMERAL_DATA = '1';
-
-const { migrate } = await import('./db');
+const { closeDbForTests, db } = await import('./db');
 const { buildFileImportPreview, buildImportPreview, commitImportPreview } = await import('./csvImport');
+let database: Database;
+let dir: string;
+const environmentKeys = ['GALENE_DATA_DIR', 'GALENE_DB_PATH', 'GALENE_ALLOW_EPHEMERAL_DATA'] as const;
+let previousEnvironment: (string | undefined)[];
 
-const database = new Database(process.env.GALENE_DB_PATH);
-database.exec('PRAGMA foreign_keys = ON;');
-migrate(database);
+beforeAll(() => {
+ previousEnvironment = environmentKeys.map(key => process.env[key]);
+ dir = mkdtempSync(join(tmpdir(), 'galene-ofx-'));
+ process.env.GALENE_DATA_DIR = dir;
+ process.env.GALENE_DB_PATH = join(dir, 'galene.db');
+ process.env.GALENE_ALLOW_EPHEMERAL_DATA = '1';
+ closeDbForTests();
+ // Seed and assert through the same connection used by the import implementation.
+ database = db();
+});
+afterAll(() => {
+ closeDbForTests();
+ rmSync(dir, { recursive: true, force: true });
+ environmentKeys.forEach((key, index) => {
+  const value = previousEnvironment[index];
+  if (value === undefined) delete process.env[key]; else process.env[key] = value;
+ });
+});
 
 afterEach(() => {
 	database.exec('DELETE FROM transactions; DELETE FROM categorization_rules; DELETE FROM categories; DELETE FROM accounts; DELETE FROM users;');
@@ -117,9 +131,38 @@ describe('OFX import preview', () => {
 		expect(again.okCount).toBe(0);
 	});
 
+	test('the same FITID remains distinct across statement accounts', () => {
+		const userId = user();
+		const first = buildFileImportPreview(userId, SAMPLE, 'first.ofx', createAcct);
+		if ('error' in first) throw new Error(first.error);
+		expect(commitImportPreview(userId, first.id)).toEqual({ created: 2, skipped: 1, failed: 0 });
+		const second = buildFileImportPreview(userId, SAMPLE.replace('123456789', '987654321'), 'second.ofx', createAcct);
+		if ('error' in second) throw new Error(second.error);
+		expect(second.okCount).toBe(2);
+		expect(second.skippedCount).toBe(0);
+		expect(commitImportPreview(userId, second.id)).toEqual({ created: 2, skipped: 1, failed: 0 });
+		expect(database.query('SELECT COUNT(*) AS n, COUNT(DISTINCT account_id) AS accounts FROM transactions').get()).toEqual({ n: 4, accounts: 2 });
+	});
+
+	test('identical no-FITID rows remain distinct across statement accounts', () => {
+		const userId = user();
+		for (const statement of [NO_FIT, NO_FIT.replace('Checking', 'Savings')]) {
+			const preview = buildFileImportPreview(userId, statement, 'statement.ofx', createAcct);
+			if ('error' in preview) throw new Error(preview.error);
+			expect(preview.okCount).toBe(1);
+			expect(preview.skippedCount).toBe(0);
+			expect(commitImportPreview(userId, preview.id)).toEqual({ created: 1, skipped: 0, failed: 0 });
+		}
+		expect(database.query('SELECT COUNT(*) AS n, COUNT(DISTINCT account_id) AS accounts FROM transactions').get()).toEqual({ n: 2, accounts: 2 });
+		const again = buildFileImportPreview(userId, NO_FIT, 'statement.ofx', createAcct);
+		if ('error' in again) throw new Error(again.error);
+		expect(again.skippedCount).toBe(1);
+		expect(again.okCount).toBe(0);
+	});
+
 	test('an existing account name matches without creating another', () => {
 		const userId = user();
-		database.query(`INSERT INTO accounts (user_id, name, type) VALUES (?, 'Checking', 'bank')`).run(userId);
+		database.query(`INSERT INTO accounts (user_id, name, type) VALUES (?, 'cHeCkInG', 'bank')`).run(userId);
 		const preview = buildFileImportPreview(userId, NO_FIT, 'stmt.qfx', off);
 		if ('error' in preview) throw new Error(preview.error);
 		expect(preview.okCount).toBe(1);
@@ -140,7 +183,7 @@ describe('OFX import preview', () => {
 
 		const preview = buildFileImportPreview(userId, SAMPLE, 'bank.ofx', createAcct);
 		if ('error' in preview) throw new Error(preview.error);
-		commitImportPreview(userId, preview.id);
+		expect(commitImportPreview(userId, preview.id)).toEqual({ created: 2, skipped: 1, failed: 0 });
 		const coffee = database
 			.query(`SELECT category_id FROM transactions WHERE merchant = 'Coffee shop'`)
 			.get() as { category_id: number };

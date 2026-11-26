@@ -48,7 +48,7 @@ export const WIDGET_CATALOG: Record<DashboardWidgetType, WidgetCatalogEntry> = {
 	balances: {
 		type: 'balances',
 		label: 'Accounts & balances',
-		description: 'Every account with its running balance and the total.',
+		description: 'Cash, debt and other accounts with separate bank snapshots and ledger balances.',
 		w: 4,
 		h: 4,
 		filters: { accountType: true, accountIds: true }

@@ -1,0 +1,12 @@
+<script lang="ts">
+ import Badge from './FinancialBadge.svelte';
+ import {formatMoney} from '$lib/utils';
+ let {summary,rangeLabel}:{summary:{actualIncomeCents:number;actualExpenseCents:number;forecastIncomeCents:number;forecastExpenseCents:number};rangeLabel:string}=$props();
+ const actual=$derived(summary.actualIncomeCents-summary.actualExpenseCents);
+ const forecast=$derived(summary.forecastIncomeCents-summary.forecastExpenseCents);
+</script>
+<div class="cashflow-comparison">
+ <section class="product-panel" data-kind="actual"><header class="product-panel-header"><div><h2>Posted actuals</h2><p class="product-muted">{rangeLabel}</p></div></header><div class="product-row"><span class="product-row-title">Income</span><Badge value={formatMoney(summary.actualIncomeCents)} label="Recorded income" tone={summary.actualIncomeCents<0?'negative':'positive'}/></div><div class="product-row"><span class="product-row-title">Spending</span><Badge value={formatMoney(summary.actualExpenseCents)} label="Net of refunds"/></div><div class="product-row"><span class="product-row-main"><strong class="product-row-title">Income less spending</strong><span class="product-row-caption">Pending, transfers and card payments excluded</span></span><Badge value={formatMoney(actual)} label={actual<0?'Recorded shortfall':'Recorded difference'} tone={actual<0?'negative':'neutral'}/></div><footer class="product-details">This difference is not available cash or a category assignment.</footer></section>
+ <section class="product-panel" data-kind="forecast"><header class="product-panel-header"><div><h2>Scheduled expectations</h2><p class="product-muted">{rangeLabel} · not posted transactions</p></div></header><div class="product-row"><span class="product-row-title">Income</span><Badge value={formatMoney(summary.forecastIncomeCents)} label="Expected income"/></div><div class="product-row"><span class="product-row-title">Spending</span><Badge value={formatMoney(summary.forecastExpenseCents)} label="Expected spending"/></div><div class="product-row"><strong class="product-row-title">Expected difference</strong><Badge value={formatMoney(forecast)} label="Forecast only"/></div><footer class="product-details">Scheduled wages are not received cash. No money is reserved or sent by a schedule.</footer></section>
+</div>
+<style>.cashflow-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}@media(max-width:900px){.cashflow-comparison{grid-template-columns:minmax(0,1fr)}}.product-row+.product-row{border-top:1px solid var(--border)}</style>

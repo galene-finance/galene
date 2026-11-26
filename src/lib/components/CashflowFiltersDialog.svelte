@@ -26,7 +26,7 @@
 
 	function init() {
 		accountIds = filters.accountIds.map(String);
-		categoryIds = filters.categoryIds.map(String);
+		categoryIds = filters.categoryIds.filter(id=>categories.some(c=>c.id===id&&c.type!=='transfer')).map(String);
 	}
 	init();
 
@@ -36,9 +36,9 @@
 
 	const accountItems = $derived(accounts.map((a) => ({ value: String(a.id), label: a.name })));
 	const categoryItems = $derived(
-		categories.map((c) => ({
+		categories.filter(c=>c.type!=='transfer').map((c) => ({
 			value: String(c.id),
-			label: c.type === 'transfer' ? `${c.name} (transfer)` : c.name
+			label: c.name
 		}))
 	);
 
@@ -63,7 +63,7 @@
 <Dialog
 	bind:open
 	title="Cashflow filters"
-	description="Choose which accounts and categories feed this page. Leave blank for all. Transfer categories stay out unless you pick them."
+	description="Choose accounts and income or spending categories. Transfers and card payments are always excluded from these totals."
 >
 	<div class="flex flex-col gap-4">
 		<Field label="Accounts">
@@ -73,8 +73,7 @@
 			<MultiCombobox bind:value={categoryIds} items={categoryItems} placeholder="All non-transfer categories" />
 		</Field>
 		<p class="text-xs text-muted-foreground">
-			Empty means all accounts and all non-transfer categories. Transfer categories are excluded by
-			default — select them here only if you want them in cashflow.
+			Leave blank for all income and spending categories. To see transfers and payments, open Activity or an account.
 		</p>
 	</div>
 

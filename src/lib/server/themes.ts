@@ -63,7 +63,7 @@ export function getThemeSetting(userId: number): string {
 
 /**
  * Resolve a stored theme value (or the user's current setting) to a full
- * theme. Falls back to the default light theme for unknown values.
+ * theme. Falls back to the selected built-in default for unknown values.
  */
 export function resolveTheme(userId: number, value?: string | null): Theme {
 	const v = (value ?? getThemeSetting(userId)).trim();

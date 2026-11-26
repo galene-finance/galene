@@ -1,0 +1,235 @@
+{
+  "synthetic": true,
+  "cashflow": {
+    "sections": {
+      "income": {
+        "type": "income",
+        "rows": [
+          {
+            "categoryId": 1,
+            "categoryName": "Sample salary",
+            "categoryColor": null,
+            "cells": [
+              {
+                "forecastCents": 720000,
+                "actualCents": 720000
+              }
+            ],
+            "totalForecastCents": 720000,
+            "totalActualCents": 720000
+          }
+        ],
+        "monthTotals": [
+          {
+            "forecastCents": 720000,
+            "actualCents": 720000
+          }
+        ],
+        "totalForecastCents": 720000,
+        "totalActualCents": 720000
+      },
+      "expense": {
+        "type": "expense",
+        "rows": [
+          {
+            "categoryId": 4,
+            "categoryName": "Sample fees",
+            "categoryColor": null,
+            "cells": [
+              {
+                "forecastCents": 0,
+                "actualCents": -5000
+              }
+            ],
+            "totalForecastCents": 0,
+            "totalActualCents": -5000
+          },
+          {
+            "categoryId": 2,
+            "categoryName": "Sample groceries",
+            "categoryColor": null,
+            "cells": [
+              {
+                "forecastCents": 0,
+                "actualCents": -135000
+              }
+            ],
+            "totalForecastCents": 0,
+            "totalActualCents": -135000
+          }
+        ],
+        "monthTotals": [
+          {
+            "forecastCents": 0,
+            "actualCents": -140000
+          }
+        ],
+        "totalForecastCents": 0,
+        "totalActualCents": -140000
+      }
+    },
+    "summary": {
+      "forecastIncomeCents": 720000,
+      "forecastExpenseCents": 0,
+      "actualIncomeCents": 720000,
+      "actualExpenseCents": 140000
+    }
+  },
+  "plannedDrill": [
+    {
+      "id": 1,
+      "month": "2026-11",
+      "date": "2026-11-27",
+      "categoryId": 1,
+      "name": "Sample next salary",
+      "amountCents": 720000,
+      "behavior": "bill"
+    }
+  ],
+  "transactions": [
+    {
+      "id": 1,
+      "account_id": 1,
+      "category_id": 1,
+      "date": "2026-11-13",
+      "amount_cents": 720000,
+      "merchant": "Sample employer",
+      "notes": null,
+      "color": null,
+      "pending": 0,
+      "provider": null,
+      "account_name": "Sample checking",
+      "category_name": "Sample salary",
+      "category_color": null,
+      "category_type": "income",
+      "tags": [],
+      "tag_ids": []
+    },
+    {
+      "id": 2,
+      "account_id": 1,
+      "category_id": 2,
+      "date": "2026-11-15",
+      "amount_cents": -180000,
+      "merchant": "Sample market",
+      "notes": null,
+      "color": null,
+      "pending": 0,
+      "provider": null,
+      "account_name": "Sample checking",
+      "category_name": "Sample groceries",
+      "category_color": null,
+      "category_type": "expense",
+      "tags": [],
+      "tag_ids": []
+    },
+    {
+      "id": 3,
+      "account_id": 1,
+      "category_id": 2,
+      "date": "2026-11-18",
+      "amount_cents": 45000,
+      "merchant": "Sample returned purchase",
+      "notes": null,
+      "color": null,
+      "pending": 0,
+      "provider": null,
+      "account_name": "Sample checking",
+      "category_name": "Sample groceries",
+      "category_color": null,
+      "category_type": "expense",
+      "tags": [],
+      "tag_ids": []
+    },
+    {
+      "id": 4,
+      "account_id": 1,
+      "category_id": 3,
+      "date": "2026-11-19",
+      "amount_cents": -9000,
+      "merchant": "Sample card payment",
+      "notes": null,
+      "color": null,
+      "pending": 0,
+      "provider": null,
+      "account_name": "Sample checking",
+      "category_name": "Sample card payment",
+      "category_color": null,
+      "category_type": "transfer",
+      "tags": [],
+      "tag_ids": []
+    },
+    {
+      "id": 5,
+      "account_id": 2,
+      "category_id": 3,
+      "date": "2026-11-19",
+      "amount_cents": 9000,
+      "merchant": "Sample received payment",
+      "notes": null,
+      "color": null,
+      "pending": 0,
+      "provider": null,
+      "account_name": "Sample card",
+      "category_name": "Sample card payment",
+      "category_color": null,
+      "category_type": "transfer",
+      "tags": [],
+      "tag_ids": []
+    },
+    {
+      "id": 6,
+      "account_id": 2,
+      "category_id": 4,
+      "date": "2026-11-20",
+      "amount_cents": -5000,
+      "merchant": "Sample account fee",
+      "notes": null,
+      "color": null,
+      "pending": 0,
+      "provider": null,
+      "account_name": "Sample card",
+      "category_name": "Sample fees",
+      "category_color": null,
+      "category_type": "expense",
+      "tags": [],
+      "tag_ids": []
+    },
+    {
+      "id": 7,
+      "account_id": 1,
+      "category_id": 2,
+      "date": "2026-11-24",
+      "amount_cents": -6000,
+      "merchant": "Sample pending purchase",
+      "notes": null,
+      "color": null,
+      "pending": 1,
+      "provider": null,
+      "account_name": "Sample checking",
+      "category_name": "Sample groceries",
+      "category_color": null,
+      "category_type": "expense",
+      "tags": [],
+      "tag_ids": []
+    },
+    {
+      "id": 8,
+      "account_id": 1,
+      "category_id": null,
+      "date": "2026-11-24",
+      "amount_cents": 1500,
+      "merchant": "Sample uncategorized deposit",
+      "notes": null,
+      "color": null,
+      "pending": 0,
+      "provider": null,
+      "account_name": "Sample checking",
+      "category_name": null,
+      "category_color": null,
+      "category_type": null,
+      "tags": [],
+      "tag_ids": []
+    }
+  ]
+}

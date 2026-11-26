@@ -25,6 +25,11 @@ services:
       # Optional until provider credentials are saved. 32 bytes, base64.
       # Generate with: openssl rand -base64 32
       # See docs: reference/environment-variables (GALENE_SECRET_KEY).
+      # Optional accepted-estimate baseline producer. Enable only with an
+      # explicit account currency and IANA accounting timezone.
+      # GALENE_LEDGER_BASELINE_ENABLED: "1"
+      # GALENE_LEDGER_BASELINE_CURRENCY: "USD"
+      # GALENE_LEDGER_BASELINE_TIME_ZONE: "America/New_York"
     volumes:
       # The database lives here, not in the container's writable layer.
       # The app refuses to start if /app/data is not a mounted volume.

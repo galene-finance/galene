@@ -1,0 +1,70 @@
+# Native funding integration — first slice, not release approval
+
+**Later status:** W17 independently APPROVED frozen5fa12d9 (funding/Plan/category/HomeQA002,27 layouts and keyboard/emulated touch). V3-TARGET-WORKFLOWS.md describes the subsequent target-editor and Home/Plan integration; remaining-target statements below refer to the original first slice. Neither is whole-app/release approval.
+
+## Source and ownership
+W11 integrated W16 contract/engine/native replay commits through corrected d12791cef49536acd1d3cb82790e47ee60e46c75. W17's independent backend-d12791c/REPORT.md closes B01/B02 only. W11 has not changed backend-owned implementation files. Production remains untouched; real finance reads/writes still require the supported boundaries.
+
+## Working native slice
+- Plan loader reads the authoritative dashboard DTO. Filled funding bubbles distinguish available/funded, underfunded, empty, unknown, unbacked and overspending. Target met remains distinct from cash left. Unknown/unbacked does not display nominal cash as available. Legacy limit remainder is neutral, never funded green.
+- Native assignment and posted-register refresh actions enforce owner context, same origin, bounded form bodies, safe amounts/IDs, civil dates, revision and idempotency. Assign/return is allocation, not payment. No baseline activation or invented cash is performed by a page load.
+- Historical refresh preserves the maximum already-verified activity horizon. A regression caught shrinking February coverage while viewing January; the action now replays through the retained horizon. SQLite close/reopen and rejected-write invariants are tested.
+- Plan uses active engine contribution totals when configured, otherwise existing monthly target intent. These totals are not available cash.
+- Category links preserve the allocation cutoff. The native category loader returns the same authoritative funding state only for matching all-account date scope. Account-filtered or differently dated drilldowns never inherit an unrelated funding balance. Shared FundingAmount renders both views.
+- Native source tests exercise assignment, exact retry, spending/staleness, refresh, refund, close/reopen, rejected overcommit/foreign category, owner/origin denial, and scoped drilldown agreement. Twelve actual-component tests consume W17's synthetic persisted DTO evidence and boundary states.
+
+## Browser evidence and its limits
+Task product-v3-funding-acceptance contains nine recorded transitions and eight unique Plan/category layouts: Graphite390/1440, Ocean390, Dark390. Browser controls exercised assignment, full-page reload, stale/unknown, spend-to-zero while target met, refund restoration, category link and return, rollover, and keyboard overcommit rejection without revision/balance change. Filled backgrounds and no horizontal overflow/runtime errors were measured. Contact sheets were inspected.
+
+An earlier touch-emulated refresh succeeded in product-v3-funding-final. A later touch repeat hit a browser-driver timeout; readback confirmed no new revision. Do not call the latest candidate's touch acceptance complete. W17 must independently retest touch/keyboard and the final exact candidate.
+
+The fixture is a real disposable SQLite database with actual native loaders/actions/service and actual components, reached through a test-only HTTP adapter. It uses a fixed synthetic owner context, NOT production session authentication. Its custom form transport resets successful forms, preserves failures, and fetches only two explicitly allowed same-origin fixture endpoints. Default previews still cannot reach app APIs. The fixture server requires an explicit synthetic flag, exact scratch DB path and Docker; no live data or credentials are mounted. Restart starts a fresh fixture. It is not a replacement for signed-in native SvelteKit HTTP acceptance.
+
+## Explicit remaining scope
+The target editor still uses legacy limits; actual cadence/due-date/version editing and legacy-draft adoption remain to be wired. Reallocation and card-reserve controls, source-backed net-worth history and captures, full register drilldowns in the fixture, all-screen polish/states, audit/upstream correction, final integrated review, encrypted rollback/migrations, private activation and exact-origin authenticated acceptance remain open. No all-features completion or release approval is implied by this slice.
+
+
+## Retained transfer-match integration follow-up
+W11 native refresh now reads the owner-scoped persisted register match catalog instead of passing an empty array. The original defect rejected a refresh containing already-confirmed transfer rows; it did not erase the stored matches or mutate the source transactions. No new matching heuristic or schema is introduced.
+
+`transferPairCatalog(ownerId, through)` in the shared budgetIntegration adapter returns status `none`, `verified`, or `needs_review`, with retained explicit pairs. It reuses the reviewed register normalizer and checks ownership of referenced accounts/categories. Only verified/empty catalogs may refresh; invalid pairs are not filtered away. Validation and refresh are enclosed in one write transaction. Missing legs, amount edits, pending rows, foreign accounts/categories, malformed catalog and duplicates fail closed. Unrelated unclassified transactions remain subject to the engine's normal refresh refusal.
+
+Native regression reproduces RED on the prior implementation, then verifies refresh/readback, earlier-month maximum horizon retention, SQLite close/reopen, owner isolation, amount/pending/account/category changes and a deleted leg. Stored matches and revision remain unchanged when invalid-match refresh is rejected; stale funding stays unknown. This shared-adapter seam does not complete the future explicit pair-review controls, account baseline setup, or source-specific history capture.
+
+
+## Combined feature wiring (W11 integration)
+Consumed exact W19 supporting27d3320, W18 historyd0935d5 and W16 moving-moneye7c8dd7 manifests. Only W11 wired shared budget/Reflect routes, tab navigation and the shared synthetic harness; existing target/Home and retained-pair edits remain intact.
+
+Plan renders move/reserve controls with the native owner-scoped read model and native actions. Funding and money-controls snapshots are loaded in one read transaction. A fresh command key remounts controls after a native action so pending state cannot linger in the shared fixture. Native tests cover move/reserve/replay/stale rejection and SQLite reopen while preserving targets. Browser assignment→move→reserve→full reload agrees with native SQLite readback.
+
+Reflect adds Net worth without replacing income/spending/trends. Owner scope and validated account selection are retained; viewer/token contexts are rejected for this view. UTC daily snapshots retain gaps; current balances are not used to fill history. Native tests cover explicit dated evidence, missing following day, foreign scope, oversized and future ranges. Capture is visibly unavailable because the trusted source provider is STILL AN IMPLEMENTATION GAP, not merely pending QA. Baseline/account setup and explicit transfer-pair review controls are also unfinished implementation.
+
+Eight combined Plan/history layout cases cover three themes at390px and Graphite1440px. Synthetic history has one complete day and two gaps, and shows capture unavailable. These checks do not establish physical touch, production sessions, trusted source capture or deployment.
+
+
+## Explicit transfer review UI
+Native Plan now offers a progressively disclosed, native-POST transfer review. It lists only owner-owned posted transfer-category rows after the accepted baseline through preserved coverage, requires explicit incoming selections and a confirmation checkbox, and reuses the reviewed normalizer. No candidate matching is guessed. Optional category selection supports the engine's budget/tracking-boundary contract. A successful submission atomically replaces explicit matches and rebuilds derived coverage, without changing source transactions or moving money.
+
+Native regression verifies wrong-owner reference rejection, explicit confirmation, saved match readback, retry idempotency, stale refusal, SQLite reopen, unchanged aggregate cash and zero duplicate expense. Browser source insertion→unknown coverage→explicit pairing→known coverage→full reload passed in disposable SQLite. This is not live-session/physical-touch evidence.
+
+Bounded limits are explicit: up to200 posted transfer rows; every unresolved transfer in the coverage window must be resolved for atomic save. Engine rules require equal opposite amounts, same posted day and different accounts. Different-day/in-transit transfers are not fabricated into supported matches. Larger windows or source rows that do not meet this contract remain unresolved. The UI does not auto-classify transactions. Trusted history capture and baseline/account setup remain separate implementation gaps; same W16 owns QA-M01.
+
+
+## QA-H01 and M01 integration
+Exact owned M01 fix653f859 integrated as63f7535, installed bytes verified. W11 did not duplicate that correction; same W17 retests.
+
+Reproduced QA-H01 using the actual History native GET: it retained view/account/dates but lost the integration marker and incorrectly selected static fixture content. The dedicated synthetic server now explicitly sets VITE_NATIVE_BUDGET_QA for its frontend. main.ts only bypasses the static mock for real fixture endpoints when that exact mode is active. No production query fields were changed. The native Plan GET now retains the submitted full date rather than forcing January/month-start; mutations retain date scope and replace duplicate action parameters. Fixture theme is retained in fixture-origin sessionStorage. Unit transport regressions and actual native GET browser RED→GREEN: History card scope, one day,-30000; Plan2024-02-15,February controls retained; no integration flag needed after either GET.
+
+Auth remains a separate BLOCKED_DEPENDENCY per coordinator's live readiness read: Bitwarden current_readiness_is_authoritative=false, historical Nov16 evidence only, no owner setup recommended. Saved login exists; no re-entry request, registry edits, credential fill or bypass. Synthetic injection is NOT authenticated acceptance.
+
+
+## Combined baseline and trusted-source route integration
+Exact baseline d3bbd189 and history provider efbf241 consumed with byte verification. Plan links to native /budget/setup, which renders actual setup/review/confirmed forms, rejects viewer/API/demo/foreign-origin calls and requires trusted context before activation. Review is read-only. Actual confirmation preserves targets/source rows and is followed by separate retained-pair-aware activity refresh. No reset control.
+
+Reflect now calls the actual source provider and guarded capture action, preserves account/date scope, refuses source fields from the browser, and handles all-saved evidence separately from missing-source gaps. Native route tests cover selected account isolation, extra-field rejection, capture/reopen, unfilled prior/following days, no-context/API refusal, baseline review→confirm→refresh cutoff and target preservation. Existing native-hook authentication/CSRF remain required; synthetic locals never prove live auth.
+
+TRUST INPUT IS NOT YET A LIVE CONNECTION: App.Locals.financeEvidence is server-only and owner-bound, and is populated only by the guarded synthetic harness in this candidate. No production source-context producer or approved closing catalog is configured. This is an explicit remaining integration/data gate, NOT completed live source connectivity. Do not deserialize it from browser fields, auto-map native accounts by name/provider, read a raw ledger file, or turn history observations into closing records. The UTC display fallback does not authorize activation; actions require the approved accounting context.
+
+Permitted data-readiness checks via atlas_galene/atlas_finance expose11 Galene accounts:7 native observations and4 date-only opening anchors. YNAB supplies current ledger observations but no historical closing proof; supplementary mappings are not activated. No usable immutable MMI/Apple receipt/closing catalog or per-account currency binding is exposed by those contracts. This does not claim old statements do not exist elsewhere. Preserve accepted MMI methodology; recovery needs its dated closing/rollforward receipt at one common cutoff plus Apple-only source evidence, not renewed approval of the method. If existing receipts cannot be recovered through the approved source path, a precise starting-date/closing-estimate decision and supported receipt-delivery path are required. No new arbitrary importer or live baseline is authorized.
+
+Browser evidence: product-v3-full-flow has native review→confirmation→reload, unknown funding before coverage refresh, assignment after refresh, four source captures (native/MMI/Apple), reload without duplicate offers, and12 theme/layout cases. Baseline alone creates no history. Synthetic day Jan2 total65000 retains accepted-estimate labels; Jan1/Jan3 remain unknown. The test lane24914 is distinct from all earlier frozen lanes. All real financial records and production remain unchanged.

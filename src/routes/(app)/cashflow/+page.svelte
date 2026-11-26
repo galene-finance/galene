@@ -1,4 +1,7 @@
 <script lang="ts">
+ import Overview from '$lib/components/CashflowOverview.svelte';
+ import Badge from '$lib/components/FinancialBadge.svelte';
+ import {activityParts} from '$lib/activity';
 	import { untrack } from 'svelte';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
@@ -58,22 +61,25 @@
 	let filtersOpen = $state(false);
 	let savingFilters = $state(false);
 
-	function saveFilters(next: CashflowViewFilters) {
+	let filterError = $state('');
+	let pendingFilters = $state<CashflowViewFilters | null>(null);
+	async function saveFilters(next: CashflowViewFilters) {
+		if (savingFilters) return;
+		pendingFilters = next;
+		filterError = '';
 		savingFilters = true;
-		const body = new FormData();
-		body.set('filters', JSON.stringify(next));
-		fetch('?/save-filters', { method: 'POST', body })
-			.then(async (r) => {
-				if (r.ok || r.status === 303 || r.redirected) {
-					await goto(window.location.pathname + window.location.search, {
-						invalidateAll: true,
-						replaceState: true
-					});
-				}
-			})
-			.finally(() => {
-				savingFilters = false;
-			});
+		try {
+			const body = new FormData();
+			body.set('filters', JSON.stringify(next));
+			const response = await fetch('?/save-filters', { method: 'POST', body });
+			if (!response.ok && response.status !== 303) throw new Error('Filter request failed');
+			await goto(window.location.pathname + window.location.search, {invalidateAll:true,replaceState:true});
+			pendingFilters = null;
+		} catch {
+			filterError = 'Could not confirm your filters were saved. Reload to check, or try again.';
+		} finally {
+			savingFilters = false;
+		}
 	}
 
 	// Remember the last applied range so it survives a refresh or re-login.
@@ -195,36 +201,19 @@
 			.sort((a, b) => a.date.localeCompare(b.date));
 	});
 
+	const cashflowCategories=$derived(new Map(data.categories.map(c=>[c.id,c])));
 	const drillActual = $derived.by(() => {
-		const d = drill;
-		if (!d || d.kind !== 'actual') return [];
-		return data.transactions
-			.flatMap<DrillItem>((t) => {
-				if (!d.months.includes(t.date.slice(0, 7))) return [];
-				if (t.splits && t.splits.length > 0) {
-					return t.splits
-						.filter((s) => s.category_id === d.categoryId)
-						.map((s) => ({
-							id: `${t.id}-${s.category_id}`,
-							date: t.date,
-							label: t.merchant ?? t.account_name ?? 'Transaction',
-							amountCents: s.amount_cents * Math.sign(t.amount_cents)
-						}));
-				}
-				return t.category_id === d.categoryId
-					? [{
-						id: String(t.id),
-						date: t.date,
-						label: t.merchant ?? t.account_name ?? 'Transaction',
-						amountCents: t.amount_cents
-					}]
-					: [];
-			})
-			.sort((a, b) => a.date.localeCompare(b.date));
-	});
+  const d=drill;if(!d||d.kind!=='actual')return [];
+  return data.transactions.flatMap<DrillItem>(t=>{
+   if(t.pending||!d.months.includes(t.date.slice(0,7)))return [];
+   return activityParts(t,cashflowCategories).flatMap((part,index)=>
+    part.categoryId===d.categoryId&&part.type===d.sectionType
+     ?[{id:`${t.id}-${index}`,date:t.date,label:t.merchant??t.account_name??'Transaction',amountCents:part.cents}]:[]);
+  }).sort((a,b)=>a.date.localeCompare(b.date));
+ });
 
 	const drillForecastTotal = $derived(drillForecast.reduce((s, o) => s + o.amountCents, 0) * (drillSign ?? -1));
-	const drillActualTotal = $derived(drillActual.reduce((s, a) => s + a.amountCents, 0));
+	const drillActualTotal = $derived(drillActual.reduce((s, a) => s + a.amountCents, 0) * drillSign);
 
 	const drillTitle = $derived(
 		drill
@@ -251,6 +240,8 @@
 		if (d.categoryId != null) params.set('category', String(d.categoryId));
 		params.set('date_from', `${d.months[0]}-01`);
 		params.set('date_to', lastDayOfMonth(d.months[d.months.length - 1]));
+		params.set('status','posted');
+		for(const id of data.filters.accountIds)params.append('account',String(id));
 		return `/transactions?${params.toString()}`;
 	});
 
@@ -273,6 +264,9 @@
 		scroll horizontally. The background must be opaque so scrolling cells
 		don't show through; tinted rows use color-mix to match their
 		semi-transparent row color over the surface. */
+	.cf-detail-name { display:flex; flex:1; min-width:0; flex-direction:column; gap:4px; overflow-wrap:anywhere; }
+	.cf-drill { min-height:44px; min-width:44px; border-radius:8px; }
+	.cf-drill:focus-visible { outline:2px solid var(--color-primary); outline-offset:2px; }
 	.cf-sticky {
 		position: sticky;
 		left: 0;
@@ -301,8 +295,8 @@
 
 <Title title="Cashflow" />
 
-<div class="mx-auto flex max-w-5xl flex-col gap-4 2xl:max-w-7xl">
-	<div class="flex flex-wrap items-center justify-between gap-3">
+<div class="product-page flex flex-col gap-4">
+	<div class="product-heading">
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">Cashflow</h1>
 			<p class="text-sm text-muted-foreground">
@@ -351,25 +345,9 @@
 		<Button type="submit">Apply</Button>
 	</form>
 
-	<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-		<div class="rounded-lg border border-border bg-surface p-4">
-			<p class="text-sm text-muted-foreground">Income · {rangeLabel}</p>
-			<p class="mt-1 text-2xl font-semibold text-success">{formatMoney(data.summary.actualIncomeCents)}</p>
-			<p class="text-xs text-muted-foreground">Forecast {formatMoney(data.summary.forecastIncomeCents)}</p>
-		</div>
-		<div class="rounded-lg border border-border bg-surface p-4">
-			<p class="text-sm text-muted-foreground">Spending · {rangeLabel}</p>
-			<p class="mt-1 text-2xl font-semibold">{formatMoney(data.summary.actualExpenseCents)}</p>
-			<p class="text-xs text-muted-foreground">Forecast {formatMoney(data.summary.forecastExpenseCents)}</p>
-		</div>
-		<div class="rounded-lg border border-border bg-surface p-4">
-			<p class="text-sm text-muted-foreground">Net cashflow · {rangeLabel}</p>
-			<p class="mt-1 text-2xl font-semibold {netActual < 0 ? 'text-destructive' : 'text-success'}">
-				{formatMoney(netActual)}
-			</p>
-			<p class="text-xs text-muted-foreground">Forecast {formatMoney(netForecast)}</p>
-		</div>
-	</div>
+	{#if savingFilters}<p role="status" class="product-muted">Saving filters…</p>{/if}
+	{#if filterError}<div role="alert" class="product-panel product-panel-body"><p>{filterError}</p><button class="product-button" onclick={()=>{if(pendingFilters)void saveFilters(pendingFilters);}}>Try again</button><button class="product-button" onclick={()=>filtersOpen=true}>Review filters</button></div>{/if}
+	<Overview summary={data.summary} {rangeLabel}/>
 
 	{#if noActivity}
 		<div class="rounded-lg border border-dashed border-border bg-surface p-10 text-center">
@@ -466,7 +444,7 @@
 											{#if c.forecastCents !== 0}
 												<button
 													type="button"
-													class="hover:underline"
+													class="cf-drill hover:underline"
 													onclick={() => openDrill(section, r, i, 'forecast')}
 												>
 													{formatMoney(c.forecastCents)}
@@ -479,7 +457,7 @@
 											{#if c.actualCents !== 0}
 												<button
 													type="button"
-													class="hover:underline"
+													class="cf-drill hover:underline"
 													onclick={() => openDrill(section, r, i, 'actual')}
 												>
 													{formatMoney(c.actualCents)}
@@ -493,7 +471,7 @@
 										{#if r.totalForecastCents !== 0}
 											<button
 												type="button"
-												class="hover:underline"
+												class="cf-drill hover:underline"
 												onclick={() => openDrill(section, r, null, 'forecast')}
 											>
 												{formatMoney(r.totalForecastCents)}
@@ -506,7 +484,7 @@
 										{#if r.totalActualCents !== 0}
 											<button
 												type="button"
-												class="hover:underline"
+												class="cf-drill hover:underline"
 												onclick={() => openDrill(section, r, null, 'actual')}
 											>
 												{formatMoney(r.totalActualCents)}
@@ -546,8 +524,7 @@
 		</div>
 
 		<p class="text-xs text-muted-foreground">
-			Forecast comes from scheduled expectations: “bill” books the full amount on its date, “spread”
-			divides it across the month. Click a value to see what makes up that number.
+			Plans come from recurring expectations; actuals use posted, categorized activity. Transfers and uncategorized activity are excluded. Open a value to see its details.
 		</p>
 	{/if}
 </div>
@@ -567,16 +544,11 @@
 					<ul class="divide-y divide-border rounded-md border border-border">
 						{#each drillForecast as o (o.id + o.date)}
 							<li class="flex items-center gap-3 px-3 py-2 text-sm">
-								<span class="w-20 shrink-0 text-muted-foreground">
-									{new Date(o.date + 'T12:00:00').toLocaleDateString('en-US', {
-										month: 'short',
-										day: 'numeric'
-									})}
-								</span>
-								<span class="min-w-0 flex-1 truncate">{o.name}</span>
-								<span class="shrink-0 font-medium {drillSign === 1 ? 'text-success' : ''}">
-									{drillSign === 1 ? '+' : '−'}{occurrenceAmount(o)}
-								</span>
+								<div class="cf-detail-name">
+									<a class="product-link" href={`/scheduled?edit=${o.id}`}>{o.name}</a>
+									<time datetime={o.date} class="text-xs text-muted-foreground">{new Date(o.date + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}</time>
+								</div>
+								<Badge value={occurrenceAmount(o)} label="Scheduled expectation" tone="neutral"/>
 							</li>
 						{/each}
 						<li class="flex items-center justify-between px-3 py-2 text-sm font-medium">
@@ -592,16 +564,11 @@
 					<ul class="divide-y divide-border rounded-md border border-border">
 						{#each drillActual as a (a.id)}
 							<li class="flex items-center gap-3 px-3 py-2 text-sm">
-								<span class="w-20 shrink-0 text-muted-foreground">
-									{new Date(a.date + 'T12:00:00').toLocaleDateString('en-US', {
-										month: 'short',
-										day: 'numeric'
-									})}
-								</span>
-								<span class="min-w-0 flex-1 truncate">{a.label}</span>
-								<span class="shrink-0 font-medium {a.amountCents > 0 ? 'text-success' : ''}">
-									{formatMoney(a.amountCents)}
-								</span>
+								<div class="cf-detail-name">
+									<a class="product-link" href={`/transactions/${a.id.split('-')[0]}`}>{a.label}</a>
+									<time datetime={a.date} class="text-xs text-muted-foreground">{new Date(a.date + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}</time>
+								</div>
+								<Badge value={formatMoney(a.amountCents)} label={drill.sectionType === 'expense' ? (a.amountCents > 0 ? 'Included refund' : 'Included spending') : (a.amountCents < 0 ? 'Income reversal' : 'Included income')} tone={a.amountCents > 0 ? 'positive' : a.amountCents < 0 ? 'negative' : 'neutral'} symbol={a.amountCents > 0 ? '+' : a.amountCents < 0 ? '−' : '•'}/>
 							</li>
 						{/each}
 						<li class="flex items-center justify-between px-3 py-2 text-sm font-medium">
@@ -613,7 +580,7 @@
 			{/if}
 			{#if drillTransactionsHref}
 				<a class="text-sm text-primary hover:underline" href={drillTransactionsHref}>
-					View on Transactions
+					Open in activity
 				</a>
 			{/if}
 		</div>
@@ -624,7 +591,7 @@
 	bind:open={filtersOpen}
 	accounts={data.accounts}
 	categories={data.categories}
-	filters={data.filters}
+	filters={pendingFilters??data.filters}
 	onSave={saveFilters}
 />
 

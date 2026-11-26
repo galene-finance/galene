@@ -187,7 +187,7 @@
 					plaidMetadata?: string;
 			  }
 			| undefined;
-		data: { demo?: boolean;
+		data: {
 			providers: ProviderInfo[];
 			connections: Connection[];
 			linked: Record<string, LinkedAccount[]>;

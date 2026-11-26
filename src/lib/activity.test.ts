@@ -33,6 +33,16 @@ describe('posted financial activity',()=>{
   const s=summarizeActivity([txn(1,-10000,2,{splits:[{category_id:2,category_name:'Food',amount_cents:2000}]})],categories);
   expect(s.spendingCents).toBe(0); expect(s.uncategorizedCount).toBe(1);
  });
+ test('balance adjustments affect the ledger without becoming income or spending',()=>{
+  const adjustment:Category={id:4,name:'Balance adjustment',type:'expense',parent_id:null,color:null,system_kind:'balance_adjustment'};
+  const s=summarizeActivity([
+   txn(1,-5000,4),
+   txn(2,2000,4),
+   txn(3,-1000,2,{splits:[{category_id:4,category_name:'Balance adjustment',amount_cents:400},{category_id:2,category_name:'Food',amount_cents:600}]})
+  ],[...categories,adjustment]);
+  expect([s.incomeCents,s.spendingCents,s.uncategorizedCount]).toEqual([0,600,0]);
+  expect(s.categories.some(c=>c.id===4)).toBe(false);
+ });
  test('on-date payroll is income, not a bill; a card payment is a transfer',()=>{
   expect(scheduleKind(10000,'income')).toBe('Income');
   expect(scheduleKind(-2000,'expense')).toBe('Bill');
